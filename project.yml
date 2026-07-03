@@ -1,0 +1,48 @@
+name: StreamWeb
+options:
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "16.0"
+  developmentLanguage: en
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: "YES"
+    CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED: "YES"
+    GCC_WARN_UNDECLARED_SELECTOR: "YES"
+    GCC_WARN_UNUSED_FUNCTION: "YES"
+    GCC_WARN_UNUSED_VARIABLE: "YES"
+targets:
+  StreamWeb:
+    type: application
+    platform: iOS
+    sources:
+      - path: StreamWeb
+        excludes:
+          - Resources
+          - Info.plist
+      - path: StreamWeb/Resources
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: "com.example.streamweb"
+        INFOPLIST_FILE: StreamWeb/Info.plist
+        PRODUCT_NAME: StreamWeb
+        APP_DISPLAY_NAME: "Stream Web"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: "NO"
+        IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+schemes:
+  StreamWeb:
+    build:
+      targets:
+        StreamWeb: all
+    run:
+      config: Debug
+    archive:
+      config: Release
