@@ -1,0 +1,65 @@
+name: Validate iOS Project
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-simulator:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate project files
+        run: python3 scripts/validate_project.py
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project.yml
+
+      - name: Build for iOS Simulator
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project StreamWeb.xcodeproj \
+            -scheme StreamWeb \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            clean build | tee build/xcodebuild-simulator.log
+
+      - name: Package simulator app
+        run: |
+          APP_PATH="build/DerivedData/Build/Products/Debug-iphonesimulator/StreamWeb.app"
+          test -d "$APP_PATH"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "build/StreamWeb-Simulator.app.zip"
+
+      - name: Upload simulator build
+        uses: actions/upload-artifact@v4
+        with:
+          name: StreamWeb-Simulator
+          path: build/StreamWeb-Simulator.app.zip
+          retention-days: 7
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulator-build-log
+          path: build/xcodebuild-simulator.log
+          retention-days: 7
