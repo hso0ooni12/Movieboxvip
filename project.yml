@@ -1,4 +1,4 @@
-name: StreamWeb
+name: XsStoreTV
 options:
   createIntermediateGroups: true
   deploymentTarget:
@@ -16,7 +16,7 @@ settings:
     GCC_WARN_UNUSED_FUNCTION: "YES"
     GCC_WARN_UNUSED_VARIABLE: "YES"
 targets:
-  StreamWeb:
+  XsStoreTV:
     type: application
     platform: iOS
     sources:
@@ -28,20 +28,20 @@ targets:
         buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: "com.example.streamweb"
+        PRODUCT_BUNDLE_IDENTIFIER: "com.xsstore.tv"
         INFOPLIST_FILE: StreamWeb/Info.plist
-        PRODUCT_NAME: StreamWeb
-        APP_DISPLAY_NAME: "Stream Web"
+        PRODUCT_NAME: XsStoreTV
+        APP_DISPLAY_NAME: "XsStore TV"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: "NO"
         IPHONEOS_DEPLOYMENT_TARGET: "16.0"
 schemes:
-  StreamWeb:
+  XsStoreTV:
     build:
       targets:
-        StreamWeb: all
+        XsStoreTV: all
     run:
       config: Debug
     archive:
