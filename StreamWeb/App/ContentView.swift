@@ -1,164 +1,112 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var browser = BrowserModel()
-    @State private var isSharePresented = false
-
-    private let configuration = AppConfiguration.shared
+    @State private var showSplash = true
 
     var body: some View {
         ZStack {
-            BrowserWebView(model: browser, configuration: configuration)
-                .ignoresSafeArea(edges: .bottom)
+            TabView {
+                SectionView(title: "Home", icon: "house.fill")
+                    .tabItem { Label("Home", systemImage: "house.fill") }
+                SectionView(title: "Live", icon: "play.tv.fill")
+                    .tabItem { Label("Live", systemImage: "play.tv.fill") }
+                SectionView(title: "Movies", icon: "film.fill")
+                    .tabItem { Label("Movies", systemImage: "film.fill") }
+                SectionView(title: "Series", icon: "rectangle.stack.fill")
+                    .tabItem { Label("Series", systemImage: "rectangle.stack.fill") }
+                SectionView(title: "Search", icon: "magnifyingglass")
+                    .tabItem { Label("Search", systemImage: "magnifyingglass") }
+            }
+            .tint(.red)
 
-            if let message = browser.blockingErrorMessage {
-                ErrorStateView(message: message) {
-                    browser.retry()
-                }
-                .transition(.opacity)
+            if showSplash {
+                SplashView()
+                    .transition(.opacity)
+                    .zIndex(10)
             }
         }
-        .overlay(alignment: .top) {
-            VStack(spacing: 0) {
-                if browser.isLoading {
-                    ProgressView(value: max(browser.progress, 0.04))
-                        .progressViewStyle(.linear)
-                        .tint(configuration.accentColor)
-                }
-
-                if !browser.isConnected && browser.hasLoadedContent {
-                    OfflineBanner()
-                }
-            }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            BrowserToolbar(
-                browser: browser,
-                accentColor: configuration.accentColor,
-                onShare: { isSharePresented = true },
-                onOpenInSafari: browser.openCurrentPageInSafari
-            )
-        }
-        .sheet(isPresented: $isSharePresented) {
-            ActivityView(activityItems: [browser.currentURL ?? configuration.homeURL])
-                .presentationDetents([.medium, .large])
-        }
-        .animation(.easeInOut(duration: 0.2), value: browser.blockingErrorMessage)
-        .onOpenURL { url in
-            browser.load(url)
+        .preferredColorScheme(.dark)
+        .task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            withAnimation(.easeOut(duration: 0.4)) { showSplash = false }
         }
     }
 }
 
-private struct BrowserToolbar: View {
-    @ObservedObject var browser: BrowserModel
-    let accentColor: Color
-    let onShare: () -> Void
-    let onOpenInSafari: () -> Void
-
+private struct SplashView: View {
     var body: some View {
-        HStack(spacing: 6) {
-            ToolbarButton(systemName: "chevron.backward", accessibilityKey: "Back") {
-                browser.goBack()
-            }
-            .disabled(!browser.canGoBack)
+        ZStack {
+            RadialGradient(colors: [Color.red.opacity(0.30), .black], center: .center, startRadius: 30, endRadius: 430)
+                .ignoresSafeArea()
 
-            ToolbarButton(systemName: "chevron.forward", accessibilityKey: "Forward") {
-                browser.goForward()
-            }
-            .disabled(!browser.canGoForward)
+            VStack(spacing: 22) {
+                Spacer()
+                Circle()
+                    .fill(.black.opacity(0.75))
+                    .frame(width: 170, height: 170)
+                    .overlay(Circle().stroke(.red.opacity(0.7), lineWidth: 2))
+                    .overlay(Image(systemName: "play.tv.fill").font(.system(size: 70)).foregroundStyle(.white))
+                    .shadow(color: .red.opacity(0.4), radius: 28)
 
-            ToolbarButton(systemName: "house.fill", accessibilityKey: "Home") {
-                browser.goHome()
-            }
+                Text("XSSTORE TV")
+                    .font(.system(size: 40, weight: .black, design: .rounded))
+                    .tracking(4)
 
-            ToolbarButton(
-                systemName: browser.isLoading ? "xmark" : "arrow.clockwise",
-                accessibilityKey: browser.isLoading ? "Stop" : "Reload"
-            ) {
-                browser.isLoading ? browser.stopLoading() : browser.reload()
-            }
-
-            ToolbarButton(systemName: "square.and.arrow.up", accessibilityKey: "Share", action: onShare)
-
-            ToolbarButton(systemName: "safari", accessibilityKey: "Open in Safari", action: onOpenInSafari)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .top) {
-            Divider().opacity(0.35)
-        }
-        .tint(accentColor)
-    }
-}
-
-private struct ToolbarButton: View {
-    let systemName: String
-    let accessibilityKey: LocalizedStringKey
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 17, weight: .semibold))
-                .frame(maxWidth: .infinity)
-                .frame(height: 34)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(accessibilityKey)
-    }
-}
-
-private struct OfflineBanner: View {
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "wifi.slash")
-            Text("Offline banner")
-                .font(.footnote.weight(.semibold))
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 7)
-        .background(.thinMaterial)
-    }
-}
-
-private struct ErrorStateView: View {
-    let message: String
-    let retry: () -> Void
-
-    var body: some View {
-        VStack(spacing: 18) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 44))
-                .symbolRenderingMode(.hierarchical)
-
-            VStack(spacing: 7) {
-                Text("Unable to load")
-                    .font(.title3.bold())
-                Text(message)
-                    .font(.subheadline)
+                Text("مرحباً بكم في XsStore TV")
+                    .font(.title3.weight(.semibold))
+                Text("Welcome to XsStore TV")
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(4)
-            }
 
-            Button(action: retry) {
-                Label("Try again", systemImage: "arrow.clockwise")
-                    .fontWeight(.semibold)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
+                HStack(spacing: 10) {
+                    Pill(text: "LIVE")
+                    Pill(text: "MOVIES")
+                    Pill(text: "SERIES")
+                }
+
+                ProgressView().tint(.red).padding(.top, 8)
+                Text("Preparing your entertainment...")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Spacer()
             }
-            .buttonStyle(.borderedProminent)
+            .padding(28)
         }
-        .padding(28)
-        .frame(maxWidth: 360)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .padding(24)
     }
 }
 
-#Preview {
-    ContentView()
+private struct Pill: View {
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(.caption.weight(.bold))
+            .tracking(2)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(.white.opacity(0.08), in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.12)))
+    }
 }
+
+private struct SectionView: View {
+    let title: String
+    let icon: String
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                VStack(spacing: 18) {
+                    Image(systemName: icon)
+                        .font(.system(size: 58))
+                        .foregroundStyle(.red)
+                    Text(title).font(.largeTitle.bold())
+                }
+            }
+            .navigationTitle(title == "Home" ? "XsStore TV" : title)
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
+#Preview { ContentView() }
