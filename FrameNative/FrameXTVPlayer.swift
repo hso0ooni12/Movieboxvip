@@ -13,30 +13,18 @@ struct FrameXTVPlayback: Hashable, Codable {
 
     func embedURL(title: String? = nil, posterURL: URL? = nil) -> URL? {
         var path = "https://framextv.tech/embed/\(tmdbID)"
-        if let season, let episode {
-            path += "/\(season)/\(episode)"
-        }
-
+        if let season, let episode { path += "/\(season)/\(episode)" }
         guard var components = URLComponents(string: path) else { return nil }
         var query: [URLQueryItem] = [
-            URLQueryItem(name: "autoplay", value: autoplay ? "1" : "0"),
-            URLQueryItem(name: "muted", value: muted ? "1" : "0"),
-            URLQueryItem(name: "controls", value: "0"),
-            URLQueryItem(name: "speed", value: String(speed))
+            .init(name: "autoplay", value: autoplay ? "1" : "0"),
+            .init(name: "muted", value: muted ? "1" : "0"),
+            .init(name: "controls", value: "0"),
+            .init(name: "speed", value: String(speed))
         ]
-
-        if startAt > 0 {
-            query.append(URLQueryItem(name: "start", value: String(Int(startAt))))
-        }
-        if let provider, provider != "auto" {
-            query.append(URLQueryItem(name: "provider", value: provider))
-        }
-        if let title, !title.isEmpty {
-            query.append(URLQueryItem(name: "title", value: title))
-        }
-        if let posterURL {
-            query.append(URLQueryItem(name: "poster", value: posterURL.absoluteString))
-        }
+        if startAt > 0 { query.append(.init(name: "start", value: String(Int(startAt)))) }
+        if let provider, provider != "auto" { query.append(.init(name: "provider", value: provider)) }
+        if let title, !title.isEmpty { query.append(.init(name: "title", value: title)) }
+        if let posterURL { query.append(.init(name: "poster", value: posterURL.absoluteString)) }
         components.queryItems = query
         return components.url
     }
@@ -52,16 +40,14 @@ final class FrameXTVPlayerModel: ObservableObject {
     @Published var lastEvent: String?
 
     weak var webView: WKWebView?
+    var onTelemetry: ((Double, Double) -> Void)?
 
     var progress: Double {
         guard duration > 0 else { return 0 }
         return min(max(currentTime / duration, 0), 1)
     }
 
-    func attach(_ webView: WKWebView) {
-        self.webView = webView
-    }
-
+    func attach(_ webView: WKWebView) { self.webView = webView }
     func play() { send(["action": "play"]) }
     func pause() { send(["action": "pause"]) }
     func seek(to seconds: Double) { send(["action": "seek", "time": seconds]) }
@@ -69,7 +55,8 @@ final class FrameXTVPlayerModel: ObservableObject {
 
     func setMuted(_ muted: Bool) {
         isMuted = muted
-        send(["action": muted ? "mute" : "setVolume", muted ? "value" : "volume": muted ? 0 : 1])
+        if muted { send(["action": "mute"]) }
+        else { send(["action": "setVolume", "volume": 1.0]) }
     }
 
     func setProvider(_ provider: String) {
@@ -83,9 +70,7 @@ final class FrameXTVPlayerModel: ObservableObject {
         send(["action": "setSpeed", "speed": speed])
     }
 
-    func setSubtitle(index: Int) {
-        send(["action": "setSubtitle", "index": index])
-    }
+    func setSubtitle(index: Int) { send(["action": "setSubtitle", "index": index]) }
 
     private func send(_ payload: [String: Any]) {
         guard let webView,
@@ -100,6 +85,7 @@ final class FrameXTVPlayerModel: ObservableObject {
         if event == "frameXTV:timeupdate" {
             if let value = payload["currentTime"] as? NSNumber { currentTime = value.doubleValue }
             if let value = payload["duration"] as? NSNumber { duration = value.doubleValue }
+            onTelemetry?(currentTime, duration)
         }
     }
 }
@@ -179,10 +165,7 @@ struct FrameXTVWebView: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
         private let model: FrameXTVPlayerModel
-
-        init(model: FrameXTVPlayerModel) {
-            self.model = model
-        }
+        init(model: FrameXTVPlayerModel) { self.model = model }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.name == "frameTelemetry", let payload = message.body as? [String: Any] else { return }
@@ -194,7 +177,7 @@ struct FrameXTVWebView: UIViewRepresentable {
                 decisionHandler(.allow)
                 return
             }
-            if url.scheme == "about" || url.host == "framextv.tech" {
+            if url.scheme == "about" || url.host == "framextv.tech" || url.host == "www.framextv.tech" {
                 decisionHandler(.allow)
             } else {
                 decisionHandler(.cancel)
@@ -207,6 +190,7 @@ struct FrameXTVPlayerScreen: View {
     let item: MediaItem
     let playback: FrameXTVPlayback
 
+    @EnvironmentObject private var library: LibraryStore
     @StateObject private var playerModel = FrameXTVPlayerModel()
     @State private var isPlaying = true
     @State private var showControls = true
@@ -217,14 +201,16 @@ struct FrameXTVPlayerScreen: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            FrameXTVWebView(playback: playback, title: item.title, posterURL: item.posterURL, model: playerModel)
-                .ignoresSafeArea(edges: .bottom)
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { showControls.toggle() } }
+            FrameXTVWebView(
+                playback: playback,
+                title: item.title,
+                posterURL: item.imageURL(backdrop: true, width: 1280) ?? item.imageURL(width: 780),
+                model: playerModel
+            )
+            .ignoresSafeArea(edges: .bottom)
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.18)) { showControls.toggle() } }
 
-            if showControls {
-                nativeControls
-                    .transition(.opacity)
-            }
+            if showControls { nativeControls.transition(.opacity) }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
@@ -232,21 +218,32 @@ struct FrameXTVPlayerScreen: View {
             playerModel.isMuted = playback.muted
             playerModel.selectedProvider = playback.provider ?? "auto"
             playerModel.selectedSpeed = playback.speed
+            playerModel.onTelemetry = { current, duration in
+                library.updateProgress(
+                    item: item,
+                    season: playback.season,
+                    episode: playback.episode,
+                    current: current,
+                    duration: duration
+                )
+            }
         }
-        .onDisappear { playerModel.pause() }
+        .onDisappear {
+            playerModel.pause()
+            playerModel.onTelemetry = nil
+        }
     }
 
     private var nativeControls: some View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(item.title).font(.headline)
-                    Text(playback.season.flatMap { s in playback.episode.map { "S\(s) · E\($0)" } } ?? item.category.rawValue)
+                    Text(item.title).font(.headline).lineLimit(1)
+                    Text(episodeLabel ?? item.kind.title)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-
                 Menu {
                     ForEach(providers, id: \.self) { provider in
                         Button(provider.capitalized) { playerModel.setProvider(provider) }
@@ -255,20 +252,18 @@ struct FrameXTVPlayerScreen: View {
                     Label(playerModel.selectedProvider.capitalized, systemImage: "server.rack")
                         .font(.caption.bold())
                 }
-
                 Menu {
                     ForEach(speeds, id: \.self) { speed in
-                        Button(speed == 1 ? "1×" : "\(speed, specifier: "%g")×") { playerModel.setSpeed(speed) }
+                        Button(speed == 1 ? "1×" : String(format: "%g×", speed)) { playerModel.setSpeed(speed) }
                     }
                 } label: {
-                    Text(playerModel.selectedSpeed == 1 ? "1×" : "\(playerModel.selectedSpeed, specifier: "%g")×")
+                    Text(playerModel.selectedSpeed == 1 ? "1×" : String(format: "%g×", playerModel.selectedSpeed))
                         .font(.caption.bold())
                         .frame(minWidth: 34)
                 }
             }
             .padding(.horizontal, 18)
-            .padding(.top, 12)
-            .padding(.bottom, 10)
+            .padding(.vertical, 12)
             .background(.black.opacity(0.72))
 
             Spacer()
@@ -277,7 +272,6 @@ struct FrameXTVPlayerScreen: View {
                 Button { playerModel.seek(by: -10) } label: {
                     Image(systemName: "gobackward.10").font(.system(size: 30, weight: .semibold))
                 }
-
                 Button {
                     if isPlaying { playerModel.pause() } else { playerModel.play() }
                     isPlaying.toggle()
@@ -287,7 +281,6 @@ struct FrameXTVPlayerScreen: View {
                         .frame(width: 74, height: 74)
                         .background(.white.opacity(0.16), in: Circle())
                 }
-
                 Button { playerModel.seek(by: 10) } label: {
                     Image(systemName: "goforward.10").font(.system(size: 30, weight: .semibold))
                 }
@@ -302,9 +295,7 @@ struct FrameXTVPlayerScreen: View {
                 HStack {
                     Text(formatTime(playerModel.currentTime))
                     Spacer()
-                    Button {
-                        playerModel.setMuted(!playerModel.isMuted)
-                    } label: {
+                    Button { playerModel.setMuted(!playerModel.isMuted) } label: {
                         Image(systemName: playerModel.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                     }
                     Text(formatTime(playerModel.duration))
@@ -317,6 +308,11 @@ struct FrameXTVPlayerScreen: View {
             .background(.black.opacity(0.72))
         }
         .foregroundStyle(.white)
+    }
+
+    private var episodeLabel: String? {
+        guard let season = playback.season, let episode = playback.episode else { return nil }
+        return "Season \(season) • Episode \(episode)"
     }
 
     private func formatTime(_ value: Double) -> String {
