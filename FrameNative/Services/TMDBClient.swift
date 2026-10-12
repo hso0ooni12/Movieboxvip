@@ -9,7 +9,7 @@ struct TMDBClient {
 
         var errorDescription: String? {
             switch self {
-            case .missingToken: return "TMDB token is missing."
+            case .missingToken: return "TMDB service is not configured."
             case .invalidResponse: return "The server returned an invalid response."
             case .http(let code, let message): return message.isEmpty ? "TMDB request failed (\(code))." : message
             case .decoding: return "Couldn’t read the catalog response."
@@ -19,7 +19,7 @@ struct TMDBClient {
 
     let token: String
     let language: String
-    private let base = URL(string: "https://api.themoviedb.org/3")!
+    private let base = URL(string: "https://frame-native-tmdb-production.up.railway.app/api")!
 
     init(token: String, language: String = "en-US") {
         self.token = token.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -142,7 +142,6 @@ struct TMDBClient {
     }
 
     private func request<T: Decodable>(path: String, query: [URLQueryItem], as type: T.Type) async throws -> T {
-        guard !token.isEmpty else { throw APIError.missingToken }
         guard var components = URLComponents(url: base.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))), resolvingAgainstBaseURL: false) else {
             throw APIError.invalidResponse
         }
@@ -151,9 +150,8 @@ struct TMDBClient {
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 20
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("FrameNative/2.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("FrameNative/2.1", forHTTPHeaderField: "User-Agent")
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
