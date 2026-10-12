@@ -2,7 +2,8 @@ import Foundation
 import SwiftUI
 import AVKit
 
-// Native media app shell. Connect ContentProvider only to APIs/streams you are authorized to use.
+// The app UI is native SwiftUI. FrameXTV is used only by FrameXTVPlayerScreen
+// when an authorized catalog item supplies a TMDB-based FrameXTVPlayback descriptor.
 
 enum MediaCategory: String, CaseIterable, Codable {
     case movie = "Movies"
@@ -27,8 +28,38 @@ struct MediaItem: Identifiable, Hashable, Codable {
     let rating: String
     let category: MediaCategory
     let genres: [String]
+    let posterURL: URL?
+    let frameXTV: FrameXTVPlayback?
     let streamURL: URL?
     let downloadURL: URL?
+
+    init(
+        id: String,
+        title: String,
+        subtitle: String,
+        overview: String,
+        year: String,
+        rating: String,
+        category: MediaCategory,
+        genres: [String],
+        posterURL: URL? = nil,
+        frameXTV: FrameXTVPlayback? = nil,
+        streamURL: URL? = nil,
+        downloadURL: URL? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.overview = overview
+        self.year = year
+        self.rating = rating
+        self.category = category
+        self.genres = genres
+        self.posterURL = posterURL
+        self.frameXTV = frameXTV
+        self.streamURL = streamURL
+        self.downloadURL = downloadURL
+    }
 }
 
 protocol ContentProvider {
@@ -41,15 +72,15 @@ struct DemoContentProvider: ContentProvider {
 
     private var items: [MediaItem] {
         [
-            MediaItem(id: "m1", title: "Midnight Horizon", subtitle: "A cinematic demo feature", overview: "A polished sample title used to demonstrate the native interface, details page, playback flow, favorites and continue-watching UI.", year: "2026", rating: "8.7", category: .movie, genres: ["Drama", "Adventure"], streamURL: sampleStream, downloadURL: nil),
-            MediaItem(id: "m2", title: "Signal Zero", subtitle: "Tech thriller", overview: "A fast-paced demo movie inside the local sample catalog. Replace this item through your authorized provider.", year: "2025", rating: "8.2", category: .movie, genres: ["Thriller", "Sci-Fi"], streamURL: sampleStream, downloadURL: nil),
-            MediaItem(id: "m3", title: "Blue District", subtitle: "Crime drama", overview: "Native SwiftUI detail presentation with rich metadata, actions and a real AVKit player.", year: "2024", rating: "7.9", category: .movie, genres: ["Crime", "Drama"], streamURL: sampleStream, downloadURL: nil),
-            MediaItem(id: "s1", title: "Northern Line", subtitle: "Season 1", overview: "A demonstration series item prepared for an API-backed episode model in the provider layer.", year: "2026", rating: "9.0", category: .series, genres: ["Mystery", "Drama"], streamURL: sampleStream, downloadURL: nil),
-            MediaItem(id: "s2", title: "Afterlight", subtitle: "Season 2", overview: "Continue watching, watchlist and playback are all designed as native app flows.", year: "2025", rating: "8.5", category: .series, genres: ["Drama", "Sci-Fi"], streamURL: sampleStream, downloadURL: nil),
-            MediaItem(id: "s3", title: "The Last Station", subtitle: "Season 1", overview: "Sample episodic content for testing the browse and search experience.", year: "2026", rating: "8.1", category: .series, genres: ["Mystery", "Adventure"], streamURL: sampleStream, downloadURL: nil),
-            MediaItem(id: "a1", title: "Neon Ronin", subtitle: "Episode collection", overview: "Anime-style sample entry for the dedicated category experience.", year: "2026", rating: "8.8", category: .anime, genres: ["Action", "Fantasy"], streamURL: sampleStream, downloadURL: nil),
-            MediaItem(id: "a2", title: "Sky Archive", subtitle: "Season 1", overview: "A clean native sample item showing how anime can live beside movies and series without a web wrapper.", year: "2025", rating: "8.4", category: .anime, genres: ["Fantasy", "Adventure"], streamURL: sampleStream, downloadURL: nil),
-            MediaItem(id: "a3", title: "Pixel Hearts", subtitle: "Season 1", overview: "Use your licensed catalog API to replace the demo provider without rebuilding the UI.", year: "2024", rating: "7.8", category: .anime, genres: ["Comedy", "Romance"], streamURL: sampleStream, downloadURL: nil)
+            MediaItem(id: "m1", title: "Midnight Horizon", subtitle: "A cinematic demo feature", overview: "A polished sample title used to demonstrate the native interface, details page, playback flow, favorites and continue-watching UI.", year: "2026", rating: "8.7", category: .movie, genres: ["Drama", "Adventure"], streamURL: sampleStream),
+            MediaItem(id: "m2", title: "Signal Zero", subtitle: "Tech thriller", overview: "A fast-paced demo movie inside the local sample catalog. Replace this item through your authorized metadata provider.", year: "2025", rating: "8.2", category: .movie, genres: ["Thriller", "Sci-Fi"], streamURL: sampleStream),
+            MediaItem(id: "m3", title: "Blue District", subtitle: "Crime drama", overview: "Native SwiftUI detail presentation with rich metadata, actions and a real iOS player flow.", year: "2024", rating: "7.9", category: .movie, genres: ["Crime", "Drama"], streamURL: sampleStream),
+            MediaItem(id: "s1", title: "Northern Line", subtitle: "Season 1", overview: "A demonstration series item prepared for an API-backed episode model in the provider layer.", year: "2026", rating: "9.0", category: .series, genres: ["Mystery", "Drama"], streamURL: sampleStream),
+            MediaItem(id: "s2", title: "Afterlight", subtitle: "Season 2", overview: "Continue watching, watchlist and playback are designed as native app flows.", year: "2025", rating: "8.5", category: .series, genres: ["Drama", "Sci-Fi"], streamURL: sampleStream),
+            MediaItem(id: "s3", title: "The Last Station", subtitle: "Season 1", overview: "Sample episodic content for testing the browse and search experience.", year: "2026", rating: "8.1", category: .series, genres: ["Mystery", "Adventure"], streamURL: sampleStream),
+            MediaItem(id: "a1", title: "Neon Ronin", subtitle: "Episode collection", overview: "Anime-style sample entry for the dedicated category experience.", year: "2026", rating: "8.8", category: .anime, genres: ["Action", "Fantasy"], streamURL: sampleStream),
+            MediaItem(id: "a2", title: "Sky Archive", subtitle: "Season 1", overview: "A clean native sample item showing how anime can live beside movies and series without wrapping the whole website.", year: "2025", rating: "8.4", category: .anime, genres: ["Fantasy", "Adventure"], streamURL: sampleStream),
+            MediaItem(id: "a3", title: "Pixel Hearts", subtitle: "Season 1", overview: "Connect a metadata provider that supplies TMDB IDs to activate the FrameXTV player bridge.", year: "2024", rating: "7.8", category: .anime, genres: ["Comedy", "Romance"], streamURL: sampleStream)
         ]
     }
 
@@ -70,15 +101,15 @@ final class AppModel: ObservableObject {
         self.provider = provider
     }
 
-    func load() async {
-        guard all.isEmpty else { return }
+    func load(force: Bool = false) async {
+        if !force && !all.isEmpty { return }
         isLoading = true
         errorMessage = nil
         do {
-            async let f = provider.featured()
-            async let c = provider.catalog()
-            featured = try await f
-            all = try await c
+            async let featuredRequest = provider.featured()
+            async let catalogRequest = provider.catalog()
+            featured = try await featuredRequest
+            all = try await catalogRequest
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -105,8 +136,11 @@ final class LibraryStore: ObservableObject {
     func contains(_ item: MediaItem) -> Bool { favoriteIDs.contains(item.id) }
 
     func toggle(_ item: MediaItem) {
-        if favoriteIDs.contains(item.id) { favoriteIDs.remove(item.id) }
-        else { favoriteIDs.insert(item.id) }
+        if favoriteIDs.contains(item.id) {
+            favoriteIDs.remove(item.id)
+        } else {
+            favoriteIDs.insert(item.id)
+        }
     }
 
     private func save() {
@@ -194,16 +228,19 @@ struct RootView: View {
             NavigationStack { HomeView() }
                 .tabItem { Label("Home", systemImage: "house.fill") }
 
+            NavigationStack { CategoryView(category: .movie) }
+                .tabItem { Label("Movies", systemImage: "film.fill") }
+
+            NavigationStack { CategoryView(category: .series) }
+                .tabItem { Label("TV", systemImage: "tv.fill") }
+
             NavigationStack { SearchView() }
                 .tabItem { Label("Search", systemImage: "magnifyingglass") }
 
             NavigationStack { LibraryView() }
                 .tabItem { Label("My List", systemImage: "bookmark.fill") }
-
-            NavigationStack { DownloadsView() }
-                .tabItem { Label("Downloads", systemImage: "arrow.down.circle.fill") }
         }
-        .tint(.pink)
+        .tint(.white)
     }
 }
 
@@ -253,14 +290,14 @@ struct HomeView: View {
                         MediaRail(title: "Popular Series", items: model.items(in: .series))
                         MediaRail(title: "Anime", items: model.items(in: .anime))
                     }
-                    .padding(.bottom, 32)
+                    .padding(.bottom, 34)
                 }
                 .scrollIndicators(.hidden)
             }
         }
-        .navigationTitle("FRAME")
+        .navigationTitle("frameXTV")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.black.opacity(0.9), for: .navigationBar)
+        .toolbarBackground(.black.opacity(0.92), for: .navigationBar)
         .navigationDestination(for: MediaItem.self) { DetailView(item: $0) }
     }
 
@@ -280,13 +317,15 @@ struct HomeView: View {
                         Text("FEATURED")
                             .font(.caption.bold())
                             .tracking(2)
-                            .foregroundStyle(.pink)
+                            .foregroundStyle(.white.opacity(0.72))
                         Text(item.title)
                             .font(.system(size: 38, weight: .black, design: .rounded))
                             .foregroundStyle(.white)
+                            .lineLimit(2)
                         Text("\(item.year)  •  ★ \(item.rating)  •  \(item.genres.joined(separator: " · "))")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white.opacity(0.82))
+                            .lineLimit(2)
                         HStack(spacing: 12) {
                             Label("Play", systemImage: "play.fill")
                                 .font(.headline)
@@ -309,6 +348,26 @@ struct HomeView: View {
             }
             .buttonStyle(.plain)
         }
+    }
+}
+
+struct CategoryView: View {
+    @EnvironmentObject private var model: AppModel
+    let category: MediaCategory
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 16)], spacing: 22) {
+                ForEach(model.items(in: category)) { item in
+                    NavigationLink(value: item) { MediaCard(item: item) }
+                        .buttonStyle(.plain)
+                }
+            }
+            .padding(16)
+        }
+        .background(Color.black)
+        .navigationTitle(category.rawValue)
+        .navigationDestination(for: MediaItem.self) { DetailView(item: $0) }
     }
 }
 
@@ -367,21 +426,43 @@ struct PosterArt: View {
     let item: MediaItem
     let compact: Bool
 
-    private var colors: [Color] {
+    private var gradient: [Color] {
         switch item.category {
-        case .movie: return [Color(red: 0.38, green: 0.05, blue: 0.18), Color(red: 0.05, green: 0.08, blue: 0.18)]
-        case .series: return [Color(red: 0.05, green: 0.22, blue: 0.32), Color(red: 0.03, green: 0.05, blue: 0.11)]
-        case .anime: return [Color(red: 0.30, green: 0.08, blue: 0.45), Color(red: 0.05, green: 0.04, blue: 0.13)]
+        case .movie: return [Color(red: 0.30, green: 0.04, blue: 0.12), Color(red: 0.03, green: 0.04, blue: 0.09)]
+        case .series: return [Color(red: 0.04, green: 0.18, blue: 0.28), Color(red: 0.02, green: 0.03, blue: 0.08)]
+        case .anime: return [Color(red: 0.25, green: 0.06, blue: 0.38), Color(red: 0.03, green: 0.02, blue: 0.09)]
         }
     }
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+            LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
+
+            if let url = item.posterURL {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    default:
+                        fallback
+                    }
+                }
+            } else {
+                fallback
+            }
+
+            if !compact {
+                LinearGradient(colors: [.clear, .black.opacity(0.3)], startPoint: .top, endPoint: .bottom)
+            }
+        }
+        .clipped()
+    }
+
+    private var fallback: some View {
+        ZStack {
             Circle()
                 .fill(.white.opacity(0.08))
                 .frame(width: compact ? 100 : 240)
-                .blur(radius: compact ? 1 : 6)
                 .offset(x: compact ? 38 : 100, y: compact ? -60 : -120)
             Image(systemName: item.category.symbol)
                 .font(.system(size: compact ? 42 : 92, weight: .thin))
@@ -425,23 +506,10 @@ struct DetailView: View {
                         .foregroundStyle(.secondary)
                     Text(item.genres.joined(separator: "  •  "))
                         .font(.caption.bold())
-                        .foregroundStyle(.pink)
+                        .foregroundStyle(.white.opacity(0.72))
                 }
 
-                if let stream = item.streamURL {
-                    NavigationLink {
-                        PlayerView(item: item, url: stream)
-                            .onAppear { progress.markStarted(item) }
-                    } label: {
-                        Label("Play Now", systemImage: "play.fill")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .foregroundStyle(.black)
-                    }
-                    .buttonStyle(.plain)
-                }
+                playButton
 
                 HStack(spacing: 12) {
                     Button { library.toggle(item) } label: {
@@ -462,8 +530,16 @@ struct DetailView: View {
                     .foregroundStyle(.white.opacity(0.84))
                     .lineSpacing(5)
 
+                if item.frameXTV != nil {
+                    Label("Playback uses the documented FrameXTV embed SDK. The rest of this screen is native SwiftUI.", systemImage: "iphone.gen3")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding()
+                        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
+                }
+
                 if !downloads.canDownload(item) {
-                    Label("Offline download activates when your authorized provider supplies a downloadable media URL.", systemImage: "lock.shield")
+                    Label("Offline download remains disabled unless your authorized provider supplies a downloadable media URL.", systemImage: "lock.shield")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .padding()
@@ -474,6 +550,44 @@ struct DetailView: View {
         }
         .background(Color.black)
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    @ViewBuilder
+    private var playButton: some View {
+        if let playback = item.frameXTV {
+            NavigationLink {
+                FrameXTVPlayerScreen(item: item, playback: playback)
+                    .onAppear { progress.markStarted(item) }
+            } label: {
+                Label("Play Now", systemImage: "play.fill")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .foregroundStyle(.black)
+            }
+            .buttonStyle(.plain)
+        } else if let stream = item.streamURL {
+            NavigationLink {
+                NativePlayerView(item: item, url: stream)
+                    .onAppear { progress.markStarted(item) }
+            } label: {
+                Label("Play Demo", systemImage: "play.fill")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .foregroundStyle(.black)
+            }
+            .buttonStyle(.plain)
+        } else {
+            Label("Playback source unavailable", systemImage: "play.slash")
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .foregroundStyle(.secondary)
+        }
     }
 
     private var isDownloading: Bool {
@@ -492,7 +606,7 @@ struct DetailView: View {
     }
 }
 
-struct PlayerView: View {
+struct NativePlayerView: View {
     let item: MediaItem
     let url: URL
     @State private var player = AVPlayer()
@@ -592,7 +706,7 @@ struct DownloadsView: View {
                 List(finishedItems) { item in
                     if case .finished(let url) = downloads.state(for: item) {
                         NavigationLink {
-                            PlayerView(item: item, url: url)
+                            NativePlayerView(item: item, url: url)
                         } label: {
                             HStack(spacing: 14) {
                                 PosterArt(item: item, compact: true)
