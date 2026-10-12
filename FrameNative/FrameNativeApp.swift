@@ -10,11 +10,12 @@ struct XSTVApp: App {
             "FrameNative.tmdbToken": "automatic-proxy",
             "XSTV.autoNextEpisode": true
         ])
+        XSTVPlaybackEnvironment.configure()
     }
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            EnhancedRootView()
                 .environmentObject(app)
                 .environmentObject(library)
                 .preferredColorScheme(.dark)
