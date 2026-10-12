@@ -1,13 +1,14 @@
 import SwiftUI
 
 @main
-struct FrameNativeApp: App {
+struct XSTVApp: App {
     @StateObject private var app = AppState()
     @StateObject private var library = LibraryStore()
 
     init() {
         UserDefaults.standard.register(defaults: [
-            "FrameNative.tmdbToken": "automatic-proxy"
+            "FrameNative.tmdbToken": "automatic-proxy",
+            "XSTV.autoNextEpisode": true
         ])
     }
 
