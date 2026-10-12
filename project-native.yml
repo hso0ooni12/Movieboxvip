@@ -20,6 +20,9 @@ targets:
     platform: iOS
     sources:
       - path: FrameNative
+        excludes:
+          - FrameXTVPlayer.swift
+          - Views/GenreCatalogView.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: "com.xsstore.xstv"
