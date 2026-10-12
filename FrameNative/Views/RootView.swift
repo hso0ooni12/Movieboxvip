@@ -6,19 +6,12 @@ struct RootView: View {
     @State private var showSettings = false
 
     var body: some View {
-        Group {
-            if app.isConfigured {
-                mainTabs
-            } else {
-                SetupView()
+        mainTabs
+            .sheet(isPresented: $showSettings) {
+                NavigationStack { SettingsView() }
+                    .preferredColorScheme(.dark)
             }
-        }
-        .sheet(isPresented: $showSettings) {
-            NavigationStack { SettingsView() }
-        }
-        .task {
-            if app.isConfigured { await app.loadHome() }
-        }
+            .task { await app.loadHome() }
     }
 
     private var mainTabs: some View {
@@ -27,182 +20,126 @@ struct RootView: View {
                 .tabItem { Label("Home", systemImage: "house.fill") }
 
             NavigationStack { CatalogView(kind: .movie, title: "Movies") }
-                .tabItem { Label("Movies", systemImage: "film.stack.fill") }
+                .tabItem { Label("Movies", systemImage: "film.fill") }
 
-            NavigationStack { CatalogView(kind: .tv, title: "TV") }
-                .tabItem { Label("TV", systemImage: "tv.fill") }
+            NavigationStack { CatalogView(kind: .tv, title: "Series") }
+                .tabItem { Label("Series", systemImage: "play.tv.fill") }
 
             NavigationStack { CatalogView(kind: .anime, title: "Anime") }
-                .tabItem { Label("Anime", systemImage: "sparkles.tv.fill") }
+                .tabItem { Label("Anime", systemImage: "sparkles") }
 
             NavigationStack { SearchView() }
                 .tabItem { Label("Search", systemImage: "magnifyingglass") }
         }
-        .tint(.cyan)
-    }
-}
-
-struct SetupView: View {
-    @EnvironmentObject private var app: AppState
-    @State private var token = ""
-    @State private var validating = false
-    @State private var error: String?
-
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    Spacer(minLength: 52)
-                    HStack(spacing: 12) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(.white)
-                            Text("fX")
-                                .font(.system(size: 24, weight: .black, design: .rounded))
-                                .foregroundStyle(.black)
-                        }
-                        .frame(width: 58, height: 58)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Frame Native")
-                                .font(.system(size: 30, weight: .black, design: .rounded))
-                            Text("Native catalog • FrameXTV player")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("One-time catalog setup")
-                            .font(.title2.bold())
-                        Text("Paste your TMDB Read Access Token. It is stored only on this iPhone and is used for movie/TV metadata, posters, seasons and search. Playback uses the FrameXTV embed you provided.")
-                            .foregroundStyle(.secondary)
-                            .lineSpacing(4)
-                    }
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("TMDB Read Access Token")
-                            .font(.caption.bold())
-                            .foregroundStyle(.secondary)
-                        SecureField("eyJhbGciOiJIUzI1NiJ9…", text: $token)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .padding(14)
-                            .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
-                    }
-
-                    if let error {
-                        Label(error, systemImage: "exclamationmark.triangle.fill")
-                            .font(.footnote)
-                            .foregroundStyle(.orange)
-                    }
-
-                    Button {
-                        Task { await save() }
-                    } label: {
-                        HStack {
-                            if validating { ProgressView().tint(.black) }
-                            Text(validating ? "Checking…" : "Continue")
-                                .font(.headline)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-                        .foregroundStyle(.black)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(validating || token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        Label("No certificate or Apple secret is needed inside GitHub.", systemImage: "checkmark.shield")
-                        Label("The token can be changed later from Settings.", systemImage: "gearshape")
-                        Label("No direct stream URLs are extracted by the app.", systemImage: "lock.shield")
-                    }
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 6)
-                }
-                .padding(.horizontal, 22)
-                .padding(.bottom, 40)
-            }
-        }
-    }
-
-    @MainActor
-    private func save() async {
-        validating = true
-        error = nil
-        do {
-            try await app.validateToken(token)
-            app.saveToken(token)
-            await app.loadHome(force: true)
-        } catch {
-            self.error = error.localizedDescription
-        }
-        validating = false
+        .tint(.white)
+        .toolbarBackground(Color.black.opacity(0.96), for: .tabBar)
+        .toolbarBackground(.visible, for: .tabBar)
     }
 }
 
 struct SettingsView: View {
     @EnvironmentObject private var app: AppState
+    @EnvironmentObject private var library: LibraryStore
     @Environment(\.dismiss) private var dismiss
-    @State private var token = ""
-    @State private var validating = false
-    @State private var error: String?
+    @State private var selectedLanguage = "en-US"
+    @State private var showClearHistoryConfirmation = false
+
+    private let languages: [(String, String)] = [
+        ("English", "en-US"),
+        ("العربية", "ar-SA"),
+        ("Français", "fr-FR"),
+        ("Español", "es-ES"),
+        ("Deutsch", "de-DE"),
+        ("Italiano", "it-IT"),
+        ("Türkçe", "tr-TR"),
+        ("日本語", "ja-JP"),
+        ("한국어", "ko-KR")
+    ]
 
     var body: some View {
-        Form {
-            Section("Catalog") {
-                SecureField("TMDB Read Access Token", text: $token)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+        ZStack {
+            Color.black.ignoresSafeArea()
+            Form {
+                Section {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .fill(.white)
+                            Text("fX")
+                                .font(.system(size: 20, weight: .black, design: .rounded))
+                                .foregroundStyle(.black)
+                        }
+                        .frame(width: 48, height: 48)
 
-                Picker("Metadata language", selection: $app.language) {
-                    Text("English").tag("en-US")
-                    Text("العربية").tag("ar-SA")
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("frameX")
+                                .font(.headline.weight(.bold))
+                            Text("Native iOS entertainment experience")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
                 }
 
-                Button(validating ? "Checking…" : "Validate & Save") {
-                    Task { await save() }
+                Section("Experience") {
+                    Picker("Metadata language", selection: $selectedLanguage) {
+                        ForEach(languages, id: \.1) { language in
+                            Text(language.0).tag(language.1)
+                        }
+                    }
+
+                    LabeledContent("Catalog", value: "TMDB")
+                    LabeledContent("Playback", value: "FrameXTV")
+                    LabeledContent("Player", value: "Native + Embed SDK")
                 }
-                .disabled(validating || token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-                if let error { Text(error).foregroundStyle(.orange).font(.footnote) }
-            }
+                Section("Playback") {
+                    Label("Subtitle selector is available inside the player", systemImage: "captions.bubble.fill")
+                    Label("Multiple playback providers supported", systemImage: "server.rack")
+                    Label("Continue Watching saves automatically", systemImage: "clock.arrow.circlepath")
+                }
 
-            Section("Playback") {
-                LabeledContent("Engine", value: "FrameXTV Embed")
-                LabeledContent("Player UI", value: "Native + WebKit bridge")
-                LabeledContent("Continue Watching", value: "On-device")
-            }
+                Section("Library") {
+                    LabeledContent("Saved titles", value: "\(library.favoriteItems.count)")
+                    LabeledContent("Continue Watching", value: "\(library.continueWatching.count)")
 
-            Section("Privacy") {
-                Text("Your TMDB token, favorites and watch progress are stored locally on this device using iOS app storage.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    Button(role: .destructive) {
+                        showClearHistoryConfirmation = true
+                    } label: {
+                        Label("Clear watch history", systemImage: "trash")
+                    }
+                }
+
+                Section("Privacy") {
+                    Text("Your favorites and watch progress stay on this device. TMDB credentials are stored on the server, not inside the IPA.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
+            .scrollContentBackground(.hidden)
         }
         .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Done") { dismiss() }
+                    .fontWeight(.semibold)
             }
         }
-        .onAppear { token = app.token }
-    }
-
-    @MainActor
-    private func save() async {
-        validating = true
-        error = nil
-        do {
-            try await app.validateToken(token)
-            app.saveToken(token)
-            await app.loadHome(force: true)
-            dismiss()
-        } catch {
-            self.error = error.localizedDescription
+        .onAppear { selectedLanguage = app.language }
+        .onChange(of: selectedLanguage) { newValue in
+            guard newValue != app.language else { return }
+            app.language = newValue
+            Task { await app.loadHome(force: true) }
         }
-        validating = false
+        .confirmationDialog(
+            "Clear Continue Watching history?",
+            isPresented: $showClearHistoryConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Clear History", role: .destructive) { library.clearWatchHistory() }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 }
