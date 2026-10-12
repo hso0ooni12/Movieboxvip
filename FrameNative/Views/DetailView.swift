@@ -11,15 +11,14 @@ struct DetailView: View {
     @State private var loading = true
     @State private var episodeLoading = false
     @State private var error: String?
+    @State private var heroAppeared = false
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     hero
-
                     VStack(alignment: .leading, spacing: 22) {
                         actionRow
                         playbackFeatures
@@ -36,9 +35,7 @@ struct DetailView: View {
                             .foregroundStyle(.white.opacity(0.83))
                             .lineSpacing(5)
 
-                        if item.kind != .movie {
-                            episodeSection
-                        }
+                        if item.kind != .movie { episodeSection }
 
                         if let error {
                             Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -59,6 +56,9 @@ struct DetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.black.opacity(0.55), for: .navigationBar)
         .task { await load() }
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.75)) { heroAppeared = true }
+        }
     }
 
     private var currentItem: MediaItem { details?.item ?? item }
@@ -67,6 +67,8 @@ struct DetailView: View {
         ZStack(alignment: .bottomLeading) {
             RemotePoster(item: currentItem, backdrop: true, cornerRadius: 0)
                 .frame(height: 410)
+                .scaleEffect(heroAppeared ? 1.0 : 1.035)
+                .opacity(heroAppeared ? 1 : 0.72)
 
             LinearGradient(
                 colors: [.black.opacity(0.05), .black.opacity(0.12), .black.opacity(0.98)],
@@ -77,12 +79,8 @@ struct DetailView: View {
             VStack(alignment: .leading, spacing: 11) {
                 HStack(spacing: 7) {
                     GlassBadge(text: currentItem.year)
-                    if currentItem.voteAverage > 0 {
-                        GlassBadge(text: currentItem.ratingText, systemImage: "star.fill")
-                    }
-                    if let runtime = details?.runtimeText {
-                        GlassBadge(text: runtime)
-                    }
+                    if currentItem.voteAverage > 0 { GlassBadge(text: currentItem.ratingText, systemImage: "star.fill") }
+                    if let runtime = details?.runtimeText { GlassBadge(text: runtime) }
                 }
 
                 Text(currentItem.title)
@@ -99,7 +97,10 @@ struct DetailView: View {
             }
             .padding(.horizontal, 18)
             .padding(.bottom, 20)
+            .offset(y: heroAppeared ? 0 : 16)
+            .opacity(heroAppeared ? 1 : 0)
         }
+        .animation(.easeOut(duration: 0.7), value: heroAppeared)
     }
 
     private var actionRow: some View {
@@ -118,9 +119,7 @@ struct DetailView: View {
                 .buttonStyle(.plain)
             }
 
-            Button {
-                library.toggleFavorite(currentItem)
-            } label: {
+            Button { library.toggleFavorite(currentItem) } label: {
                 Label(
                     library.isFavorite(currentItem) ? "Saved" : "My List",
                     systemImage: library.isFavorite(currentItem) ? "checkmark" : "plus"
@@ -139,10 +138,11 @@ struct DetailView: View {
     private var playbackFeatures: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 9) {
-                FeaturePill(title: "Subtitles", systemImage: "captions.bubble.fill")
+                FeaturePill(title: "Named Subtitles", systemImage: "captions.bubble.fill")
+                FeaturePill(title: "Auto Next", systemImage: "forward.end.fill")
                 FeaturePill(title: "Multiple Servers", systemImage: "server.rack")
                 FeaturePill(title: "Resume", systemImage: "clock.arrow.circlepath")
-                FeaturePill(title: "Speed Control", systemImage: "speedometer")
+                FeaturePill(title: "Landscape", systemImage: "rectangle.landscape")
             }
         }
         .scrollIndicators(.hidden)
@@ -159,16 +159,10 @@ struct DetailView: View {
         VStack(alignment: .leading, spacing: 15) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Episodes")
-                        .font(.title2.bold())
-                    if let selectedSeason {
-                        Text("Season \(selectedSeason)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    Text("Episodes").font(.title2.bold())
+                    if let selectedSeason { Text("Season \(selectedSeason)").font(.caption).foregroundStyle(.secondary) }
                 }
                 Spacer()
-
                 if !seasons.isEmpty {
                     Picker("Season", selection: Binding(
                         get: { selectedSeason ?? seasons.first?.seasonNumber ?? 1 },
@@ -177,9 +171,7 @@ struct DetailView: View {
                             Task { await loadEpisodes(season: value) }
                         }
                     )) {
-                        ForEach(seasons) { season in
-                            Text(season.name).tag(season.seasonNumber)
-                        }
+                        ForEach(seasons) { season in Text(season.name).tag(season.seasonNumber) }
                     }
                     .pickerStyle(.menu)
                     .padding(.horizontal, 11)
@@ -191,16 +183,19 @@ struct DetailView: View {
             if episodeLoading {
                 HStack(spacing: 10) {
                     ProgressView().tint(.white)
-                    Text("Loading episodes…")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    Text("Loading episodes…").font(.subheadline).foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 18)
             } else {
                 LazyVStack(spacing: 11) {
-                    ForEach(episodes) { episode in
+                    ForEach(Array(episodes.enumerated()), id: \.element.id) { index, episode in
                         NavigationLink {
-                            FrameXTVPlayerScreen(item: currentItem, playback: episodePlayback(episode))
+                            FrameXTVPlayerScreen(
+                                item: currentItem,
+                                playback: episodePlayback(episode),
+                                nextPlayback: nextPlayback(after: index),
+                                nextLabel: nextLabel(after: index)
+                            )
                         } label: {
                             EpisodeRow(episode: episode, current: isCurrent(episode))
                         }
@@ -218,6 +213,29 @@ struct DetailView: View {
         return FrameXTVPlayback(tmdbID: item.tmdbID, season: season, episode: episode.episodeNumber, startAt: resume)
     }
 
+    private func nextPlayback(after index: Int) -> FrameXTVPlayback? {
+        let season = selectedSeason ?? 1
+        if episodes.indices.contains(index + 1) {
+            return FrameXTVPlayback(tmdbID: item.tmdbID, season: season, episode: episodes[index + 1].episodeNumber)
+        }
+        if let nextSeason = seasons.map(\.seasonNumber).filter({ $0 > season }).sorted().first {
+            return FrameXTVPlayback(tmdbID: item.tmdbID, season: nextSeason, episode: 1)
+        }
+        return nil
+    }
+
+    private func nextLabel(after index: Int) -> String? {
+        let season = selectedSeason ?? 1
+        if episodes.indices.contains(index + 1) {
+            let next = episodes[index + 1]
+            return "S\(season) · E\(next.episodeNumber)  \(next.name)"
+        }
+        if let nextSeason = seasons.map(\.seasonNumber).filter({ $0 > season }).sorted().first {
+            return "Season \(nextSeason) · Episode 1"
+        }
+        return nil
+    }
+
     private func isCurrent(_ episode: Episode) -> Bool {
         saved?.season == selectedSeason && saved?.episode == episode.episodeNumber
     }
@@ -232,27 +250,20 @@ struct DetailView: View {
             details = try await detailRequest
             if item.kind != .movie {
                 seasons = try await seasonRequest
-                let preferred = saved?.season.flatMap { season in
-                    seasons.contains(where: { $0.seasonNumber == season }) ? season : nil
-                }
+                let preferred = saved?.season.flatMap { season in seasons.contains(where: { $0.seasonNumber == season }) ? season : nil }
                 let first = preferred ?? seasons.first?.seasonNumber
                 selectedSeason = first
                 if let first { await loadEpisodes(season: first) }
             }
-        } catch {
-            self.error = error.localizedDescription
-        }
+        } catch { self.error = error.localizedDescription }
         loading = false
     }
 
     @MainActor
     private func loadEpisodes(season: Int) async {
         episodeLoading = true
-        do {
-            episodes = try await app.episodes(tmdbID: item.tmdbID, season: season)
-        } catch {
-            self.error = error.localizedDescription
-        }
+        do { episodes = try await app.episodes(tmdbID: item.tmdbID, season: season) }
+        catch { self.error = error.localizedDescription }
         episodeLoading = false
     }
 }
@@ -260,7 +271,6 @@ struct DetailView: View {
 private struct FeaturePill: View {
     let title: String
     let systemImage: String
-
     var body: some View {
         Label(title, systemImage: systemImage)
             .font(.caption.weight(.semibold))
@@ -275,35 +285,21 @@ private struct FeaturePill: View {
 struct EpisodeRow: View {
     let episode: Episode
     let current: Bool
-
     var body: some View {
         HStack(spacing: 13) {
             ZStack(alignment: .bottomLeading) {
                 if let url = episode.stillURL() {
                     AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image): image.resizable().scaledToFill()
-                        default: Color.white.opacity(0.055)
-                        }
+                        switch phase { case .success(let image): image.resizable().scaledToFill(); default: Color.white.opacity(0.055) }
                     }
-                } else {
-                    Color.white.opacity(0.055)
-                }
-
+                } else { Color.white.opacity(0.055) }
                 LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .center, endPoint: .bottom)
-
                 Text("E\(episode.episodeNumber)")
-                    .font(.caption.bold())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(.black.opacity(0.7), in: Capsule())
-                    .padding(8)
-
+                    .font(.caption.bold()).padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(.black.opacity(0.7), in: Capsule()).padding(8)
                 Image(systemName: "play.fill")
-                    .font(.caption.bold())
-                    .frame(width: 36, height: 36)
-                    .background(.white, in: Circle())
-                    .foregroundStyle(.black)
+                    .font(.caption.bold()).frame(width: 36, height: 36)
+                    .background(.white, in: Circle()).foregroundStyle(.black)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
             .frame(width: 132, height: 76)
@@ -311,32 +307,17 @@ struct EpisodeRow: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
-                    Text(episode.name)
-                        .font(.subheadline.bold())
-                        .lineLimit(1)
-                    if current {
-                        Image(systemName: "clock.fill")
-                            .foregroundStyle(.cyan)
-                            .font(.caption)
-                    }
+                    Text(episode.name).font(.subheadline.bold()).lineLimit(1)
+                    if current { Image(systemName: "clock.fill").foregroundStyle(.cyan).font(.caption) }
                 }
-
                 if !episode.overview.isEmpty {
-                    Text(episode.overview)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                    Text(episode.overview).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 } else if let runtime = episode.runtime {
-                    Text("\(runtime) min")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text("\(runtime) min").font(.caption).foregroundStyle(.secondary)
                 }
             }
-
             Spacer(minLength: 0)
-            Image(systemName: "chevron.right")
-                .font(.caption.bold())
-                .foregroundStyle(.secondary)
+            Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.secondary)
         }
         .padding(10)
         .background(.white.opacity(current ? 0.085 : 0.045), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
