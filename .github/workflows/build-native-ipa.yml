@@ -5,6 +5,7 @@ on:
     branches: ["frame-native"]
     paths:
       - "FrameNative/**"
+      - "scripts/**"
       - "project-native.yml"
       - ".github/workflows/build-native-ipa.yml"
   workflow_dispatch:
@@ -148,6 +149,9 @@ jobs:
           }
           JSON
 
+      - name: Apply XS Player interaction fix
+        run: python3 scripts/player_visibility_fix.py
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -214,7 +218,7 @@ jobs:
             echo "App name: $APP_NAME"
             echo "Bundle ID: $BUNDLE_ID"
             echo "Brand: XS TV"
-            echo "Playback: FrameXTV official embed controls"
+            echo "Playback: XS Player custom controls"
             echo "Minimum iOS: 16.0"
             echo "Signing: none"
             echo "Build number: $GITHUB_RUN_NUMBER"
