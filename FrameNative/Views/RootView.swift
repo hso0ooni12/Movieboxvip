@@ -31,8 +31,8 @@ struct RootView: View {
             NavigationStack { SearchView() }
                 .tabItem { Label("Search", systemImage: "magnifyingglass") }
         }
-        .tint(.white)
-        .toolbarBackground(Color.black.opacity(0.96), for: .tabBar)
+        .tint(.cyan)
+        .toolbarBackground(Color.black.opacity(0.97), for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
     }
 }
@@ -44,6 +44,9 @@ struct SettingsView: View {
     @State private var selectedLanguage = "en-US"
     @State private var showClearHistoryConfirmation = false
 
+    @AppStorage("FrameNative.preferredProvider") private var preferredProvider = "auto"
+    @AppStorage("FrameNative.preferredSpeed") private var preferredSpeed = 1.0
+
     private let languages: [(String, String)] = [
         ("English", "en-US"),
         ("العربية", "ar-SA"),
@@ -51,38 +54,44 @@ struct SettingsView: View {
         ("Español", "es-ES"),
         ("Deutsch", "de-DE"),
         ("Italiano", "it-IT"),
+        ("Português", "pt-BR"),
         ("Türkçe", "tr-TR"),
+        ("हिन्दी", "hi-IN"),
         ("日本語", "ja-JP"),
         ("한국어", "ko-KR")
     ]
 
+    private let providers = ["auto", "barbarian", "archer", "goblin"]
+    private let speeds: [Double] = [0.5, 1, 1.25, 1.5, 2]
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+
             Form {
                 Section {
                     HStack(spacing: 14) {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
                                 .fill(.white)
                             Text("fX")
                                 .font(.system(size: 20, weight: .black, design: .rounded))
                                 .foregroundStyle(.black)
                         }
-                        .frame(width: 48, height: 48)
+                        .frame(width: 50, height: 50)
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text("frameX")
-                                .font(.headline.weight(.bold))
-                            Text("Native iOS entertainment experience")
+                                .font(.title3.weight(.bold))
+                            Text("Premium native entertainment for iPhone & iPad")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 5)
                 }
 
-                Section("Experience") {
+                Section("Language & Catalog") {
                     Picker("Metadata language", selection: $selectedLanguage) {
                         ForEach(languages, id: \.1) { language in
                             Text(language.0).tag(language.1)
@@ -91,13 +100,43 @@ struct SettingsView: View {
 
                     LabeledContent("Catalog", value: "TMDB")
                     LabeledContent("Playback", value: "FrameXTV")
-                    LabeledContent("Player", value: "Native + Embed SDK")
                 }
 
-                Section("Playback") {
-                    Label("Subtitle selector is available inside the player", systemImage: "captions.bubble.fill")
-                    Label("Multiple playback providers supported", systemImage: "server.rack")
-                    Label("Continue Watching saves automatically", systemImage: "clock.arrow.circlepath")
+                Section("Playback Defaults") {
+                    Picker("Default server", selection: $preferredProvider) {
+                        ForEach(providers, id: \.self) { provider in
+                            Text(provider == "auto" ? "Automatic" : provider.capitalized)
+                                .tag(provider)
+                        }
+                    }
+
+                    Picker("Playback speed", selection: $preferredSpeed) {
+                        ForEach(speeds, id: \.self) { speed in
+                            Text(speed == 1 ? "1× Normal" : String(format: "%g×", speed))
+                                .tag(speed)
+                        }
+                    }
+
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "captions.bubble.fill")
+                            .foregroundStyle(.cyan)
+                            .frame(width: 24)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Subtitles")
+                                .font(.body.weight(.semibold))
+                            Text("The player now has a permanent Subtitles button that opens FrameXTV’s exact language menu when available, plus a direct track fallback.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                Section("Player Features") {
+                    Label("Exact subtitle menu + direct track fallback", systemImage: "captions.bubble.fill")
+                    Label("Server switching and playback speed", systemImage: "server.rack")
+                    Label("Resume playback automatically", systemImage: "clock.arrow.circlepath")
+                    Label("Native quick seek controls", systemImage: "goforward.10")
                 }
 
                 Section("Library") {
@@ -112,7 +151,7 @@ struct SettingsView: View {
                 }
 
                 Section("Privacy") {
-                    Text("Your favorites and watch progress stay on this device. TMDB credentials are stored on the server, not inside the IPA.")
+                    Text("Favorites and watch progress stay on this device. TMDB credentials stay on the server and are not embedded in the IPA.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
