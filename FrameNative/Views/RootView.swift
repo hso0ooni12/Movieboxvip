@@ -75,13 +75,14 @@ struct RootView: View {
             }
         }
         .tint(.pink)
-        .toolbarBackground(Color.black.opacity(0.97), for: .tabBar)
+        .toolbarBackground(Color.black.opacity(0.94), for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
     }
 }
 
 private struct XSTVSplashView: View {
     @State private var animate = false
+    @State private var sweep = false
 
     var body: some View {
         ZStack {
@@ -89,31 +90,40 @@ private struct XSTVSplashView: View {
 
             RadialGradient(
                 colors: [
-                    Color.purple.opacity(0.24),
+                    Color.purple.opacity(0.25),
                     Color.pink.opacity(0.13),
                     Color.orange.opacity(0.05),
                     .clear
                 ],
                 center: .center,
                 startRadius: 10,
-                endRadius: 330
+                endRadius: 340
             )
             .ignoresSafeArea()
-            .scaleEffect(animate ? 1.12 : 0.88)
-            .opacity(animate ? 1 : 0.45)
+            .scaleEffect(animate ? 1.14 : 0.88)
+            .opacity(animate ? 1 : 0.42)
 
-            VStack(spacing: 18) {
-                XSBrandMark(size: 150)
-                    .scaleEffect(animate ? 1 : 0.82)
+            LinearGradient(
+                colors: [.clear, .white.opacity(0.055), .clear],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .rotationEffect(.degrees(-18))
+            .offset(x: sweep ? 460 : -460)
+            .ignoresSafeArea()
+
+            VStack(spacing: 19) {
+                XSBrandMark(size: 158)
+                    .scaleEffect(animate ? 1 : 0.80)
                     .opacity(animate ? 1 : 0)
 
-                VStack(spacing: 5) {
+                VStack(spacing: 6) {
                     XSWordmark()
 
                     Text("ENTERTAINMENT · REIMAGINED")
                         .font(.caption2.bold())
-                        .tracking(2.6)
-                        .foregroundStyle(.white.opacity(0.5))
+                        .tracking(2.7)
+                        .foregroundStyle(.white.opacity(0.48))
                 }
                 .opacity(animate ? 1 : 0)
                 .offset(y: animate ? 0 : 10)
@@ -122,6 +132,9 @@ private struct XSTVSplashView: View {
         .onAppear {
             withAnimation(.spring(response: 0.78, dampingFraction: 0.82)) {
                 animate = true
+            }
+            withAnimation(.linear(duration: 1.15).delay(0.15)) {
+                sweep = true
             }
         }
     }
@@ -151,62 +164,22 @@ struct SettingsView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            XSBackground()
 
-            Form {
-                Section {
-                    HStack(spacing: 12) {
-                        XSBrandMark(size: 46, showGlow: false)
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("XS TV")
-                                .font(.title3.weight(.bold))
-                            Text("Premium entertainment for iPhone & iPad")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.vertical, 4)
+            ScrollView {
+                VStack(spacing: 18) {
+                    brandHeader
+                    preferencesCard
+                    playbackCard
+                    libraryCard
+                    privacyCard
+                    versionFooter
                 }
-
-                Section("Language & Catalog") {
-                    Picker("Metadata language", selection: $selectedLanguage) {
-                        ForEach(languages, id: \.1) { language in
-                            Text(language.0).tag(language.1)
-                        }
-                    }
-
-                    LabeledContent("Catalog", value: "TMDB")
-                    LabeledContent("Playback", value: "FrameXTV")
-                }
-
-                Section("Playback") {
-                    Toggle("Play next episode automatically", isOn: $autoNextEpisode)
-
-                    Label("All available servers stay inside the player", systemImage: "server.rack")
-                    Label("Subtitle languages use the player’s real list", systemImage: "captions.bubble.fill")
-                    Label("Quality and audio stay synced with each server", systemImage: "waveform")
-                    Label("Resume saves season, episode and exact position", systemImage: "clock.arrow.circlepath")
-                }
-
-                Section("Library") {
-                    LabeledContent("Saved titles", value: "\(library.favoriteItems.count)")
-                    LabeledContent("Continue Watching", value: "\(library.continueWatching.count)")
-
-                    Button(role: .destructive) {
-                        showClearHistoryConfirmation = true
-                    } label: {
-                        Label("Clear watch history", systemImage: "trash")
-                    }
-                }
-
-                Section("XS TV") {
-                    Text("Designed around the XS Store identity. Favorites and watch progress stay on this device; catalog credentials remain on the server.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 36)
             }
-            .scrollContentBackground(.hidden)
+            .scrollIndicators(.hidden)
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
@@ -238,5 +211,204 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) { }
         }
+    }
+
+    private var brandHeader: some View {
+        ZStack(alignment: .bottomLeading) {
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.purple.opacity(0.28), Color.pink.opacity(0.16), Color.orange.opacity(0.07)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            HStack(spacing: 14) {
+                XSBrandMark(size: 62, showGlow: true)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("XS TV")
+                        .font(.system(size: 28, weight: .black, design: .rounded))
+                    Text("Premium entertainment for iPhone & iPad")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.62))
+                }
+                Spacer()
+            }
+            .padding(18)
+        }
+        .frame(height: 118)
+        .overlay(RoundedRectangle(cornerRadius: 26).stroke(.white.opacity(0.08)))
+    }
+
+    private var preferencesCard: some View {
+        SettingsCard(title: "Experience", systemImage: "slider.horizontal.3") {
+            VStack(spacing: 0) {
+                HStack {
+                    Label("Metadata Language", systemImage: "globe")
+                    Spacer()
+                    Picker("Metadata Language", selection: $selectedLanguage) {
+                        ForEach(languages, id: \.1) { language in
+                            Text(language.0).tag(language.1)
+                        }
+                    }
+                    .labelsHidden()
+                }
+                .padding(.vertical, 12)
+
+                SettingsDivider()
+
+                Toggle(isOn: $autoNextEpisode) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Label("Auto Next Episode", systemImage: "forward.end.fill")
+                        Text("Automatically continue a series when the current episode ends")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .tint(.pink)
+                .padding(.vertical, 12)
+            }
+        }
+    }
+
+    private var playbackCard: some View {
+        SettingsCard(title: "Playback", systemImage: "play.rectangle.fill") {
+            VStack(spacing: 0) {
+                XSTVSettingsFeature(icon: "server.rack", title: "All available servers", detail: "The official player keeps its full live server list")
+                SettingsDivider()
+                XSTVSettingsFeature(icon: "captions.bubble.fill", title: "Real subtitle languages", detail: "Subtitle choices come directly from the active player server")
+                SettingsDivider()
+                XSTVSettingsFeature(icon: "clock.arrow.circlepath", title: "Smart Resume", detail: "Saves title, season, episode and exact playback position")
+                SettingsDivider()
+                XSTVSettingsFeature(icon: "forward.end.fill", title: "Smart Up Next", detail: "Finds the next episode even when you resume directly from Home")
+            }
+        }
+    }
+
+    private var libraryCard: some View {
+        SettingsCard(title: "Library", systemImage: "square.stack.fill") {
+            VStack(spacing: 0) {
+                HStack {
+                    Label("Saved Titles", systemImage: "bookmark.fill")
+                    Spacer()
+                    Text("\(library.favoriteItems.count)")
+                        .font(.headline.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 12)
+
+                SettingsDivider()
+
+                HStack {
+                    Label("Continue Watching", systemImage: "play.circle.fill")
+                    Spacer()
+                    Text("\(library.continueWatching.count)")
+                        .font(.headline.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 12)
+
+                SettingsDivider()
+
+                Button(role: .destructive) {
+                    showClearHistoryConfirmation = true
+                } label: {
+                    HStack {
+                        Label("Clear Watch History", systemImage: "trash")
+                        Spacer()
+                    }
+                    .padding(.vertical, 12)
+                }
+            }
+        }
+    }
+
+    private var privacyCard: some View {
+        SettingsCard(title: "Privacy", systemImage: "lock.shield.fill") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Your My List and viewing progress stay on this device. Catalog credentials remain on the XS TV server and are not embedded in the IPA.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(3)
+            }
+            .padding(.vertical, 11)
+        }
+    }
+
+    private var versionFooter: some View {
+        VStack(spacing: 5) {
+            XSWordmark(compact: true)
+                .opacity(0.72)
+            Text("Designed for a premium native iOS experience")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.34))
+        }
+        .padding(.top, 8)
+    }
+}
+
+private struct SettingsCard<Content: View>: View {
+    let title: String
+    let systemImage: String
+    @ViewBuilder let content: Content
+
+    init(title: String, systemImage: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.systemImage = systemImage
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: systemImage)
+                .font(.caption.bold())
+                .foregroundStyle(.white.opacity(0.55))
+                .textCase(.uppercase)
+                .tracking(1.1)
+
+            VStack(spacing: 0) {
+                content
+            }
+            .padding(.horizontal, 14)
+            .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.065)))
+        }
+    }
+}
+
+private struct XSTVSettingsFeature: View {
+    let icon: String
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.subheadline.weight(.semibold))
+                .frame(width: 34, height: 34)
+                .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 10))
+                .foregroundStyle(.pink)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 11)
+    }
+}
+
+private struct SettingsDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(.white.opacity(0.065))
+            .frame(height: 1)
     }
 }
