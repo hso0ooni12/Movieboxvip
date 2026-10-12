@@ -102,20 +102,13 @@ private struct XSTVSplashView: View {
             .scaleEffect(animate ? 1.12 : 0.88)
             .opacity(animate ? 1 : 0.45)
 
-            VStack(spacing: 22) {
-                Image("XSStoreLogo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 220, height: 220)
-                    .clipShape(RoundedRectangle(cornerRadius: 42, style: .continuous))
-                    .shadow(color: .purple.opacity(0.35), radius: 32)
+            VStack(spacing: 18) {
+                XSBrandMark(size: 150)
                     .scaleEffect(animate ? 1 : 0.82)
                     .opacity(animate ? 1 : 0)
 
                 VStack(spacing: 5) {
-                    Text("XS TV")
-                        .font(.system(size: 36, weight: .black, design: .rounded))
-                        .tracking(-1)
+                    XSWordmark()
 
                     Text("ENTERTAINMENT · REIMAGINED")
                         .font(.caption2.bold())
@@ -162,12 +155,8 @@ struct SettingsView: View {
 
             Form {
                 Section {
-                    HStack(spacing: 14) {
-                        Image("XSStoreLogo")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 58, height: 58)
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    HStack(spacing: 12) {
+                        XSBrandMark(size: 46, showGlow: false)
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text("XS TV")
