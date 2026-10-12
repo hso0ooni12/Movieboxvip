@@ -3,15 +3,12 @@ from pathlib import Path
 path = Path('FrameNative/FrameXTVPlayerV6.swift')
 text = path.read_text()
 
-# V8 intentionally removed optimistic state updates. V13 replaces this function with
-# a stricter version that also clears subtitle state, so normalize the function shape
-# to the marker V13 expects without changing the final generated app behavior.
-current = '''    func selectServer(_ server: XSServerOption) {
-        var payload: [String: Any] = ["action": "server", "name": server.name]
-        if let provider = server.provider { payload["provider"] = provider }
-        send(payload)
-    }
-'''
+# Normalize whatever earlier patches did to selectServer into the marker V13 replaces.
+start = text.find('    func selectServer(_ server: XSServerOption) {')
+end = text.find('\n    func selectQuality(', start)
+if start == -1 or end == -1:
+    raise SystemExit('V13 compat selectServer bounds not found')
+
 marker = '''    func selectServer(_ server: XSServerOption) {
         activeServerName = server.name
         if !server.quality.isEmpty { activeQuality = server.quality }
@@ -20,10 +17,6 @@ marker = '''    func selectServer(_ server: XSServerOption) {
         send(payload)
     }
 '''
-if current in text:
-    text = text.replace(current, marker, 1)
-elif marker not in text:
-    raise SystemExit('V13 compat selectServer shape not found')
-
+text = text[:start] + marker + text[end:]
 path.write_text(text)
 print('Applied V13 compatibility normalization')
