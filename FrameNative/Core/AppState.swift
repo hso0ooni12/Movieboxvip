@@ -8,6 +8,8 @@ final class AppState: ObservableObject {
     }
     @Published var trendingMovies: [MediaItem] = []
     @Published var trendingTV: [MediaItem] = []
+    @Published var popularMovies: [MediaItem] = []
+    @Published var popularTV: [MediaItem] = []
     @Published var anime: [MediaItem] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
@@ -21,7 +23,6 @@ final class AppState: ObservableObject {
         language = UserDefaults.standard.string(forKey: Keys.language) ?? "en-US"
     }
 
-    // Catalog authentication lives on the Railway proxy. The iOS app never needs a TMDB secret.
     var isConfigured: Bool { true }
     var client: TMDBClient { TMDBClient(token: "", language: language) }
 
@@ -32,11 +33,15 @@ final class AppState: ObservableObject {
         do {
             async let movies = client.trendingMovies()
             async let tv = client.trendingTV()
+            async let popularMovieItems = client.popularMovies()
+            async let popularTVItems = client.popularTV()
             async let animeItems = client.anime()
-            let result = try await (movies, tv, animeItems)
+            let result = try await (movies, tv, popularMovieItems, popularTVItems, animeItems)
             trendingMovies = result.0
             trendingTV = result.1
-            anime = result.2
+            popularMovies = result.2
+            popularTV = result.3
+            anime = result.4
             didLoad = true
         } catch {
             errorMessage = error.localizedDescription
@@ -46,10 +51,46 @@ final class AppState: ObservableObject {
 
     func list(for kind: MediaKind) -> [MediaItem] {
         switch kind {
-        case .movie: return trendingMovies
-        case .tv: return trendingTV
+        case .movie: return deduplicated(trendingMovies + popularMovies)
+        case .tv: return deduplicated(trendingTV + popularTV)
         case .anime: return anime
         }
+    }
+
+    var spotlight: [MediaItem] {
+        var mixed: [MediaItem] = []
+        let moviePicks = Array(trendingMovies.prefix(4))
+        let tvPicks = Array(trendingTV.prefix(4))
+        for index in 0..<max(moviePicks.count, tvPicks.count) {
+            if moviePicks.indices.contains(index) { mixed.append(moviePicks[index]) }
+            if tvPicks.indices.contains(index) { mixed.append(tvPicks[index]) }
+        }
+        return Array(deduplicated(mixed).prefix(6))
+    }
+
+    var topTen: [MediaItem] {
+        let combined = trendingMovies + trendingTV
+        return Array(deduplicated(combined).sorted { lhs, rhs in
+            if lhs.voteAverage == rhs.voteAverage { return lhs.title < rhs.title }
+            return lhs.voteAverage > rhs.voteAverage
+        }.prefix(10))
+    }
+
+    func related(to item: MediaItem, limit: Int = 12) -> [MediaItem] {
+        let source = item.kind == .movie ? list(for: .movie) : (item.kind == .anime ? anime : list(for: .tv))
+        let wanted = Set(item.genreIDs)
+        let ranked = source
+            .filter { $0.id != item.id }
+            .map { candidate -> (MediaItem, Int) in
+                let overlap = Set(candidate.genreIDs).intersection(wanted).count
+                return (candidate, overlap)
+            }
+            .sorted { lhs, rhs in
+                if lhs.1 == rhs.1 { return lhs.0.voteAverage > rhs.0.voteAverage }
+                return lhs.1 > rhs.1
+            }
+            .map(\.0)
+        return Array(ranked.prefix(limit))
     }
 
     func search(_ query: String) async throws -> [MediaItem] {
@@ -66,6 +107,11 @@ final class AppState: ObservableObject {
 
     func episodes(tmdbID: Int, season: Int) async throws -> [Episode] {
         try await client.episodes(tmdbID: tmdbID, season: season)
+    }
+
+    private func deduplicated(_ items: [MediaItem]) -> [MediaItem] {
+        var seen = Set<String>()
+        return items.filter { seen.insert($0.id).inserted }
     }
 }
 
