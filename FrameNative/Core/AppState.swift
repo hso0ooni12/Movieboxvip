@@ -3,9 +3,6 @@ import SwiftUI
 
 @MainActor
 final class AppState: ObservableObject {
-    @Published var token: String {
-        didSet { UserDefaults.standard.set(token, forKey: Keys.token) }
-    }
     @Published var language: String {
         didSet { UserDefaults.standard.set(language, forKey: Keys.language) }
     }
@@ -17,29 +14,18 @@ final class AppState: ObservableObject {
     @Published var didLoad = false
 
     enum Keys {
-        static let token = "FrameNative.tmdbToken"
         static let language = "FrameNative.language"
     }
 
     init() {
-        token = UserDefaults.standard.string(forKey: Keys.token) ?? ""
         language = UserDefaults.standard.string(forKey: Keys.language) ?? "en-US"
     }
 
-    var isConfigured: Bool { !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    var client: TMDBClient { TMDBClient(token: token, language: language) }
-
-    func validateToken(_ candidate: String) async throws {
-        try await TMDBClient(token: candidate, language: language).validate()
-    }
-
-    func saveToken(_ candidate: String) {
-        token = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
-        didLoad = false
-    }
+    // Catalog authentication lives on the Railway proxy. The iOS app never needs a TMDB secret.
+    var isConfigured: Bool { true }
+    var client: TMDBClient { TMDBClient(token: "", language: language) }
 
     func loadHome(force: Bool = false) async {
-        guard isConfigured else { return }
         if didLoad && !force { return }
         isLoading = true
         errorMessage = nil
@@ -145,6 +131,13 @@ final class LibraryStore: ObservableObject {
 
     func removeProgress(for item: MediaItem) {
         progress[item.id] = nil
+        lastSavedProgress[item.id] = nil
+        saveProgress()
+    }
+
+    func clearWatchHistory() {
+        progress.removeAll()
+        lastSavedProgress.removeAll()
         saveProgress()
     }
 
