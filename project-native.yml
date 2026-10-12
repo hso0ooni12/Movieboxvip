@@ -22,6 +22,7 @@ targets:
       - path: FrameNative
         excludes:
           - FrameXTVPlayer.swift
+          - FrameXTVPlayerV2.swift
           - Views/GenreCatalogView.swift
     settings:
       base:
