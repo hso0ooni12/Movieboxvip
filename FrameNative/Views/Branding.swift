@@ -82,16 +82,18 @@ struct XSWordmark: View {
         HStack(spacing: compact ? 7 : 10) {
             XSBrandMark(size: compact ? 28 : 38, showGlow: false)
 
-            Text("XS")
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.purple, .pink, .orange],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+            HStack(spacing: 0) {
+                Text("XS")
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.purple, .pink, .orange],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
-                )
-            + Text(" TV")
-                .foregroundStyle(.white)
+                Text(" TV")
+                    .foregroundStyle(.white)
+            }
         }
         .font(.system(size: compact ? 19 : 26, weight: .black, design: .rounded))
     }
