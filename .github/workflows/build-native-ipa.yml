@@ -105,6 +105,9 @@ jobs:
       - name: Apply XS Player v12 deterministic subtitle selection fix
         run: python3 scripts/player_v12_subtitle_selection_fix.py
 
+      - name: Normalize player state for V13
+        run: python3 scripts/player_v13_compat.py
+
       - name: Apply XS Player v13 subtitle assets and server recovery
         run: python3 scripts/player_v13_subtitle_assets_server_recovery.py
 
