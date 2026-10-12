@@ -182,7 +182,7 @@ struct HomeView: View {
                 XSBrandMark(size: 42, showGlow: false)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("XS TV")
-                        .font(.title2.black())
+                        .font(.title2.weight(.black))
                     Text("Entertainment, refined for iPhone and iPad")
                         .font(.caption)
                         .foregroundStyle(.secondary)
