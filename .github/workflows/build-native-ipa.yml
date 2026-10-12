@@ -102,6 +102,9 @@ jobs:
       - name: Apply XS Player v11 subtitle network and server fix
         run: python3 scripts/player_v11_subtitle_network_server_fix.py
 
+      - name: Apply XS Player v12 deterministic subtitle selection fix
+        run: python3 scripts/player_v12_subtitle_selection_fix.py
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -149,7 +152,7 @@ jobs:
             echo "App name: $APP_NAME"
             echo "Bundle ID: $BUNDLE_ID"
             echo "Brand: XS TV"
-            echo "Playback: XS Player v11 subtitle metadata + reliable server switching"
+            echo "Playback: XS Player v12 deterministic subtitle selection"
             echo "Minimum iOS: 16.0"
             echo "Signing: none"
             echo "Build number: $GITHUB_RUN_NUMBER"
