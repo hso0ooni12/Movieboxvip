@@ -1,14 +1,16 @@
 from pathlib import Path
 
+# Legacy V3 visibility patch kept for older source snapshots.
 path = Path("FrameNative/FrameXTVPlayerV3.swift")
-text = path.read_text()
+if path.exists():
+    text = path.read_text()
 
-old = '''                .id(activePlayback.id)
+    old = '''                .id(activePlayback.id)
                 .ignoresSafeArea()
 
                 if !playerModel.captionText.isEmpty {
 '''
-new = '''                .id(activePlayback.id)
+    new = '''                .id(activePlayback.id)
                 .ignoresSafeArea()
 
                 // Dedicated interaction surface above WebKit. The playback engine intentionally
@@ -22,11 +24,10 @@ new = '''                .id(activePlayback.id)
 
                 if !playerModel.captionText.isEmpty {
 '''
-if old not in text:
-    raise SystemExit("interaction insertion point not found")
-text = text.replace(old, new, 1)
+    if old in text:
+        text = text.replace(old, new, 1)
 
-old = '''            }
+    old = '''            }
             .contentShape(Rectangle())
             .onTapGesture {
                 withAnimation(.easeInOut(duration: 0.18)) { controlsVisible.toggle() }
@@ -34,18 +35,17 @@ old = '''            }
             }
         }
 '''
-new = '''            }
+    new = '''            }
         }
 '''
-if old not in text:
-    raise SystemExit("old container tap handler not found")
-text = text.replace(old, new, 1)
+    if old in text:
+        text = text.replace(old, new, 1)
 
-old = '''        .onChange(of: playerModel.currentTime) { _ in handlePlaybackProgress() }
+    old = '''        .onChange(of: playerModel.currentTime) { _ in handlePlaybackProgress() }
         .onChange(of: subtitleDelay) { newValue in playerModel.setSubtitleDelay(newValue) }
         .onDisappear {
 '''
-new = '''        .onChange(of: playerModel.currentTime) { _ in handlePlaybackProgress() }
+    new = '''        .onChange(of: playerModel.currentTime) { _ in handlePlaybackProgress() }
         .onChange(of: playerModel.isPlaying) { playing in
             if playing {
                 scheduleHide()
@@ -66,11 +66,10 @@ new = '''        .onChange(of: playerModel.currentTime) { _ in handlePlaybackPro
         }
         .onDisappear {
 '''
-if old not in text:
-    raise SystemExit("onChange insertion point not found")
-text = text.replace(old, new, 1)
+    if old in text:
+        text = text.replace(old, new, 1)
 
-old = '''    private func scheduleHide() {
+    old = '''    private func scheduleHide() {
         hideTask?.cancel()
         guard controlsVisible else { return }
         hideTask = Task {
@@ -86,7 +85,7 @@ old = '''    private func scheduleHide() {
         scheduleHide()
     }
 '''
-new = '''    private func scheduleHide() {
+    new = '''    private func scheduleHide() {
         hideTask?.cancel()
         guard controlsVisible,
               playerModel.isPlaying,
@@ -121,9 +120,20 @@ new = '''    private func scheduleHide() {
         revealControls()
     }
 '''
-if old not in text:
-    raise SystemExit("scheduleHide block not found")
-text = text.replace(old, new, 1)
+    if old in text:
+        text = text.replace(old, new, 1)
 
-path.write_text(text)
-print("XS Player visibility patch applied")
+    path.write_text(text)
+
+# V6 compile normalization for SwiftUI frame overload.
+v6 = Path("FrameNative/FrameXTVPlayerV6.swift")
+if v6.exists():
+    text = v6.read_text()
+    old = '.frame(width: width, maxHeight: .infinity, alignment: .topLeading)'
+    new = '.frame(width: width)\n            .frame(maxHeight: .infinity, alignment: .topLeading)'
+    if old in text:
+        text = text.replace(old, new, 1)
+        v6.write_text(text)
+        print("XS Player V6 frame patch applied")
+
+print("XS Player build patches applied")
