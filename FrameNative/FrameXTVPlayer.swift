@@ -155,9 +155,8 @@ struct FrameXTVWebView: UIViewRepresentable {
             .replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "\"", with: "&quot;")
 
-        // Keep FrameXTV isolated in its official embed. Its own control bar is intentionally
-        // left untouched so every server, subtitle track, quality and audio option exposed by
-        // the provider remains available now and in the future.
+        // XS TV deliberately leaves the official FrameXTV player untouched. That keeps
+        // every server, subtitle, quality and audio option exposed by the provider available.
         let html = """
         <!doctype html>
         <html>
@@ -233,6 +232,7 @@ struct FrameXTVPlayerScreen: View {
     let nextPlayback: FrameXTVPlayback?
     let nextLabel: String?
 
+    @EnvironmentObject private var app: AppState
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.dismiss) private var dismiss
     @StateObject private var playerModel = XSTVPlayerModel()
@@ -240,6 +240,7 @@ struct FrameXTVPlayerScreen: View {
     @State private var queuedNextPlayback: FrameXTVPlayback?
     @State private var queuedNextLabel: String?
     @State private var didAdvance = false
+    @State private var isResolvingNext = false
     @AppStorage("XSTV.autoNextEpisode") private var autoNextEpisode = true
 
     init(
@@ -297,6 +298,7 @@ struct FrameXTVPlayerScreen: View {
         .statusBarHidden(true)
         .onAppear {
             installTelemetry()
+            Task { await resolveNextEpisodeIfNeeded() }
         }
         .onChange(of: playerModel.currentTime) { _ in
             handlePlaybackProgress()
@@ -398,6 +400,52 @@ struct FrameXTVPlayerScreen: View {
         }
     }
 
+    @MainActor
+    private func resolveNextEpisodeIfNeeded() async {
+        guard queuedNextPlayback == nil,
+              !isResolvingNext,
+              item.kind != .movie,
+              let season = activePlayback.season,
+              let episode = activePlayback.episode else { return }
+
+        isResolvingNext = true
+        defer { isResolvingNext = false }
+
+        do {
+            let currentSeasonEpisodes = try await app.episodes(tmdbID: item.tmdbID, season: season)
+            if let index = currentSeasonEpisodes.firstIndex(where: { $0.episodeNumber == episode }),
+               currentSeasonEpisodes.indices.contains(index + 1) {
+                let next = currentSeasonEpisodes[index + 1]
+                queuedNextPlayback = FrameXTVPlayback(
+                    tmdbID: item.tmdbID,
+                    season: season,
+                    episode: next.episodeNumber
+                )
+                queuedNextLabel = "S\(season) · E\(next.episodeNumber)  \(next.name)"
+                return
+            }
+
+            let seasons = try await app.seasons(for: item)
+            guard let nextSeasonNumber = seasons
+                .map(\.seasonNumber)
+                .filter({ $0 > season })
+                .sorted()
+                .first else { return }
+
+            let nextSeasonEpisodes = try await app.episodes(tmdbID: item.tmdbID, season: nextSeasonNumber)
+            guard let first = nextSeasonEpisodes.first else { return }
+
+            queuedNextPlayback = FrameXTVPlayback(
+                tmdbID: item.tmdbID,
+                season: nextSeasonNumber,
+                episode: first.episodeNumber
+            )
+            queuedNextLabel = "S\(nextSeasonNumber) · E\(first.episodeNumber)  \(first.name)"
+        } catch {
+            // Playback remains unaffected if catalog metadata for the next episode is unavailable.
+        }
+    }
+
     private func handlePlaybackProgress() {
         guard autoNextEpisode,
               queuedNextPlayback != nil,
@@ -418,6 +466,11 @@ struct FrameXTVPlayerScreen: View {
         activePlayback = next
         queuedNextPlayback = nil
         queuedNextLabel = nil
+
+        Task {
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            await resolveNextEpisodeIfNeeded()
+        }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             didAdvance = false
