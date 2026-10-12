@@ -25,6 +25,7 @@ targets:
           - FrameXTVPlayerV2.swift
           - FrameXTVPlayerV3.swift
           - FrameXTVPlayerV4.swift
+          - FrameXTVPlayerV5.swift
           - Views/GenreCatalogView.swift
     settings:
       base:
@@ -50,4 +51,4 @@ schemes:
       config: Debug
     archive:
       config: Release
-# XS Player V5
+# XS Player V6
