@@ -96,6 +96,9 @@ jobs:
       - name: Apply XS Player v8 functional controls
         run: python3 scripts/player_v8_functional_fix.py
 
+      - name: Apply XS Player v9 subtitle and tap fix
+        run: python3 scripts/player_v9_subtitle_tap_fix.py
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -143,7 +146,7 @@ jobs:
             echo "App name: $APP_NAME"
             echo "Bundle ID: $BUNDLE_ID"
             echo "Brand: XS TV"
-            echo "Playback: XS Player v8 functional controls"
+            echo "Playback: XS Player v9 subtitles + tap toggle"
             echo "Minimum iOS: 16.0"
             echo "Signing: none"
             echo "Build number: $GITHUB_RUN_NUMBER"
