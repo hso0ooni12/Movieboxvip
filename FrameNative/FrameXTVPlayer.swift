@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import AVFoundation
 
 struct FrameXTVPlayback: Hashable, Codable, Identifiable {
     let tmdbID: Int
@@ -123,8 +124,12 @@ struct FrameXTVWebView: UIViewRepresentable {
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = contentController
         configuration.allowsInlineMediaPlayback = true
+        configuration.allowsPictureInPictureMediaPlayback = true
+        configuration.allowsAirPlayForMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        configuration.websiteDataStore = .default()
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
@@ -135,7 +140,9 @@ struct FrameXTVWebView: UIViewRepresentable {
         webView.backgroundColor = .black
         webView.scrollView.backgroundColor = .black
         webView.allowsLinkPreview = false
+        webView.allowsBackForwardNavigationGestures = false
 
+        configureAudioSession()
         model.attach(webView)
         loadPlayer(in: webView)
         return webView
@@ -148,6 +155,16 @@ struct FrameXTVWebView: UIViewRepresentable {
         uiView.stopLoading()
     }
 
+    private func configureAudioSession() {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay])
+            try session.setActive(true)
+        } catch {
+            // WebKit playback remains available if the audio session cannot be configured.
+        }
+    }
+
     private func loadPlayer(in webView: WKWebView) {
         guard let embedURL = playback.embedURL(title: title, posterURL: posterURL) else { return }
 
@@ -155,8 +172,8 @@ struct FrameXTVWebView: UIViewRepresentable {
             .replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "\"", with: "&quot;")
 
-        // XS TV deliberately leaves the official FrameXTV player untouched. That keeps
-        // every server, subtitle, quality and audio option exposed by the provider available.
+        // The real FrameXTV interface stays in control. XS TV does not draw fake media buttons;
+        // server, quality, subtitle, audio, PiP and fullscreen controls are the provider's live controls.
         let html = """
         <!doctype html>
         <html>
