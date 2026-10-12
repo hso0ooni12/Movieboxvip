@@ -23,6 +23,7 @@ targets:
         excludes:
           - FrameXTVPlayer.swift
           - FrameXTVPlayerV2.swift
+          - FrameXTVPlayerV3.swift
           - Views/GenreCatalogView.swift
     settings:
       base:
