@@ -111,6 +111,9 @@ jobs:
       - name: Apply XS Player v13 subtitle assets and server recovery
         run: python3 scripts/player_v13_subtitle_assets_server_recovery.py
 
+      - name: Apply XS Player v14 recursive provider-frame bridge
+        run: python3 scripts/player_v14_recursive_frame_bridge.py
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -158,7 +161,7 @@ jobs:
             echo "App name: $APP_NAME"
             echo "Bundle ID: $BUNDLE_ID"
             echo "Brand: XS TV"
-            echo "Playback: XS Player v13 direct subtitle assets + confirmed server recovery"
+            echo "Playback: XS Player v14 recursive FrameXTV/provider bridge"
             echo "Minimum iOS: 16.0"
             echo "Signing: none"
             echo "Build number: $GITHUB_RUN_NUMBER"
