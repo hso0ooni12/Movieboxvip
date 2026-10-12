@@ -39,6 +39,7 @@ struct SubtitleOption: Identifiable, Hashable {
     let language: String?
 
     var id: Int { index }
+
     var displayName: String {
         if let language, !language.isEmpty, language.lowercased() != label.lowercased() {
             return "\(label) · \(language.uppercased())"
@@ -56,6 +57,7 @@ final class FrameXTVPlayerModel: ObservableObject {
     @Published var selectedSpeed: Double = 1
     @Published var subtitleOptions: [SubtitleOption] = []
     @Published var selectedSubtitleIndex: Int? = nil
+    @Published var playerReady = false
     @Published var lastEvent: String?
 
     weak var webView: WKWebView?
@@ -68,10 +70,11 @@ final class FrameXTVPlayerModel: ObservableObject {
 
     var subtitleChoices: [SubtitleOption] {
         if !subtitleOptions.isEmpty { return subtitleOptions }
-        return (0..<10).map { SubtitleOption(index: $0, label: "Subtitle \($0 + 1)", language: nil) }
+        return (0..<12).map { SubtitleOption(index: $0, label: "Subtitle \($0 + 1)", language: nil) }
     }
 
     func attach(_ webView: WKWebView) { self.webView = webView }
+
     func play() { send(["action": "play"]) }
     func pause() { send(["action": "pause"]) }
     func seek(to seconds: Double) { send(["action": "seek", "time": seconds]) }
@@ -85,12 +88,14 @@ final class FrameXTVPlayerModel: ObservableObject {
 
     func setProvider(_ provider: String) {
         selectedProvider = provider
+        UserDefaults.standard.set(provider, forKey: "FrameNative.preferredProvider")
         guard provider != "auto" else { return }
         send(["action": "setProvider", "provider": provider])
     }
 
     func setSpeed(_ speed: Double) {
         selectedSpeed = speed
+        UserDefaults.standard.set(speed, forKey: "FrameNative.preferredSpeed")
         send(["action": "setSpeed", "speed": speed])
     }
 
@@ -99,17 +104,111 @@ final class FrameXTVPlayerModel: ObservableObject {
         send(["action": "setSubtitle", "index": index])
     }
 
+    func openEmbeddedSubtitleMenu(completion: @escaping (Bool) -> Void) {
+        guard let webView else {
+            completion(false)
+            return
+        }
+
+        let script = #"""
+        (() => {
+          const visible = el => !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
+          const text = el => [
+            el?.innerText || '',
+            el?.textContent || '',
+            el?.getAttribute?.('aria-label') || '',
+            el?.getAttribute?.('title') || '',
+            el?.getAttribute?.('data-testid') || '',
+            el?.getAttribute?.('data-tooltip') || ''
+          ].join(' ').replace(/\s+/g, ' ').trim();
+
+          const nodes = [...document.querySelectorAll('button,[role="button"],[aria-label],[title]')]
+            .filter(visible);
+
+          const exact = nodes.find(el => /^(cc|subtitles?|captions?|closed captions)$/i.test(text(el)));
+          const broad = nodes.find(el => /(subtitle|caption|closed caption|\bcc\b)/i.test(text(el)));
+          const target = exact || broad;
+
+          if (target) {
+            target.click();
+            return true;
+          }
+          return false;
+        })();
+        """#
+
+        webView.evaluateJavaScript(script) { result, _ in
+            Task { @MainActor in
+                completion((result as? Bool) == true)
+            }
+        }
+    }
+
+    func discoverSubtitleOptionsFromDOM() {
+        guard let webView else { return }
+
+        let script = #"""
+        (() => {
+          const visible = el => !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
+          const candidates = [...document.querySelectorAll('[role="menuitem"],[role="option"],button,li')].filter(visible);
+          const languageWords = /(arabic|english|spanish|french|german|italian|portuguese|turkish|japanese|korean|hindi|chinese|indonesian|thai|vietnamese|russian|polish|dutch|swedish|norwegian|finnish|danish|hebrew|urdu|bengali|malay|filipino|subtitle|caption|العربية|عربي|إنجليزي|english)/i;
+          const rows = [];
+          for (const el of candidates) {
+            const label = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+            if (!label || label.length > 80 || !languageWords.test(label)) continue;
+            const indexAttr = el.getAttribute('data-index') || el.getAttribute('data-track-index') || el.dataset?.index || el.dataset?.trackIndex;
+            rows.push({ label, index: indexAttr == null ? null : Number(indexAttr) });
+          }
+          return rows.slice(0, 40);
+        })();
+        """#
+
+        webView.evaluateJavaScript(script) { [weak self] result, _ in
+            guard let rows = result as? [[String: Any]], !rows.isEmpty else { return }
+            Task { @MainActor in
+                guard let self else { return }
+                var options: [SubtitleOption] = []
+                var seen = Set<String>()
+                for (offset, row) in rows.enumerated() {
+                    guard let raw = row["label"] as? String else { continue }
+                    let label = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !label.isEmpty, seen.insert(label.lowercased()).inserted else { continue }
+                    let index = (row["index"] as? NSNumber)?.intValue ?? offset
+                    options.append(SubtitleOption(index: index, label: label, language: nil))
+                }
+                if !options.isEmpty { self.subtitleOptions = options }
+            }
+        }
+    }
+
+    func markReady() {
+        playerReady = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            Task { @MainActor in self?.discoverSubtitleOptionsFromDOM() }
+        }
+    }
+
     private func send(_ payload: [String: Any]) {
         guard let webView,
               let data = try? JSONSerialization.data(withJSONObject: payload),
               let json = String(data: data, encoding: .utf8) else { return }
-        webView.evaluateJavaScript("window.sendToFrameXTV && window.sendToFrameXTV(\(json));")
+
+        let script = """
+        (() => {
+          const payload = \(json);
+          try { window.postMessage(payload, '*'); } catch (_) {}
+          try {
+            const frame = document.querySelector('iframe');
+            if (frame && frame.contentWindow) frame.contentWindow.postMessage(payload, '*');
+          } catch (_) {}
+        })();
+        """
+        webView.evaluateJavaScript(script)
     }
 
     func receive(_ payload: [String: Any]) {
         if let event = payload["event"] as? String {
             lastEvent = event
-
             if event == "frameXTV:timeupdate" {
                 if let value = payload["currentTime"] as? NSNumber { currentTime = value.doubleValue }
                 if let value = payload["duration"] as? NSNumber { duration = value.doubleValue }
@@ -118,9 +217,7 @@ final class FrameXTVPlayerModel: ObservableObject {
         }
 
         let tracks = extractSubtitleOptions(from: payload)
-        if !tracks.isEmpty {
-            subtitleOptions = tracks
-        }
+        if !tracks.isEmpty { subtitleOptions = tracks }
 
         if let index = integerValue(payload["subtitleIndex"] ?? payload["selectedSubtitle"] ?? payload["trackIndex"]) {
             selectedSubtitleIndex = index >= 0 ? index : nil
@@ -193,6 +290,17 @@ struct FrameXTVWebView: UIViewRepresentable {
         let controller = WKUserContentController()
         controller.add(context.coordinator, name: "frameTelemetry")
 
+        let bridgeSource = #"""
+        window.addEventListener('message', function(event) {
+          try {
+            if (event && event.data && typeof event.data === 'object') {
+              window.webkit.messageHandlers.frameTelemetry.postMessage(event.data);
+            }
+          } catch (_) {}
+        }, true);
+        """#
+        controller.addUserScript(WKUserScript(source: bridgeSource, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
         configuration.allowsInlineMediaPlayback = true
@@ -211,39 +319,10 @@ struct FrameXTVWebView: UIViewRepresentable {
         model.attach(webView)
 
         guard let embedURL = playback.embedURL(title: title, posterURL: posterURL) else { return webView }
-        let escaped = embedURL.absoluteString
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-
-        let html = """
-        <!doctype html>
-        <html>
-        <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-          <style>
-            html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden}
-            iframe{position:fixed;inset:0;width:100%;height:100%;border:0;background:#000}
-          </style>
-        </head>
-        <body>
-          <iframe id="framePlayer" src="\(escaped)" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>
-          <script>
-            const player = document.getElementById('framePlayer');
-            window.sendToFrameXTV = function(payload) {
-              if (player && player.contentWindow) player.contentWindow.postMessage(payload, '*');
-            };
-            window.addEventListener('message', function(event) {
-              try {
-                if (event && event.data && typeof event.data === 'object') {
-                  window.webkit.messageHandlers.frameTelemetry.postMessage(event.data);
-                }
-              } catch (_) {}
-            });
-          </script>
-        </body>
-        </html>
-        """
-        webView.loadHTMLString(html, baseURL: URL(string: "https://framextv.tech"))
+        var request = URLRequest(url: embedURL)
+        request.timeoutInterval = 30
+        request.setValue("FrameNative/3.0", forHTTPHeaderField: "User-Agent")
+        webView.load(request)
         return webView
     }
 
@@ -263,12 +342,17 @@ struct FrameXTVWebView: UIViewRepresentable {
             Task { @MainActor in model.receive(payload) }
         }
 
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            Task { @MainActor in model.markReady() }
+        }
+
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
             guard navigationAction.targetFrame?.isMainFrame == true, let url = navigationAction.request.url else {
                 decisionHandler(.allow)
                 return
             }
-            if url.scheme == "about" || url.host == "framextv.tech" || url.host == "www.framextv.tech" {
+
+            if url.scheme == "about" || url.scheme == "blob" || url.host == "framextv.tech" || url.host == "www.framextv.tech" {
                 decisionHandler(.allow)
             } else {
                 decisionHandler(.cancel)
@@ -284,44 +368,49 @@ struct FrameXTVPlayerScreen: View {
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.dismiss) private var dismiss
     @StateObject private var playerModel = FrameXTVPlayerModel()
-    @State private var isPlaying = true
-    @State private var showControls = true
     @State private var showSubtitleSheet = false
+    @State private var showQuickControls = true
     @State private var hideTask: Task<Void, Never>?
 
     private let providers = ["auto", "barbarian", "archer", "goblin"]
     private let speeds: [Double] = [0.5, 1, 1.25, 1.5, 2]
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
+        GeometryReader { proxy in
+            ZStack {
+                Color.black.ignoresSafeArea()
 
-            FrameXTVWebView(
-                playback: playback,
-                title: item.title,
-                posterURL: item.imageURL(backdrop: true, width: 1280) ?? item.imageURL(width: 780),
-                model: playerModel
-            )
-            .ignoresSafeArea()
-            .onTapGesture { revealControls() }
+                FrameXTVWebView(
+                    playback: resolvedPlayback,
+                    title: item.title,
+                    posterURL: item.imageURL(backdrop: true, width: 1280) ?? item.imageURL(width: 780),
+                    model: playerModel
+                )
+                .ignoresSafeArea()
 
-            if showControls {
                 LinearGradient(
-                    colors: [.black.opacity(0.72), .clear, .clear],
+                    colors: [.black.opacity(0.66), .clear, .clear],
                     startPoint: .top,
                     endPoint: .center
                 )
+                .frame(height: 165)
+                .frame(maxHeight: .infinity, alignment: .top)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
 
-                VStack {
-                    topControls
+                VStack(spacing: 0) {
+                    premiumTopBar
+                        .padding(.top, max(proxy.safeAreaInsets.top, 8))
+                        .padding(.horizontal, 12)
+
                     Spacer()
-                    centerControls
-                    Spacer()
+
+                    if showQuickControls {
+                        quickTransport
+                            .padding(.bottom, 118 + proxy.safeAreaInsets.bottom)
+                            .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    }
                 }
-                .padding(.bottom, 86)
-                .transition(.opacity)
             }
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -335,8 +424,8 @@ struct FrameXTVPlayerScreen: View {
         }
         .onAppear {
             playerModel.isMuted = playback.muted
-            playerModel.selectedProvider = playback.provider ?? "auto"
-            playerModel.selectedSpeed = playback.speed
+            playerModel.selectedProvider = resolvedPlayback.provider ?? "auto"
+            playerModel.selectedSpeed = resolvedPlayback.speed
             playerModel.onTelemetry = { current, duration in
                 library.updateProgress(
                     item: item,
@@ -346,7 +435,7 @@ struct FrameXTVPlayerScreen: View {
                     duration: duration
                 )
             }
-            scheduleAutoHide()
+            scheduleQuickControlsHide()
         }
         .onDisappear {
             hideTask?.cancel()
@@ -355,145 +444,157 @@ struct FrameXTVPlayerScreen: View {
         }
     }
 
-    private var topControls: some View {
+    private var resolvedPlayback: FrameXTVPlayback {
+        var value = playback
+        if value.provider == nil,
+           let savedProvider = UserDefaults.standard.string(forKey: "FrameNative.preferredProvider"),
+           !savedProvider.isEmpty {
+            value.provider = savedProvider
+        }
+        let savedSpeed = UserDefaults.standard.double(forKey: "FrameNative.preferredSpeed")
+        if savedSpeed > 0 { value.speed = savedSpeed }
+        value.showEmbeddedControls = true
+        return value
+    }
+
+    private var premiumTopBar: some View {
         HStack(spacing: 10) {
-            PlayerCircleButton(systemImage: "chevron.left") {
-                dismiss()
-            }
+            PlayerCircleButton(systemImage: "chevron.left") { dismiss() }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title)
-                    .font(.headline)
+                    .font(.subheadline.weight(.bold))
                     .lineLimit(1)
                 Text(episodeLabel ?? item.kind.title)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.66))
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .lineLimit(1)
             }
 
-            Spacer(minLength: 10)
+            Spacer(minLength: 6)
 
             Button {
-                showSubtitleSheet = true
-                scheduleAutoHide()
+                playerModel.openEmbeddedSubtitleMenu { opened in
+                    if opened {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                            playerModel.discoverSubtitleOptionsFromDOM()
+                        }
+                    } else {
+                        showSubtitleSheet = true
+                    }
+                }
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "captions.bubble.fill")
-                    Text(subtitleButtonTitle)
+                    Text("Subtitles")
                         .lineLimit(1)
                 }
                 .font(.caption.bold())
                 .padding(.horizontal, 11)
                 .frame(height: 38)
                 .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().stroke(.white.opacity(0.12), lineWidth: 1))
             }
             .buttonStyle(.plain)
             .foregroundStyle(.white)
 
             Menu {
-                ForEach(providers, id: \.self) { provider in
-                    Button {
-                        playerModel.setProvider(provider)
-                        scheduleAutoHide()
-                    } label: {
-                        if playerModel.selectedProvider == provider {
-                            Label(provider.capitalized, systemImage: "checkmark")
-                        } else {
-                            Text(provider.capitalized)
+                Section("Server") {
+                    ForEach(providers, id: \.self) { provider in
+                        Button {
+                            playerModel.setProvider(provider)
+                        } label: {
+                            if playerModel.selectedProvider == provider {
+                                Label(provider.capitalized, systemImage: "checkmark")
+                            } else {
+                                Text(provider.capitalized)
+                            }
                         }
                     }
                 }
-            } label: {
-                PlayerCircleLabel(systemImage: "server.rack")
-            }
 
-            Menu {
-                ForEach(speeds, id: \.self) { speed in
-                    Button {
-                        playerModel.setSpeed(speed)
-                        scheduleAutoHide()
-                    } label: {
-                        if playerModel.selectedSpeed == speed {
-                            Label(speedText(speed), systemImage: "checkmark")
-                        } else {
-                            Text(speedText(speed))
+                Section("Playback speed") {
+                    ForEach(speeds, id: \.self) { speed in
+                        Button {
+                            playerModel.setSpeed(speed)
+                        } label: {
+                            if playerModel.selectedSpeed == speed {
+                                Label(speedText(speed), systemImage: "checkmark")
+                            } else {
+                                Text(speedText(speed))
+                            }
                         }
                     }
                 }
+
+                Section {
+                    Button {
+                        playerModel.setMuted(!playerModel.isMuted)
+                    } label: {
+                        Label(playerModel.isMuted ? "Unmute" : "Mute", systemImage: playerModel.isMuted ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                    }
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.18)) { showQuickControls.toggle() }
+                        if showQuickControls { scheduleQuickControlsHide() }
+                    } label: {
+                        Label(showQuickControls ? "Hide quick controls" : "Show quick controls", systemImage: "play.circle")
+                    }
+                }
             } label: {
-                Text(speedText(playerModel.selectedSpeed))
-                    .font(.caption.bold())
-                    .frame(width: 44, height: 38)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .foregroundStyle(.white)
+                PlayerCircleLabel(systemImage: "ellipsis")
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 8)
+        .padding(8)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(.white.opacity(0.10), lineWidth: 1))
+        .shadow(color: .black.opacity(0.28), radius: 18, y: 8)
     }
 
-    private var centerControls: some View {
-        HStack(spacing: 32) {
-            Button {
+    private var quickTransport: some View {
+        HStack(spacing: 18) {
+            QuickControlButton(systemImage: "gobackward.10") {
                 playerModel.seek(by: -10)
-                scheduleAutoHide()
-            } label: {
-                Image(systemName: "gobackward.10")
-                    .font(.system(size: 27, weight: .semibold))
-                    .frame(width: 58, height: 58)
-                    .background(.black.opacity(0.48), in: Circle())
+                scheduleQuickControlsHide()
             }
 
-            Button {
-                if isPlaying { playerModel.pause() } else { playerModel.play() }
-                isPlaying.toggle()
-                scheduleAutoHide()
-            } label: {
-                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 34, weight: .bold))
-                    .frame(width: 76, height: 76)
-                    .background(.white, in: Circle())
-                    .foregroundStyle(.black)
+            QuickControlButton(systemImage: "play.fill", prominent: true) {
+                playerModel.play()
+                scheduleQuickControlsHide()
             }
 
-            Button {
+            QuickControlButton(systemImage: "pause.fill", prominent: true) {
+                playerModel.pause()
+                scheduleQuickControlsHide()
+            }
+
+            QuickControlButton(systemImage: "goforward.10") {
                 playerModel.seek(by: 10)
-                scheduleAutoHide()
-            } label: {
-                Image(systemName: "goforward.10")
-                    .font(.system(size: 27, weight: .semibold))
-                    .frame(width: 58, height: 58)
-                    .background(.black.opacity(0.48), in: Circle())
+                scheduleQuickControlsHide()
             }
         }
-        .foregroundStyle(.white)
-    }
-
-    private var subtitleButtonTitle: String {
-        guard let index = playerModel.selectedSubtitleIndex else { return "CC" }
-        return playerModel.subtitleChoices.first(where: { $0.index == index })?.label ?? "CC \(index + 1)"
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().stroke(.white.opacity(0.10), lineWidth: 1))
+        .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
     }
 
     private var episodeLabel: String? {
         guard let season = playback.season, let episode = playback.episode else { return nil }
-        return "Season \(season) • Episode \(episode)"
+        return "S\(season) · E\(episode)"
     }
 
     private func speedText(_ speed: Double) -> String {
         speed == 1 ? "1×" : String(format: "%g×", speed)
     }
 
-    private func revealControls() {
-        withAnimation(.easeInOut(duration: 0.16)) { showControls = true }
-        scheduleAutoHide()
-    }
-
-    private func scheduleAutoHide() {
+    private func scheduleQuickControlsHide() {
         hideTask?.cancel()
         hideTask = Task {
-            try? await Task.sleep(nanoseconds: 3_200_000_000)
+            try? await Task.sleep(nanoseconds: 3_600_000_000)
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                withAnimation(.easeInOut(duration: 0.2)) { showControls = false }
+                withAnimation(.easeInOut(duration: 0.22)) { showQuickControls = false }
             }
         }
     }
@@ -506,7 +607,7 @@ private struct PlayerCircleLabel: View {
         Image(systemName: systemImage)
             .font(.subheadline.weight(.semibold))
             .frame(width: 38, height: 38)
-            .background(.ultraThinMaterial, in: Circle())
+            .background(.black.opacity(0.28), in: Circle())
             .foregroundStyle(.white)
     }
 }
@@ -523,13 +624,65 @@ private struct PlayerCircleButton: View {
     }
 }
 
+private struct QuickControlButton: View {
+    let systemImage: String
+    var prominent = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: prominent ? 17 : 20, weight: .bold))
+                .frame(width: prominent ? 44 : 40, height: prominent ? 44 : 40)
+                .background(prominent ? Color.white : Color.black.opacity(0.28), in: Circle())
+                .foregroundStyle(prominent ? .black : .white)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 private struct SubtitlePickerSheet: View {
     @ObservedObject var model: FrameXTVPlayerModel
     @Environment(\.dismiss) private var dismiss
+    @State private var openingNativeMenu = false
 
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    Button {
+                        openingNativeMenu = true
+                        model.openEmbeddedSubtitleMenu { opened in
+                            openingNativeMenu = false
+                            if opened {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    model.discoverSubtitleOptionsFromDOM()
+                                }
+                                dismiss()
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "captions.bubble.fill")
+                                .frame(width: 24)
+                                .foregroundStyle(.cyan)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Open FrameXTV subtitle menu")
+                                    .font(.body.weight(.semibold))
+                                Text("Best option — shows the exact languages available on this server")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if openingNativeMenu { ProgressView() }
+                            else { Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.secondary) }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                } header: {
+                    Text("Recommended")
+                }
+
                 Section {
                     Button {
                         model.setSubtitle(index: -1)
@@ -553,10 +706,10 @@ private struct SubtitlePickerSheet: View {
                         .buttonStyle(.plain)
                     }
                 } header: {
-                    Text(model.subtitleOptions.isEmpty ? "Subtitle Tracks" : "Available Subtitles")
+                    Text(model.subtitleOptions.isEmpty ? "Direct Track Selection" : "Available Subtitles")
                 } footer: {
                     if model.subtitleOptions.isEmpty {
-                        Text("Subtitle names are supplied by the active FrameXTV server. The FrameXTV player controls remain enabled below the video for the exact tracks available on that server.")
+                        Text("If language names are not exposed by the active provider, use the recommended FrameXTV subtitle menu above. Direct Track Selection remains available as a fallback.")
                     }
                 }
             }
