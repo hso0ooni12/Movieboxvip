@@ -13,82 +13,139 @@ struct DetailView: View {
     @State private var error: String?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                ZStack(alignment: .bottomLeading) {
-                    RemotePoster(item: details?.item ?? item, backdrop: true, cornerRadius: 0)
-                        .frame(height: 330)
-                    LinearGradient(colors: [.clear, .black], startPoint: .center, endPoint: .bottom)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text((details?.item ?? item).title)
-                            .font(.system(size: 34, weight: .black, design: .rounded))
-                        Text(metaLine)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(18)
-                }
+        ZStack {
+            Color.black.ignoresSafeArea()
 
-                HStack(spacing: 12) {
-                    if item.kind == .movie {
-                        NavigationLink {
-                            FrameXTVPlayerScreen(item: details?.item ?? item, playback: moviePlayback)
-                        } label: {
-                            Label(resumeText, systemImage: "play.fill")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    hero
+
+                    VStack(alignment: .leading, spacing: 22) {
+                        actionRow
+                        playbackFeatures
+
+                        if let tagline = details?.tagline, !tagline.isEmpty {
+                            Text(tagline)
                                 .font(.headline)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                                .background(.white, in: RoundedRectangle(cornerRadius: 14))
-                                .foregroundStyle(.black)
+                                .italic()
+                                .foregroundStyle(.white.opacity(0.78))
                         }
-                        .buttonStyle(.plain)
+
+                        Text(currentItem.overview.isEmpty ? "No overview available." : currentItem.overview)
+                            .font(.body)
+                            .foregroundStyle(.white.opacity(0.83))
+                            .lineSpacing(5)
+
+                        if item.kind != .movie {
+                            episodeSection
+                        }
+
+                        if let error {
+                            Label(error, systemImage: "exclamationmark.triangle.fill")
+                                .font(.footnote.weight(.medium))
+                                .foregroundStyle(.orange)
+                                .padding(14)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(.orange.opacity(0.09), in: RoundedRectangle(cornerRadius: 14))
+                        }
                     }
-
-                    Button { library.toggleFavorite(details?.item ?? item) } label: {
-                        Label(library.isFavorite(details?.item ?? item) ? "Saved" : "My List",
-                              systemImage: library.isFavorite(details?.item ?? item) ? "checkmark" : "plus")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .padding(.horizontal, 16)
-
-                if let tagline = details?.tagline, !tagline.isEmpty {
-                    Text(tagline).font(.headline).italic().foregroundStyle(.secondary).padding(.horizontal, 16)
-                }
-
-                Text((details?.item ?? item).overview.isEmpty ? "No overview available." : (details?.item ?? item).overview)
-                    .font(.body)
-                    .foregroundStyle(.white.opacity(0.86))
-                    .lineSpacing(5)
-                    .padding(.horizontal, 16)
-
-                if item.kind != .movie {
-                    episodeSection
-                }
-
-                if let error {
-                    Label(error, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
-                        .font(.footnote)
-                        .padding(16)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 18)
+                    .padding(.bottom, 38)
                 }
             }
-            .padding(.bottom, 34)
+            .scrollIndicators(.hidden)
         }
-        .background(Color.black)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Color.black.opacity(0.55), for: .navigationBar)
         .task { await load() }
     }
 
     private var currentItem: MediaItem { details?.item ?? item }
 
-    private var metaLine: String {
-        var values = [currentItem.year, "★ \(currentItem.ratingText)"]
-        if let runtime = details?.runtimeText { values.append(runtime) }
-        let genres = details?.genres.isEmpty == false ? details!.genres.prefix(3).joined(separator: " • ") : currentItem.subtitle
-        if !genres.isEmpty { values.append(genres) }
-        return values.joined(separator: "  •  ")
+    private var hero: some View {
+        ZStack(alignment: .bottomLeading) {
+            RemotePoster(item: currentItem, backdrop: true, cornerRadius: 0)
+                .frame(height: 410)
+
+            LinearGradient(
+                colors: [.black.opacity(0.05), .black.opacity(0.12), .black.opacity(0.98)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            VStack(alignment: .leading, spacing: 11) {
+                HStack(spacing: 7) {
+                    GlassBadge(text: currentItem.year)
+                    if currentItem.voteAverage > 0 {
+                        GlassBadge(text: currentItem.ratingText, systemImage: "star.fill")
+                    }
+                    if let runtime = details?.runtimeText {
+                        GlassBadge(text: runtime)
+                    }
+                }
+
+                Text(currentItem.title)
+                    .font(.system(size: 37, weight: .black, design: .rounded))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.76)
+
+                if let genres = details?.genres, !genres.isEmpty {
+                    Text(genres.prefix(3).joined(separator: "  •  "))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.72))
+                        .lineLimit(2)
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.bottom, 20)
+        }
+    }
+
+    private var actionRow: some View {
+        HStack(spacing: 11) {
+            if item.kind == .movie {
+                NavigationLink {
+                    FrameXTVPlayerScreen(item: currentItem, playback: moviePlayback)
+                } label: {
+                    Label(resumeText, systemImage: "play.fill")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                        .foregroundStyle(.black)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Button {
+                library.toggleFavorite(currentItem)
+            } label: {
+                Label(
+                    library.isFavorite(currentItem) ? "Saved" : "My List",
+                    systemImage: library.isFavorite(currentItem) ? "checkmark" : "plus"
+                )
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(.white.opacity(0.09)))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white)
+        }
+    }
+
+    private var playbackFeatures: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 9) {
+                FeaturePill(title: "Subtitles", systemImage: "captions.bubble.fill")
+                FeaturePill(title: "Multiple Servers", systemImage: "server.rack")
+                FeaturePill(title: "Resume", systemImage: "clock.arrow.circlepath")
+                FeaturePill(title: "Speed Control", systemImage: "speedometer")
+            }
+        }
+        .scrollIndicators(.hidden)
     }
 
     private var saved: WatchProgress? { library.progress(for: item) }
@@ -99,28 +156,48 @@ struct DetailView: View {
 
     @ViewBuilder
     private var episodeSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("Episodes").font(.title2.bold())
+        VStack(alignment: .leading, spacing: 15) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Episodes")
+                        .font(.title2.bold())
+                    if let selectedSeason {
+                        Text("Season \(selectedSeason)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 Spacer()
+
                 if !seasons.isEmpty {
-                    Picker("Season", selection: Binding(get: { selectedSeason ?? seasons.first?.seasonNumber ?? 1 }, set: { value in
-                        selectedSeason = value
-                        Task { await loadEpisodes(season: value) }
-                    })) {
+                    Picker("Season", selection: Binding(
+                        get: { selectedSeason ?? seasons.first?.seasonNumber ?? 1 },
+                        set: { value in
+                            selectedSeason = value
+                            Task { await loadEpisodes(season: value) }
+                        }
+                    )) {
                         ForEach(seasons) { season in
                             Text(season.name).tag(season.seasonNumber)
                         }
                     }
                     .pickerStyle(.menu)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 7)
+                    .background(.white.opacity(0.075), in: Capsule())
                 }
             }
-            .padding(.horizontal, 16)
 
             if episodeLoading {
-                ProgressView("Loading episodes…").padding(.horizontal, 16)
+                HStack(spacing: 10) {
+                    ProgressView().tint(.white)
+                    Text("Loading episodes…")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 18)
             } else {
-                LazyVStack(spacing: 0) {
+                LazyVStack(spacing: 11) {
                     ForEach(episodes) { episode in
                         NavigationLink {
                             FrameXTVPlayerScreen(item: currentItem, playback: episodePlayback(episode))
@@ -128,11 +205,11 @@ struct DetailView: View {
                             EpisodeRow(episode: episode, current: isCurrent(episode))
                         }
                         .buttonStyle(.plain)
-                        Divider().overlay(.white.opacity(0.08)).padding(.leading, 132)
                     }
                 }
             }
         }
+        .padding(.top, 4)
     }
 
     private func episodePlayback(_ episode: Episode) -> FrameXTVPlayback {
@@ -155,7 +232,9 @@ struct DetailView: View {
             details = try await detailRequest
             if item.kind != .movie {
                 seasons = try await seasonRequest
-                let preferred = saved?.season.flatMap { s in seasons.contains(where: { $0.seasonNumber == s }) ? s : nil }
+                let preferred = saved?.season.flatMap { season in
+                    seasons.contains(where: { $0.seasonNumber == season }) ? season : nil
+                }
                 let first = preferred ?? seasons.first?.seasonNumber
                 selectedSeason = first
                 if let first { await loadEpisodes(season: first) }
@@ -169,9 +248,27 @@ struct DetailView: View {
     @MainActor
     private func loadEpisodes(season: Int) async {
         episodeLoading = true
-        do { episodes = try await app.episodes(tmdbID: item.tmdbID, season: season) }
-        catch { self.error = error.localizedDescription }
+        do {
+            episodes = try await app.episodes(tmdbID: item.tmdbID, season: season)
+        } catch {
+            self.error = error.localizedDescription
+        }
         episodeLoading = false
+    }
+}
+
+private struct FeaturePill: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 11)
+            .padding(.vertical, 8)
+            .background(.white.opacity(0.065), in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.07)))
+            .foregroundStyle(.white.opacity(0.86))
     }
 }
 
@@ -180,33 +277,70 @@ struct EpisodeRow: View {
     let current: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
+        HStack(spacing: 13) {
+            ZStack(alignment: .bottomLeading) {
                 if let url = episode.stillURL() {
-                    AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { Color.white.opacity(0.06) }
-                } else { Color.white.opacity(0.06) }
-                Image(systemName: "play.fill")
-                    .frame(width: 36, height: 36)
-                    .background(.black.opacity(0.62), in: Circle())
-            }
-            .frame(width: 116, height: 66)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image): image.resizable().scaledToFill()
+                        default: Color.white.opacity(0.055)
+                        }
+                    }
+                } else {
+                    Color.white.opacity(0.055)
+                }
 
-            VStack(alignment: .leading, spacing: 5) {
-                HStack {
-                    Text("E\(episode.episodeNumber)  \(episode.name)").font(.subheadline.bold()).lineLimit(1)
-                    if current { Image(systemName: "clock.fill").foregroundStyle(.cyan).font(.caption) }
+                LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .center, endPoint: .bottom)
+
+                Text("E\(episode.episodeNumber)")
+                    .font(.caption.bold())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.black.opacity(0.7), in: Capsule())
+                    .padding(8)
+
+                Image(systemName: "play.fill")
+                    .font(.caption.bold())
+                    .frame(width: 36, height: 36)
+                    .background(.white, in: Circle())
+                    .foregroundStyle(.black)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            }
+            .frame(width: 132, height: 76)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text(episode.name)
+                        .font(.subheadline.bold())
+                        .lineLimit(1)
+                    if current {
+                        Image(systemName: "clock.fill")
+                            .foregroundStyle(.cyan)
+                            .font(.caption)
+                    }
                 }
+
                 if !episode.overview.isEmpty {
-                    Text(episode.overview).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    Text(episode.overview)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 } else if let runtime = episode.runtime {
-                    Text("\(runtime) min").font(.caption).foregroundStyle(.secondary)
+                    Text("\(runtime) min")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
+
             Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(10)
+        .background(.white.opacity(current ? 0.085 : 0.045), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.white.opacity(0.06)))
         .foregroundStyle(.white)
     }
 }
