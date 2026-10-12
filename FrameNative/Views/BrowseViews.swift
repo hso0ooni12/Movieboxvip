@@ -59,10 +59,19 @@ struct HomeView: View {
                         MediaRail(title: "Series Everyone’s Watching", items: app.trendingTV, subtitle: "Fresh picks and fan favorites")
                         MediaRail(title: "Anime Spotlight", items: app.anime, subtitle: "Popular Japanese animation")
 
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("frameX")
-                                .font(.system(size: 26, weight: .black, design: .rounded))
-                            Text("Movies, series and anime in one clean native experience.")
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 10) {
+                                Image("XSStoreLogo")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 40, height: 40)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                                Text("XS TV")
+                                    .font(.system(size: 26, weight: .black, design: .rounded))
+                            }
+
+                            Text("Movies, series and anime in one premium iOS experience.")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
@@ -75,7 +84,7 @@ struct HomeView: View {
                 .scrollIndicators(.hidden)
             }
         }
-        .navigationTitle("frameX")
+        .navigationTitle("XS TV")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.black.opacity(0.88), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
