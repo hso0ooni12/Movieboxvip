@@ -6,11 +6,17 @@ struct EmptyStateView: View {
     let systemImage: String
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: systemImage)
-                .font(.system(size: 44, weight: .light))
-                .foregroundStyle(.secondary)
-            Text(title).font(.title3.bold())
+        VStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(.white.opacity(0.06))
+                    .frame(width: 86, height: 86)
+                Image(systemName: systemImage)
+                    .font(.system(size: 34, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.75))
+            }
+            Text(title)
+                .font(.title2.bold())
             Text(message)
                 .font(.subheadline)
                 .multilineTextAlignment(.center)
@@ -18,7 +24,7 @@ struct EmptyStateView: View {
                 .padding(.horizontal, 34)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.vertical, 40)
+        .padding(.vertical, 56)
     }
 }
 
@@ -31,9 +37,10 @@ struct RemotePoster: View {
         GeometryReader { proxy in
             ZStack {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
+                    .fill(Color.white.opacity(0.055))
+
                 if let url = item.imageURL(backdrop: backdrop, width: backdrop ? 1280 : 500) {
-                    AsyncImage(url: url, transaction: Transaction(animation: .easeInOut(duration: 0.2))) { phase in
+                    AsyncImage(url: url, transaction: Transaction(animation: .easeInOut(duration: 0.22))) { phase in
                         switch phase {
                         case .success(let image):
                             image.resizable().scaledToFill()
@@ -66,59 +73,111 @@ struct RemotePoster: View {
                 endPoint: .bottomTrailing
             )
             Image(systemName: item.kind.symbol)
-                .font(.system(size: backdrop ? 60 : 42, weight: .thin))
-                .foregroundStyle(.white.opacity(0.28))
+                .font(.system(size: backdrop ? 54 : 38, weight: .thin))
+                .foregroundStyle(.white.opacity(0.24))
         }
+    }
+}
+
+struct GlassBadge: View {
+    let text: String
+    var systemImage: String? = nil
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.caption2.weight(.bold))
+            }
+            Text(text)
+                .font(.caption.weight(.semibold))
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().stroke(.white.opacity(0.08), lineWidth: 1))
     }
 }
 
 struct MediaCard: View {
     let item: MediaItem
+    var width: CGFloat = 148
+
+    private var height: CGFloat { width * 1.49 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            RemotePoster(item: item)
-                .frame(width: 148, height: 220)
+        VStack(alignment: .leading, spacing: 9) {
+            RemotePoster(item: item, cornerRadius: 15)
+                .frame(width: width, height: height)
                 .overlay(alignment: .topTrailing) {
                     if item.voteAverage > 0 {
-                        Text("★ \(item.ratingText)")
-                            .font(.caption2.bold())
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(.black.opacity(0.72), in: Capsule())
-                            .padding(8)
+                        GlassBadge(text: item.ratingText, systemImage: "star.fill")
+                            .padding(7)
                     }
                 }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 15, style: .continuous)
+                        .stroke(.white.opacity(0.08), lineWidth: 1)
+                }
+
             Text(item.title)
-                .font(.subheadline.bold())
+                .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
                 .foregroundStyle(.white)
-            Text(item.year)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+
+            HStack(spacing: 6) {
+                Text(item.year)
+                Text("•")
+                Text(item.kind.title)
+            }
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.secondary)
         }
-        .frame(width: 148, alignment: .leading)
+        .frame(width: width, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+}
+
+struct SectionHeader: View {
+    let title: String
+    var subtitle: String? = nil
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.title3.bold())
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 18)
     }
 }
 
 struct MediaRail: View {
     let title: String
     let items: [MediaItem]
+    var subtitle: String? = nil
 
     var body: some View {
         if !items.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(title)
-                    .font(.title3.bold())
-                    .padding(.horizontal, 16)
+            VStack(alignment: .leading, spacing: 13) {
+                SectionHeader(title: title, subtitle: subtitle)
                 ScrollView(.horizontal) {
-                    LazyHStack(spacing: 14) {
+                    LazyHStack(spacing: 13) {
                         ForEach(items) { item in
-                            NavigationLink(value: item) { MediaCard(item: item) }
-                                .buttonStyle(.plain)
+                            NavigationLink(value: item) {
+                                MediaCard(item: item)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 18)
                 }
                 .scrollIndicators(.hidden)
             }
@@ -130,34 +189,56 @@ struct ContinueWatchingCard: View {
     let progress: WatchProgress
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 9) {
             ZStack(alignment: .bottom) {
-                RemotePoster(item: progress.item, backdrop: true, cornerRadius: 14)
-                    .frame(width: 245, height: 138)
-                GeometryReader { proxy in
-                    VStack {
+                RemotePoster(item: progress.item, backdrop: true, cornerRadius: 16)
+                    .frame(width: 258, height: 145)
+
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.8)],
+                    startPoint: .center,
+                    endPoint: .bottom
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                VStack(spacing: 0) {
+                    Spacer()
+                    HStack {
+                        ZStack {
+                            Circle().fill(.white)
+                            Image(systemName: "play.fill")
+                                .font(.caption.bold())
+                                .foregroundStyle(.black)
+                                .offset(x: 1)
+                        }
+                        .frame(width: 34, height: 34)
                         Spacer()
+                        Text(progress.episodeLabel ?? "Resume")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
+                    .padding(12)
+
+                    GeometryReader { proxy in
                         ZStack(alignment: .leading) {
-                            Rectangle().fill(.white.opacity(0.18)).frame(height: 3)
-                            Rectangle().fill(.white).frame(width: proxy.size.width * progress.fraction, height: 3)
+                            Rectangle().fill(.white.opacity(0.2))
+                            Rectangle().fill(.white)
+                                .frame(width: proxy.size.width * progress.fraction)
                         }
                     }
+                    .frame(height: 3)
                 }
-                .frame(width: 245, height: 138)
-                Image(systemName: "play.fill")
-                    .font(.headline)
-                    .frame(width: 46, height: 46)
-                    .background(.black.opacity(0.68), in: Circle())
-                    .foregroundStyle(.white)
             }
+
             Text(progress.item.title)
                 .font(.subheadline.bold())
                 .lineLimit(1)
-            Text(progress.episodeLabel ?? "Resume")
+
+            Text(progress.episodeLabel ?? "Continue watching")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        .frame(width: 245, alignment: .leading)
+        .frame(width: 258, alignment: .leading)
     }
 }
 
@@ -167,41 +248,74 @@ struct HeroView: View {
     var body: some View {
         NavigationLink(value: item) {
             ZStack(alignment: .bottomLeading) {
-                RemotePoster(item: item, backdrop: true, cornerRadius: 28)
-                    .frame(height: 455)
-                LinearGradient(colors: [.clear, .black.opacity(0.98)], startPoint: .center, endPoint: .bottom)
-                    .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("FEATURED")
-                        .font(.caption.bold())
-                        .tracking(2)
-                        .foregroundStyle(.cyan)
+                RemotePoster(item: item, backdrop: true, cornerRadius: 0)
+                    .frame(height: 500)
+
+                LinearGradient(
+                    colors: [.black.opacity(0.08), .black.opacity(0.2), .black.opacity(0.98)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+
+                VStack(alignment: .leading, spacing: 13) {
+                    HStack(spacing: 8) {
+                        GlassBadge(text: "FEATURED")
+                        GlassBadge(text: item.year)
+                        if item.voteAverage > 0 {
+                            GlassBadge(text: item.ratingText, systemImage: "star.fill")
+                        }
+                    }
+
                     Text(item.title)
-                        .font(.system(size: 36, weight: .black, design: .rounded))
+                        .font(.system(size: 39, weight: .black, design: .rounded))
                         .lineLimit(2)
-                    Text("\(item.year)  •  ★ \(item.ratingText)  •  \(item.subtitle)")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.82))
-                        .lineLimit(2)
-                    HStack(spacing: 12) {
-                        Label("Play", systemImage: "play.fill")
+                        .minimumScaleFactor(0.78)
+
+                    if !item.overview.isEmpty {
+                        Text(item.overview)
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.78))
+                            .lineLimit(3)
+                            .lineSpacing(2)
+                    }
+
+                    HStack(spacing: 10) {
+                        Label("Watch Now", systemImage: "play.fill")
                             .font(.headline)
-                            .padding(.horizontal, 22)
+                            .padding(.horizontal, 19)
                             .padding(.vertical, 12)
                             .background(.white, in: Capsule())
                             .foregroundStyle(.black)
+
                         Label("Details", systemImage: "info.circle")
                             .font(.headline)
-                            .padding(.horizontal, 18)
+                            .padding(.horizontal, 17)
                             .padding(.vertical, 12)
                             .background(.ultraThinMaterial, in: Capsule())
                             .foregroundStyle(.white)
                     }
                 }
-                .padding(22)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 24)
             }
-            .padding(.horizontal, 16)
         }
         .buttonStyle(.plain)
+    }
+}
+
+struct PremiumLoadingView: View {
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .scaleEffect(1.15)
+                .tint(.white)
+            Text(message)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black)
     }
 }
