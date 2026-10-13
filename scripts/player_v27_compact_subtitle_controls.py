@@ -292,10 +292,9 @@ r'''      function applyStyle() {
 'source caption background opacity painting'
 )
 
-# Marker for QA.
-marker = '// V26_FINAL_PLAYER_UI:'
-if marker in s and 'V27_COMPACT_SUBTITLE_UI' not in s:
-    s = s.replace(marker, '// V27_COMPACT_SUBTITLE_UI: compact no-scroll editors, timeline-adjacent tools, live background opacity.\n' + marker, 1)
+# Marker for QA. Prepend it so it cannot depend on a particular V26 comment layout.
+if 'V27_COMPACT_SUBTITLE_UI' not in s:
+    s = '// V27_COMPACT_SUBTITLE_UI: compact no-scroll editors, timeline-adjacent tools, live background opacity.\n' + s
 
 p.write_text(s)
 print('Applied V27: compact subtitle panels + timeline-adjacent tools + working background opacity')
