@@ -22,7 +22,8 @@ if missing:
     raise SystemExit('V29 player QA missing: ' + ', '.join(missing))
 
 required_perf = {
-    'ProMotion opt-in': 'INFOPLIST_KEY_CADisableMinimumFrameDuration: "YES"',
+    'ProMotion opt-in': 'CADisableMinimumFrameDuration: true',
+    'explicit generated Info.plist': 'path: FrameNative/Info.plist',
     'Release optimization': 'SWIFT_OPTIMIZATION_LEVEL: "-O"',
     'whole-module compile': 'SWIFT_COMPILATION_MODE: "wholemodule"',
     'larger URL cache': 'memoryCapacity: 128 * 1024 * 1024',
@@ -38,6 +39,6 @@ print('V29 compact + ProMotion QA: PASS')
 print('  - smaller/tighter player chrome')
 print('  - subtitle tools directly above timeline')
 print('  - compact right-side and subtitle panels')
-print('  - ProMotion opt-in present')
+print('  - explicit ProMotion Info.plist opt-in present')
 print('  - release optimizations + artwork cache + lighter browsing compositing present')
 print('  - V24 subtitle/server engine preserved')
