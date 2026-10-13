@@ -1,0 +1,94 @@
+name: Build XS TV IPA V22
+
+on:
+  push:
+    branches: ["frame-native"]
+    paths:
+      - "scripts/player_v22_exact_source_selection.py"
+      - ".github/workflows/build-native-ipa-v22.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-native-unsigned-ipa-v22:
+    runs-on: macos-15
+    timeout-minutes: 35
+    env:
+      APP_NAME: XS TV
+      BUNDLE_ID: com.xsstore.xstv
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate XS TV brand assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          APPICON_DIR="FrameNative/Assets.xcassets/AppIcon.appiconset"
+          LOGO_DIR="FrameNative/Assets.xcassets/XSStoreLogo.imageset"
+          mkdir -p "$APPICON_DIR" "$LOGO_DIR"
+          cat > /tmp/xstv-icon.swift <<'SWIFT'
+          import AppKit
+          func polygon(_ points: [NSPoint]) -> NSBezierPath { let p=NSBezierPath(); guard let first=points.first else{return p}; p.move(to:first); for point in points.dropFirst(){p.line(to:point)}; p.close(); return p }
+          func makeIcon(size: CGFloat, path: String) throws { let image=NSImage(size:NSSize(width:size,height:size)); image.lockFocus(); NSColor(calibratedRed:0.025,green:0.02,blue:0.055,alpha:1).setFill(); NSRect(x:0,y:0,width:size,height:size).fill(); let gradient=NSGradient(colors:[NSColor(calibratedRed:0.22,green:0.04,blue:1.0,alpha:1),NSColor(calibratedRed:0.76,green:0.02,blue:0.62,alpha:1),NSColor(calibratedRed:1.0,green:0.24,blue:0.02,alpha:1)])!; let w=size,h=size; for shape in [polygon([NSPoint(x:w*0.13,y:h*0.18),NSPoint(x:w*0.29,y:h*0.18),NSPoint(x:w*0.59,y:h*0.84),NSPoint(x:w*0.49,y:h*0.93)]),polygon([NSPoint(x:w*0.34,y:h*0.18),NSPoint(x:w*0.50,y:h*0.18),NSPoint(x:w*0.69,y:h*0.68),NSPoint(x:w*0.61,y:h*0.79)]),polygon([NSPoint(x:w*0.54,y:h*0.18),NSPoint(x:w*0.85,y:h*0.18),NSPoint(x:w*0.70,y:h*0.52),NSPoint(x:w*0.61,y:h*0.41)])]{gradient.draw(in:shape,angle:225)}; image.unlockFocus(); guard let tiff=image.tiffRepresentation,let rep=NSBitmapImageRep(data:tiff),let png=rep.representation(using:.png,properties:[:]) else { throw NSError(domain:"XSTV",code:1)}; try png.write(to:URL(fileURLWithPath:path)) }
+          try makeIcon(size:1024,path:CommandLine.arguments[1]); try makeIcon(size:512,path:CommandLine.arguments[2])
+          SWIFT
+          swift /tmp/xstv-icon.swift "$APPICON_DIR/AppIcon-1024.png" "$LOGO_DIR/XSStoreLogo.png"
+          cat > "$APPICON_DIR/Contents.json" <<'JSON'
+          {"images":[{"filename":"AppIcon-1024.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"author":"xcode","version":1}}
+          JSON
+          cat > "$LOGO_DIR/Contents.json" <<'JSON'
+          {"images":[{"filename":"XSStoreLogo.png","idiom":"universal","scale":"1x"},{"idiom":"universal","scale":"2x"},{"idiom":"universal","scale":"3x"}],"info":{"author":"xcode","version":1}}
+          JSON
+          cat > "FrameNative/Assets.xcassets/Contents.json" <<'JSON'
+          {"info":{"author":"xcode","version":1}}
+          JSON
+
+      - run: python3 scripts/player_visibility_fix.py
+      - run: python3 scripts/player_v7_stable_engine.py
+      - run: python3 scripts/player_v8_functional_fix.py
+      - run: python3 scripts/player_v9_subtitle_tap_fix.py
+      - run: python3 scripts/player_v11_subtitle_network_server_fix.py
+      - run: python3 scripts/player_v21_real_track_binding.py
+      - name: Apply V22 exact source subtitle activation
+        run: python3 scripts/player_v22_exact_source_selection.py
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate native Xcode project
+        run: xcodegen generate --spec project-native.yml
+      - name: Build unsigned native device app
+        shell: bash
+        run: |
+          mkdir -p build-native
+          set -o pipefail
+          xcodebuild -project FrameNative.xcodeproj -scheme FrameNative -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build-native/DerivedData PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" APP_DISPLAY_NAME="$APP_NAME" CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" clean build | tee build-native/xcodebuild-device.log
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          APP_PATH="$(find build-native/DerivedData/Build/Products/Release-iphoneos -maxdepth 1 -type d -name '*.app' | head -n 1)"
+          test -n "$APP_PATH"; test -d "$APP_PATH"
+          rm -rf "$APP_PATH/_CodeSignature"; rm -f "$APP_PATH/embedded.mobileprovision"
+          PACKAGE_DIR="build-native/UnsignedPackage"; IPA_PATH="build-native/XS-TV-V22-unsigned.ipa"
+          rm -rf "$PACKAGE_DIR" "$IPA_PATH"; mkdir -p "$PACKAGE_DIR/Payload"
+          ditto "$APP_PATH" "$PACKAGE_DIR/Payload/XSTV.app"
+          (cd "$PACKAGE_DIR" && /usr/bin/zip -qry "../XS-TV-V22-unsigned.ipa" Payload)
+          unzip -t "$IPA_PATH"
+          echo "FINAL_IPA=$IPA_PATH" >> "$GITHUB_ENV"
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: xs-tv-v22-unsigned-ipa
+          path: ${{ env.FINAL_IPA }}
+          retention-days: 14
+          if-no-files-found: error
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xs-tv-v22-build-log
+          path: build-native/xcodebuild-device.log
+          retention-days: 7
