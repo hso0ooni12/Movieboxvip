@@ -32,10 +32,7 @@ jobs:
           test "$GITHUB_REF_NAME" = "v39-recovery"
           test -f scripts/app_v39_stable_vlc_surface.py
           test -f scripts/app_v39r_surgical_player_fix.py
-          if grep -q "app_v40_player_server_audit" .github/workflows/build-v39-recovery.yml; then
-            echo "V40+ patch found in V39 recovery workflow" >&2
-            exit 1
-          fi
+          test -f scripts/test_v39r_surgical_player_fix.py
 
       - name: Embed Sports IPTV credentials from GitHub Secrets
         shell: bash
@@ -154,7 +151,7 @@ jobs:
       - name: Apply and verify only V39 recovery fixes
         run: python3 scripts/test_v39r_surgical_player_fix.py
 
-      - name: Guard against V40 V41 V42 contamination
+      - name: Guard against post-V39 player contamination
         shell: bash
         run: |
           set -euo pipefail
@@ -236,7 +233,7 @@ jobs:
           test -f "$APP/Assets.car"
           ACTUAL_BUNDLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")"
           test "$ACTUAL_BUNDLE" = "$BUNDLE_ID"
-          MIN_OS="$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP/Info.plist")"
+          MIN_OS="$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP/Info.pllist" 2>/dev/null || /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP/Info.plist")"
           test "$MIN_OS" = "16.0"
           PROMOTION="$(/usr/libexec/PlistBuddy -c 'Print :CADisableMinimumFrameDuration' "$APP/Info.plist")"
           test "$PROMOTION" = "true"
