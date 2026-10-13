@@ -1,4 +1,5 @@
 from pathlib import Path
+import runpy
 
 sports_path = Path("FrameNative/Views/SportsLiveViewV33.swift")
 sports = sports_path.read_text(encoding="utf-8")
@@ -287,3 +288,9 @@ private struct XSVLCVideoSurface: UIViewRepresentable {
 sports = sports[:surface_start] + stable_surface
 sports_path.write_text(sports, encoding="utf-8")
 print("Applied V39 stable VLC drawable rotation fix")
+
+# V40 intentionally runs *after* the proven V39 baseline. It changes only the
+# movie/series server-row boundary and subtitle visual renderer, then verifies
+# those exact boundaries before the existing V39 regression suite continues.
+runpy.run_path("scripts/app_v40_v39_targeted_fix.py", run_name="__main__")
+runpy.run_path("scripts/test_v40_targeted_recovery.py", run_name="__main__")
