@@ -27,6 +27,23 @@ targets:
           - FrameXTVPlayerV4.swift
           - FrameXTVPlayerV5.swift
           - Views/GenreCatalogView.swift
+    info:
+      path: FrameNative/Info.plist
+      properties:
+        CFBundleDisplayName: "$(APP_DISPLAY_NAME)"
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        UIRequiresFullScreen: false
+        CADisableMinimumFrameDuration: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        "UISupportedInterfaceOrientations~ipad":
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: "com.xsstore.xstv"
@@ -36,13 +53,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: "NO"
         IPHONEOS_DEPLOYMENT_TARGET: "16.0"
-        GENERATE_INFOPLIST_FILE: "YES"
-        INFOPLIST_KEY_CFBundleDisplayName: "$(APP_DISPLAY_NAME)"
-        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
-        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: "YES"
-        INFOPLIST_KEY_UIRequiresFullScreen: "NO"
-        INFOPLIST_KEY_CADisableMinimumFrameDuration: "YES"
+        GENERATE_INFOPLIST_FILE: "NO"
         DEAD_CODE_STRIPPING: "YES"
       configs:
         Release:
