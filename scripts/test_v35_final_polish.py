@@ -1,13 +1,14 @@
 from pathlib import Path
 import runpy
 
-# V36/V37 are intentionally applied here after every earlier regression suite
-# has validated the older generated source. The workflow then compiles/packages
-# this final source, while older QA remains a clean regression boundary.
+# V36/V37/V38 are intentionally applied here after every earlier regression
+# suite has validated the older generated source. The workflow then compiles
+# and packages this final source while older QA remains a regression boundary.
 runpy.run_path("scripts/app_v36_hardening.py", run_name="__main__")
 runpy.run_path("scripts/app_v36_speed_fix.py", run_name="__main__")
 runpy.run_path("scripts/app_v36_compile_compat.py", run_name="__main__")
 runpy.run_path("scripts/app_v37_remove_anime.py", run_name="__main__")
+runpy.run_path("scripts/app_v38_rotation_surface_rebuild.py", run_name="__main__")
 
 sports = Path("FrameNative/Views/SportsLiveViewV33.swift").read_text(encoding="utf-8")
 iptv = Path("FrameNative/Services/IPTVService.swift").read_text(encoding="utf-8")
@@ -23,6 +24,7 @@ required_sports = [
     "V35_FINAL_POLISH",
     "V36_ROTATION_HARDENING",
     "V36_COMPILE_COMPAT",
+    "V38_ROTATION_SURFACE_REBUILD",
     "toggleControlsFromCanvas()",
     "private func toggleControlsFromCanvas()",
     "private func keepControlsVisible()",
@@ -39,7 +41,14 @@ required_sports = [
     "isDismissingPlayer",
     "interactiveDismissDisabled()",
     "closePlayer()",
-    ".frame(maxWidth: .infinity, maxHeight: .infinity)",
+    "GeometryReader { proxy in",
+    ".id(surfaceGeneration)",
+    ".frame(width: proxy.size.width, height: proxy.size.height)",
+    "observeSurfaceSize(proxy.size)",
+    ".onChange(of: proxy.size)",
+    "surfaceRepairTask",
+    "lastSurfaceSize",
+    "180_000_000",
     ".clipped()",
     "guard let media = VLCMedia(url: urls[index])",
     "player.media = media",
@@ -60,8 +69,8 @@ assert "if controlsVisible {\n            withAnimation(.easeOut(duration: 0.14)
 assert ".onTapGesture {\n                    toggleControlsFromCanvas()" in sports
 assert "3_200_000_000" in sports
 
-# Rotation must not reload/switch a healthy live source. The drawable itself is
-# forcibly detached/rebound when its bounds change, while VLC media stays alive.
+# V36 keeps a healthy media session alive on rotation; V38 additionally waits
+# for the actual SwiftUI viewport change and recreates only the drawable UIView.
 recovery_start = sports.index("    func recoverAfterSurfaceChange()")
 recovery_end = sports.index("    func stop()", recovery_start)
 recovery = sports[recovery_start:recovery_end]
@@ -70,6 +79,11 @@ assert "self.tryNextSource()" not in recovery
 assert "self.player.state == .paused" in recovery
 assert "if sizeChanged, player.drawable as AnyObject? === view" in sports
 assert "player.drawable = nil\n            }\n            if player.drawable as AnyObject? !== view || sizeChanged" in sports
+assert "surfaceGeneration += 1" in sports
+assert "if lastSurfaceSize == .zero" in sports
+assert "let widthChanged = abs(size.width - lastSurfaceSize.width) > 1" in sports
+assert "let heightChanged = abs(size.height - lastSurfaceSize.height) > 1" in sports
+assert ".transaction { transaction in\n                transaction.animation = nil" in sports
 assert "UIScreen.main.bounds" not in sports
 
 # Pinned VLCKit compatibility: no force unwraps and no unsupported `.ended`
@@ -173,4 +187,4 @@ movie_markers = [
 for marker in movie_markers:
     assert marker in player, f"movie player regression: missing {marker}"
 
-print("V35 + V36 + V37 final hardening integrity PASS")
+print("V35 + V36 + V37 + V38 final hardening integrity PASS")
