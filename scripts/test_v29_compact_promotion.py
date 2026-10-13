@@ -11,7 +11,6 @@ required_player = {
     'timeline-adjacent subtitle tools': '.offset(y: -34)',
     'appearance max width': 'maxWidth: 560',
     'timing max width': 'maxWidth: 480',
-    'narrow quality panel': 'proxy.size.width * 0.40, 470',
     '40pt timeline': '.frame(height: 40)',
     '32pt quick tools': '.frame(width: 32, height: 32)',
     'V24 subtitle ownership': 'sourceSubtitles.select(payload)',
@@ -20,6 +19,9 @@ required_player = {
 missing = [name for name, marker in required_player.items() if marker not in player]
 if missing:
     raise SystemExit('V29 player QA missing: ' + ', '.join(missing))
+
+if 'proxy.size.width * 0.40, 470' not in player and 'proxy.size.width * 0.36, 430' not in player:
+    raise SystemExit('V29/V30 player QA missing: compact quality panel width')
 
 required_perf = {
     'ProMotion opt-in': 'CADisableMinimumFrameDuration: true',
