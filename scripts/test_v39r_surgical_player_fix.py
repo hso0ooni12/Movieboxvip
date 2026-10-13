@@ -2,9 +2,10 @@ from pathlib import Path
 import runpy
 
 # This test is executed only after the proven V39 regression suite has generated
-# the final V39 sources. Then it applies the surgical recovery patch and checks
-# the exact boundaries that regressed in V40-V42.
+# the final V39 sources. Then it applies the surgical recovery patches and
+# checks the exact boundaries that regressed in V40-V42.
 runpy.run_path("scripts/app_v39r_surgical_player_fix.py", run_name="__main__")
+runpy.run_path("scripts/app_v39r_quality_panel_isolation.py", run_name="__main__")
 
 player = Path("FrameNative/FrameXTVPlayerV6.swift").read_text(encoding="utf-8")
 sports = Path("FrameNative/Views/SportsLiveViewV33.swift").read_text(encoding="utf-8")
@@ -46,11 +47,18 @@ assert 'serverFolded.contains("subtitle")' in server_case
 assert 'serverFolded.contains("caption")' in server_case
 assert '!name.isEmpty, !subtitleLike' in server_case
 
-# The V39 quality panel explicitly requests the real server popup; subtitles
-# continue to use their own V24 source-owned popup and selection channel.
+# The V39 quality panel requests only the source Quality and Server popups.
+# It must never request general metadata because V39 metadata also scans/opens
+# the CC catalog, which is exactly what must stay out of Quality & Server.
 assert "func requestServerMenu()" in player
-assert "player.requestServerMenu()" in player
 assert "action === 'serverMenu'" in player
+qpanel = player[player.index("    private var qualityPanel: some View {"):]
+qpanel = qpanel[:qpanel.index("\n    private var subtitlesPanel")]
+assert "player.requestQualityMenu()" in qpanel
+assert "player.requestServerMenu()" in qpanel
+assert "player.requestMetadata()" not in qpanel
+
+# V24 source-owned subtitles remain completely separate and untouched.
 assert "sourceSubtitles.select(payload)" in player
 assert "xs:subtitleSelected" in player
 assert "subtitleFrameID" in player
@@ -59,7 +67,8 @@ assert "subtitleFrameID" in player
 # backgroundStyle/backgroundOpacity. Both values must now survive into the
 # source adapter on every slider/button change.
 style_action = player[player.index("a==='subtitleStyle'"):]
-style_action = style_action[:style_action.index("else if", 30) if "else if" in style_action[30:] else 800]
+next_else = style_action.find("else if", 30)
+style_action = style_action[:next_else if next_else >= 0 else 800]
 assert "backgroundStyle:String(p.backgroundStyle" in style_action
 assert "backgroundOpacity:Math.max(0,Math.min(1" in style_action
 assert "applySubtitleStyle()" in style_action
