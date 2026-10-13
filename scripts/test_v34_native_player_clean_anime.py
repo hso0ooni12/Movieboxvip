@@ -24,10 +24,13 @@ for marker in required_sports:
 assert "private final class XSSportsVLCPlayerModel" in sports
 assert "let player = VLCMediaPlayer()" in sports
 
-# A tap on the video surface only reveals controls. It must never reach the VLC
-# drawable because VLCKit may interpret that tap as play/pause.
+# The VLC drawable never receives canvas taps. V34 used show-only; V35 upgrades
+# this to direct hide/show without changing playback state.
 assert 'withAnimation(.easeOut(duration: 0.15)) { controlsVisible.toggle() }' not in sports
-assert '.onTapGesture {\n                    revealControls()\n                }' in sports
+assert (
+    '.onTapGesture {\n                    revealControls()\n                }' in sports
+    or '.onTapGesture {\n                    toggleControlsFromCanvas()\n                }' in sports
+)
 
 required_anime = [
     'include_adult", value: "false"',
@@ -50,4 +53,4 @@ for marker in required_anime:
 assert '"TV-MA"' not in tmdb
 assert "R18+" in tmdb
 
-print("V34 integrity PASS: VLC backend + iOS chrome + tap-to-show controls + targeted clean-anime filter")
+print("V34/V35 integrity PASS: VLC backend + iOS chrome + safe tap controls + targeted clean-anime filter")
