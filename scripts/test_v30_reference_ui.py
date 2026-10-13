@@ -1,5 +1,6 @@
 from pathlib import Path
 
+# V30 reference UI regression suite.
 player = Path('FrameNative/FrameXTVPlayerV6.swift').read_text()
 root = Path('FrameNative/Views/EnhancedRootView.swift').read_text()
 reference = Path('FrameNative/Views/ReferenceBrowseViews.swift').read_text()
