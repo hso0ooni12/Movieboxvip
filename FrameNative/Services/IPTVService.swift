@@ -270,8 +270,17 @@ final class IPTVSportsStore: ObservableObject {
     private let service = IPTVService.shared
     private let vault = IPTVCredentialVault.shared
 
+    var usesEmbeddedCredentials: Bool {
+        XSIPTVEmbeddedConfig.isConfigured && XSIPTVEmbeddedConfig.credentials != nil
+    }
+
     init() {
-        credentials = vault.load()
+        if let embedded = XSIPTVEmbeddedConfig.credentials {
+            credentials = embedded
+            try? vault.save(embedded)
+        } else {
+            credentials = vault.load()
+        }
     }
 
     func save(credentials: IPTVCredentials) async throws {
@@ -283,10 +292,15 @@ final class IPTVSportsStore: ObservableObject {
 
     func disconnect() {
         vault.clear()
-        credentials = nil
         categories = []
         streams = []
         errorMessage = nil
+        if let embedded = XSIPTVEmbeddedConfig.credentials {
+            credentials = embedded
+            try? vault.save(embedded)
+        } else {
+            credentials = nil
+        }
     }
 
     func refresh() async throws {
