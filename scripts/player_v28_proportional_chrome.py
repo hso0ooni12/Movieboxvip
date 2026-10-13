@@ -51,14 +51,16 @@ rep('''                        Image(systemName: player.isPlaying ? "pause.fill"
 'center play size'
 )
 
-# Bottom-right utility capsule + aspect button become compact.
+# Bottom utility areas differ slightly after V8/V26, so compact any remaining
+# 48pt chrome rather than depending on one old exact block.
 rep('''                    .padding(.horizontal, 18)
                     .frame(height: 48)''',
 '''                    .padding(.horizontal, 14)
                     .frame(height: 40)''',
-'bottom utility capsule'
+'bottom utility capsule', required=False
 )
-rep('.padding(.horizontal, 28)\n                .padding(.bottom, 12)', '.padding(.horizontal, 22)\n                .padding(.bottom, 8)', 'bottom utility margins')
+s = s.replace('.frame(height: 48)', '.frame(height: 40)')
+rep('.padding(.horizontal, 28)\n                .padding(.bottom, 12)', '.padding(.horizontal, 22)\n                .padding(.bottom, 8)', 'bottom utility margins', required=False)
 
 # V26/V27 native subtitle tools dock: smaller and closer to timeline.
 rep('.font(.system(size: 19, weight: .semibold, design: .rounded))\n                                .frame(width: 46, height: 46)', '.font(.system(size: 16, weight: .semibold, design: .rounded))\n                                .frame(width: 36, height: 36)', 'subtitle appearance quick button')
