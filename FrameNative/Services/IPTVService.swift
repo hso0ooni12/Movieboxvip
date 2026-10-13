@@ -200,7 +200,7 @@ actor IPTVService {
         return (sportsCategories, sportsStreams)
     }
 
-    func streamURL(for stream: IPTVLiveStream, credentials: IPTVCredentials) -> URL? {
+    nonisolated func streamURL(for stream: IPTVLiveStream, credentials: IPTVCredentials) -> URL? {
         let ext = stream.containerExtension?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             ? stream.containerExtension!
             : "m3u8"
