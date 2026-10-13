@@ -55,7 +55,9 @@ if old_surface not in sports:
     raise SystemExit("V39: V38 GeometryReader surface block not found")
 sports = sports.replace(old_surface, new_surface, 1)
 
-sports = sports.replace("            surfaceRepairTask?.cancel()\n", "", 2)
+# Remove pending-remount cancellation lines regardless of indentation. V39 no
+# longer owns a remount task at all.
+sports = sports.replace("surfaceRepairTask?.cancel()\n", "")
 
 # Remove V38's observe/debounce/remount helper completely.
 helper_start = sports.find("    private func observeSurfaceSize(_ size: CGSize) {")
