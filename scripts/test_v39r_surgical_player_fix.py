@@ -65,12 +65,15 @@ assert "subtitleFrameID" in player
 
 # Root cause of Black/Gray/opacity bug: the command bridge used to drop
 # backgroundStyle/backgroundOpacity. Both values must now survive into the
-# source adapter on every slider/button change.
-style_action = player[player.index("a==='subtitleStyle'"):]
-next_else = style_action.find("else if", 30)
-style_action = style_action[:next_else if next_else >= 0 else 800]
-assert "backgroundStyle:String(p.backgroundStyle" in style_action
-assert "backgroundOpacity:Math.max(0,Math.min(1" in style_action
+# source adapter on every slider/button change. V11/V24 final bridge uses the
+# verbose `action` + `payload` names, so QA explicitly checks that real form.
+style_start = player.index("else if (action === 'subtitleStyle') {")
+style_action = player[style_start:]
+next_else = style_action.find("else if", len("else if (action === 'subtitleStyle') {"))
+style_action = style_action[:next_else if next_else >= 0 else 1200]
+assert "backgroundStyle: String(payload.backgroundStyle" in style_action
+assert "backgroundOpacity: Math.max(0, Math.min(1" in style_action
+assert "payload.backgroundOpacity" in style_action
 assert "applySubtitleStyle()" in style_action
 
 assert '@AppStorage("XSTV.subtitleBackgroundStyle")' in player
