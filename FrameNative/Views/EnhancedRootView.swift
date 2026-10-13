@@ -9,11 +9,11 @@ struct EnhancedRootView: View {
         ZStack {
             mainTabs
                 .opacity(showSplash ? 0 : 1)
-                .scaleEffect(showSplash ? 1.012 : 1)
+                .scaleEffect(showSplash ? 1.006 : 1)
 
             if showSplash {
                 EnhancedXSTVSplashView()
-                    .transition(.opacity.combined(with: .scale(scale: 1.025)))
+                    .transition(.opacity)
                     .zIndex(10)
             }
         }
@@ -23,15 +23,11 @@ struct EnhancedRootView: View {
             }
             .preferredColorScheme(.dark)
         }
+        .task { await app.loadHome() }
         .task {
-            await app.loadHome()
-        }
-        .task {
-            try? await Task.sleep(nanoseconds: 1_550_000_000)
+            try? await Task.sleep(nanoseconds: 1_250_000_000)
             await MainActor.run {
-                withAnimation(.easeInOut(duration: 0.42)) {
-                    showSplash = false
-                }
+                withAnimation(.easeOut(duration: 0.24)) { showSplash = false }
             }
         }
     }
@@ -39,101 +35,66 @@ struct EnhancedRootView: View {
     private var mainTabs: some View {
         TabView {
             NavigationStack {
-                HomeView(showSettings: $showSettings)
+                XSReferenceHomeView(showSettings: $showSettings)
             }
-            .tabItem {
-                Label("Home", systemImage: "house.fill")
-            }
+            .tabItem { Label("Home", systemImage: "house.fill") }
 
             NavigationStack {
-                GenreCatalogView(kind: .movie, title: "Movies")
+                XSReferenceCatalogView(kind: .movie, title: "Movies")
             }
-            .tabItem {
-                Label("Movies", systemImage: "film.fill")
-            }
+            .tabItem { Label("Movies", systemImage: "film.fill") }
 
             NavigationStack {
-                GenreCatalogView(kind: .tv, title: "Series")
+                XSReferenceCatalogView(kind: .tv, title: "Series")
             }
-            .tabItem {
-                Label("Series", systemImage: "play.tv.fill")
-            }
+            .tabItem { Label("Series", systemImage: "play.tv.fill") }
 
             NavigationStack {
-                CatalogView(kind: .anime, title: "Anime")
+                XSReferenceCatalogView(kind: .anime, title: "Anime")
             }
-            .tabItem {
-                Label("Anime", systemImage: "sparkles")
-            }
+            .tabItem { Label("Anime", systemImage: "sparkles") }
 
             NavigationStack {
                 SearchView()
             }
-            .tabItem {
-                Label("Search", systemImage: "magnifyingglass")
-            }
+            .tabItem { Label("Search", systemImage: "magnifyingglass") }
         }
-        .tint(.pink)
-        .toolbarBackground(Color.black.opacity(0.94), for: .tabBar)
+        .tint(Color(red: 1.0, green: 0.12, blue: 0.38))
+        .toolbarBackground(Color.black.opacity(0.97), for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
     }
 }
 
 private struct EnhancedXSTVSplashView: View {
     @State private var animate = false
-    @State private var sweep = false
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-
             RadialGradient(
-                colors: [
-                    Color.purple.opacity(0.25),
-                    Color.pink.opacity(0.13),
-                    Color.orange.opacity(0.05),
-                    .clear
-                ],
+                colors: [Color.purple.opacity(0.20), Color.pink.opacity(0.10), .clear],
                 center: .center,
                 startRadius: 10,
-                endRadius: 340
+                endRadius: 300
             )
             .ignoresSafeArea()
-            .scaleEffect(animate ? 1.14 : 0.88)
-            .opacity(animate ? 1 : 0.42)
 
-            LinearGradient(
-                colors: [.clear, .white.opacity(0.055), .clear],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .rotationEffect(.degrees(-18))
-            .offset(x: sweep ? 460 : -460)
-            .ignoresSafeArea()
-
-            VStack(spacing: 19) {
-                XSBrandMark(size: 158)
-                    .scaleEffect(animate ? 1 : 0.80)
+            VStack(spacing: 18) {
+                XSBrandMark(size: 148)
+                    .scaleEffect(animate ? 1 : 0.90)
                     .opacity(animate ? 1 : 0)
-
-                VStack(spacing: 6) {
+                VStack(spacing: 5) {
                     XSWordmark()
                     Text("ENTERTAINMENT · REIMAGINED")
                         .font(.caption2.bold())
-                        .tracking(2.7)
-                        .foregroundStyle(.white.opacity(0.48))
+                        .tracking(2.5)
+                        .foregroundStyle(.white.opacity(0.46))
                 }
                 .opacity(animate ? 1 : 0)
-                .offset(y: animate ? 0 : 10)
             }
         }
         .onAppear {
-            withAnimation(.spring(response: 0.78, dampingFraction: 0.82)) {
-                animate = true
-            }
-            withAnimation(.linear(duration: 1.15).delay(0.15)) {
-                sweep = true
-            }
+            withAnimation(.easeOut(duration: 0.42)) { animate = true }
         }
     }
 }
