@@ -1,4 +1,4 @@
-name: Build XS TV IPA V30
+name: Build XS TV IPA V31
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
       - "FrameNative/Views/EnhancedRootView.swift"
       - "FrameNative/Views/SportsLiveView.swift"
       - "FrameNative/Services/IPTVService.swift"
+      - "FrameNative/Core/IPTVEmbeddedConfig.swift"
       - "project-native.yml"
       - "scripts/player_v30_floating_hit_targets.py"
       - "scripts/test_v30_reference_ui.py"
@@ -18,7 +19,7 @@ permissions:
   contents: read
 
 jobs:
-  build-native-unsigned-ipa-v30:
+  build-native-unsigned-ipa-v31:
     runs-on: macos-15
     timeout-minutes: 35
     env:
@@ -28,6 +29,45 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Embed Sports IPTV credentials securely
+        shell: bash
+        env:
+          XS_IPTV_HOST: ${{ secrets.XS_IPTV_HOST }}
+          XS_IPTV_USERNAME: ${{ secrets.XS_IPTV_USERNAME }}
+          XS_IPTV_PASSWORD: ${{ secrets.XS_IPTV_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$XS_IPTV_HOST"
+          test -n "$XS_IPTV_USERNAME"
+          test -n "$XS_IPTV_PASSWORD"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          def swift_string(value: str) -> str:
+              value = value.replace('\\', '\\\\').replace('"', '\\"')
+              value = value.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+              return '"' + value + '"'
+
+          host = os.environ['XS_IPTV_HOST']
+          username = os.environ['XS_IPTV_USERNAME']
+          password = os.environ['XS_IPTV_PASSWORD']
+          target = Path('FrameNative/Core/IPTVEmbeddedConfig.swift')
+          target.write_text(
+              'import Foundation\n\n'
+              'enum XSIPTVEmbeddedConfig {\n'
+              '    static let credentials: IPTVCredentials? = IPTVCredentials(\n'
+              f'        host: {swift_string(host)},\n'
+              f'        username: {swift_string(username)},\n'
+              f'        password: {swift_string(password)}\n'
+              '    )\n'
+              '    static let isConfigured = true\n'
+              '}\n',
+              encoding='utf-8'
+          )
+          print('Embedded Sports IPTV configuration generated from GitHub Secrets.')
+          PY
 
       - name: Generate XS TV brand assets
         shell: bash
@@ -133,7 +173,7 @@ jobs:
             -derivedDataPath build-native/DerivedData \
             PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
             APP_DISPLAY_NAME="$APP_NAME" \
-            MARKETING_VERSION="2.0.30" \
+            MARKETING_VERSION="2.0.31" \
             CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -148,10 +188,10 @@ jobs:
           APP_PATH="$(find build-native/DerivedData/Build/Products/Release-iphoneos -maxdepth 1 -type d -name '*.app' | head -n 1)"
           test -n "$APP_PATH"; test -d "$APP_PATH"
           rm -rf "$APP_PATH/_CodeSignature"; rm -f "$APP_PATH/embedded.mobileprovision"
-          PACKAGE_DIR="build-native/UnsignedPackage"; IPA_PATH="build-native/XS-TV-V30-unsigned.ipa"
+          PACKAGE_DIR="build-native/UnsignedPackage"; IPA_PATH="build-native/XS-TV-V31-unsigned.ipa"
           rm -rf "$PACKAGE_DIR" "$IPA_PATH"; mkdir -p "$PACKAGE_DIR/Payload"
           ditto "$APP_PATH" "$PACKAGE_DIR/Payload/XSTV.app"
-          (cd "$PACKAGE_DIR" && /usr/bin/zip -qry "../XS-TV-V30-unsigned.ipa" Payload)
+          (cd "$PACKAGE_DIR" && /usr/bin/zip -qry "../XS-TV-V31-unsigned.ipa" Payload)
           unzip -t "$IPA_PATH"
           {
             echo "App name: $APP_NAME"
@@ -159,7 +199,8 @@ jobs:
             echo "Playback: V24 subtitle/server engine preserved"
             echo "V30: floating player menus and expanded hit targets"
             echo "V30: reference-style Home, Movies, Series and Anime"
-            echo "Sports: secure Xtream sports-only live channels with native AVPlayer"
+            echo "V31 Sports: Xtream credentials embedded at build time from GitHub Secrets"
+            echo "V31 Sports: no manual IPTV login required"
             echo "Performance: ProMotion opt-in up to 120Hz on supported devices"
             echo "Minimum iOS: 16.0"
             echo "Signing: none"
@@ -172,7 +213,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          CHECK_DIR="$RUNNER_TEMP/xstv-v30-check"
+          CHECK_DIR="$RUNNER_TEMP/xstv-v31-check"
           rm -rf "$CHECK_DIR"; mkdir -p "$CHECK_DIR"
           unzip -q "$FINAL_IPA" -d "$CHECK_DIR"
           APP="$CHECK_DIR/Payload/XSTV.app"
@@ -186,12 +227,12 @@ jobs:
           test "$PROMOTION" = "true"
           IPA_BYTES="$(stat -f%z "$FINAL_IPA")"
           test "$IPA_BYTES" -gt 1500000
-          echo "V30 IPA validation PASS: $IPA_BYTES bytes, bundle=$ACTUAL_BUNDLE, minOS=$MIN_OS, ProMotion=$PROMOTION"
+          echo "V31 IPA validation PASS: $IPA_BYTES bytes, bundle=$ACTUAL_BUNDLE, minOS=$MIN_OS, ProMotion=$PROMOTION"
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: xs-tv-v30-unsigned-ipa
+          name: xs-tv-v31-embedded-sports-unsigned-ipa
           path: |
             ${{ env.FINAL_IPA }}
             build-native/BUILD-INFO.txt
@@ -202,6 +243,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: xs-tv-v30-build-log
+          name: xs-tv-v31-build-log
           path: build-native/xcodebuild-device.log
           retention-days: 7
