@@ -1,11 +1,8 @@
 from pathlib import Path
 import runpy
 
-# This test is executed only after the proven V39 regression suite has generated
-# the final V39 sources. Then it applies the surgical recovery patches and
-# checks the exact boundaries that regressed in V40-V42.
-runpy.run_path("scripts/app_v39r_surgical_player_fix.py", run_name="__main__")
-runpy.run_path("scripts/app_v39r_quality_panel_isolation.py", run_name="__main__")
+# Apply only the robust V39 recovery patch after the proven V39 generator/test.
+runpy.run_path("scripts/app_v39r2_surgical_player_fix.py", run_name="__main__")
 
 player = Path("FrameNative/FrameXTVPlayerV6.swift").read_text(encoding="utf-8")
 sports = Path("FrameNative/Views/SportsLiveViewV33.swift").read_text(encoding="utf-8")
@@ -13,16 +10,13 @@ sports = Path("FrameNative/Views/SportsLiveViewV33.swift").read_text(encoding="u
 assert "V39R_SURGICAL_PLAYER_FIX" in player
 assert "V39_STABLE_VLC_SURFACE" in sports
 
-# We really are building on V39, not carrying the broad V40/V42 server scanner
-# that caused subtitle rows to appear inside Quality & Server on-device.
+# No post-V39 player architecture is allowed into this recovery build.
 assert "V40_PLAYER_SERVER_AUDIT" not in player
 assert "V42_FRAME_SOURCE_SERVER_QUALITY" not in player
 assert "xsNetworkServers" not in player
 assert "inspectServerPayload" not in player
 
-# The server list is source-popup scoped. Generic document-wide menu/div scans
-# are forbidden in scanServers; the only document lookup is for the exact
-# source heading "Select Server" in xsV39ServerPanel().
+# Server discovery is scoped to FrameXTV's exact Select Server popup.
 scan_start = player.index("      function scanServers() {")
 scan_end = player.index("\n      function reportCaption", scan_start)
 scan = player[scan_start:scan_end]
@@ -37,8 +31,7 @@ assert "xsV39ServerQuality.set" in scan
 assert "Full HD" in player and "4K" in player and "HD" in player
 assert "/^Select Server$/i" in player
 
-# A second Swift boundary rejects any malformed server event that looks like a
-# subtitle/caption catalog row. This catches the exact screenshot regression.
+# Swift has a second defensive boundary against subtitle rows entering servers.
 server_case_start = player.index('        case "xs:servers":')
 server_case_end = player.index('\n        case "xs:qualities":', server_case_start)
 server_case = player[server_case_start:server_case_end]
@@ -47,34 +40,28 @@ assert 'serverFolded.contains("subtitle")' in server_case
 assert 'serverFolded.contains("caption")' in server_case
 assert '!name.isEmpty, !subtitleLike' in server_case
 
-# The V39 quality panel requests only the source Quality and Server popups.
-# It must never request general metadata because V39 metadata also scans/opens
-# the CC catalog, which is exactly what must stay out of Quality & Server.
+# Quality & Server opens only the real server picker. It must not invoke generic
+# metadata/subtitle discovery because that was the regression seen on device.
+quality_start = player.index("    private var qualityPanel: some View {")
+quality_end = player.index("\n    private var subtitlesPanel", quality_start)
+quality_panel = player[quality_start:quality_end]
+assert "player.requestServerMenu()" in quality_panel
+assert "player.requestMetadata()" not in quality_panel
+assert "player.requestSubtitleMenu()" not in quality_panel
 assert "func requestServerMenu()" in player
 assert "action === 'serverMenu'" in player
-qpanel = player[player.index("    private var qualityPanel: some View {"):]
-qpanel = qpanel[:qpanel.index("\n    private var subtitlesPanel")]
-assert "player.requestQualityMenu()" in qpanel
-assert "player.requestServerMenu()" in qpanel
-assert "player.requestMetadata()" not in qpanel
 
-# V24 source-owned subtitles remain completely separate and untouched.
+# V24 source-owned subtitle selection remains intact.
 assert "sourceSubtitles.select(payload)" in player
 assert "xs:subtitleSelected" in player
 assert "subtitleFrameID" in player
 
-# Root cause of Black/Gray/opacity bug: the command bridge used to drop
-# backgroundStyle/backgroundOpacity. Both values must now survive into the
-# source adapter on every slider/button change. V11/V24 final bridge uses the
-# verbose `action` + `payload` names, so QA explicitly checks that real form.
-style_start = player.index("else if (action === 'subtitleStyle') {")
-style_action = player[style_start:]
-next_else = style_action.find("else if", len("else if (action === 'subtitleStyle') {"))
-style_action = style_action[:next_else if next_else >= 0 else 1200]
-assert "backgroundStyle: String(payload.backgroundStyle" in style_action
-assert "backgroundOpacity: Math.max(0, Math.min(1" in style_action
-assert "payload.backgroundOpacity" in style_action
-assert "applySubtitleStyle()" in style_action
+# Black/Gray/White/None and opacity are propagated directly to the source-owned
+# subtitle adapter after legacy command handlers have run.
+assert "p.action !== 'subtitleStyle'" in player
+assert "backgroundStyle: String(p.backgroundStyle" in player
+assert "backgroundOpacity: Math.max(0, Math.min(1" in player
+assert "window.setTimeout(() => sourceSubtitles.setStyle(completeStyle), 0)" in player
 
 assert '@AppStorage("XSTV.subtitleBackgroundStyle")' in player
 assert '@AppStorage("XSTV.subtitleBackgroundOpacity")' in player
@@ -83,8 +70,7 @@ assert ".onChange(of: subtitleBackgroundOpacity)" in player
 assert "backgroundStyle: subtitleBackgroundStyle" in player
 assert "backgroundOpacity: subtitleBackgroundOpacity" in player
 
-# Both rendering paths honor the chosen background and opacity: WebVTT/DOM
-# source captions and the Swift custom timing overlay.
+# Both source DOM/WebVTT and Swift delayed-caption paths use the chosen style.
 apply_start = player.index("      function applyStyle() {")
 apply_end = player.index("\n      function installCaptionObserver() {", apply_start)
 apply_style = player[apply_start:apply_end]
@@ -96,4 +82,4 @@ assert "-webkit-box-decoration-break" in apply_style
 assert 'subtitleBackgroundColor.opacity(subtitleBackgroundOpacity)' in player
 assert 'subtitleBackgroundStyle == "none" ? Color.clear' in player
 
-print("V39R QA PASS: V39 baseline preserved, server/subtitle isolation enforced, quality decorated, background/opacity propagated")
+print("V39R QA PASS: V39 preserved, server/subtitle isolation enforced, quality decorated, subtitle background/opacity propagated")
