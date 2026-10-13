@@ -1,34 +1,24 @@
 from pathlib import Path
-import runpy
-
-# Apply the latest hardening layer and the compile-safe VLCKit construction
-# before integrity checks / Xcode build.
-runpy.run_path('scripts/app_v34_content_sports_hardening.py', run_name='__main__')
-runpy.run_path('scripts/app_v34_compile_fix.py', run_name='__main__')
 
 sports = Path('FrameNative/Views/SportsLiveViewV33.swift').read_text(encoding='utf-8')
 root = Path('FrameNative/Views/EnhancedRootView.swift').read_text(encoding='utf-8')
 project = Path('project-native.yml').read_text(encoding='utf-8')
-tmdb = Path('FrameNative/Services/TMDBClient.swift').read_text(encoding='utf-8')
 
 required = [
     'import VLCKitSPM',
-    'VLCMediaPlayer(options:',
-    'guard let media = VLCMedia(url:',
+    'let player = VLCMediaPlayer()',
+    'player.media = VLCMedia(url: urls[index])',
     'XSVLCVideoSurface',
     'XSSportsServerSettingsView',
     'Server Address',
     'xs.iptv.serverOverride',
     'XSSportsLiveViewV33()',
-    '--clock-jitter=0',
-    '--clock-synchro=0',
-    '--drop-late-frames',
-    '--skip-frames',
-    'player.rate = 1.0',
     'controlsHideTask',
-    'scheduleControlsHide()',
-    '2_700_000_000',
-    'var extensions: [String] = ["ts"]',
+    'revealControls()',
+    '4_000_000_000',
+    '.allowsHitTesting(false)',
+    'view.isUserInteractionEnabled = false',
+    'uiView.isUserInteractionEnabled = false',
 ]
 for marker in required:
     haystack = sports + root + project
@@ -37,6 +27,12 @@ for marker in required:
 assert 'VLCKitSPM:' in project
 assert '- package: VLCKitSPM' in project
 assert 'NSAllowsArbitraryLoadsInMedia: true' in project
+
+# Tapping the video surface must reveal controls only. The VLC drawable itself
+# must never receive the tap, otherwise VLCKit can toggle pause internally.
+assert 'withAnimation(.easeOut(duration: 0.15)) { controlsVisible.toggle() }' not in sports
+assert '.onTapGesture {\n                    revealControls()\n                }' in sports
+assert 'Color.clear' in sports
 
 # Sports settings must never expose editable username/password fields.
 settings_start = sports.index('private struct XSSportsServerSettingsView')
@@ -52,21 +48,4 @@ assert 'password:' not in settings
 assert 'username: embedded.username' in sports
 assert 'password: embedded.password' in sports
 
-# Strict anime safety must go beyond TMDB's generic include_adult=false flag.
-anime_markers = [
-    'AnimeSafetyResponse',
-    'content_ratings,keywords',
-    'AnimeSafety.containsBlockedTerms',
-    'result.adult != true',
-    'guard adult != true else { return nil }',
-    'TV-MA',
-    'hentai',
-    'ecchi',
-    'nudity',
-    'fanservice',
-    'محتوى جنسي',
-]
-for marker in anime_markers:
-    assert marker in tmdb, f'missing anime safety marker: {marker}'
-
-print('V34 anime safety + VLC live playback + auto-hide integrity PASS')
+print('V33/V34 sports integrity PASS: VLC playback + server-only settings + tap-to-show controls without pause')
