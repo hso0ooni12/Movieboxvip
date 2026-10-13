@@ -620,6 +620,7 @@ struct XSSportsPlayerV33: View {
 
     @StateObject private var model: XSSportsVLCPlayerModel
     @State private var controlsVisible = true
+    @State private var controlsHideTask: Task<Void, Never>?
 
     init(stream: IPTVLiveStream, urls: [URL], logoURL: URL?) {
         self.stream = stream
@@ -634,12 +635,16 @@ struct XSSportsPlayerV33: View {
 
             XSVLCVideoSurface(player: model.player)
                 .ignoresSafeArea()
+                .allowsHitTesting(false)
+
+            Color.clear
+                .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    withAnimation(.easeOut(duration: 0.15)) { controlsVisible.toggle() }
+                    revealControls()
                 }
 
-            if model.statusText != "Live" {
+            if model.statusText != "Live" && model.statusText != "Paused" {
                 VStack(spacing: 12) {
                     if model.statusText != "Stream unavailable" {
                         ProgressView().controlSize(.large).tint(.white)
@@ -668,13 +673,32 @@ struct XSSportsPlayerV33: View {
             if controlsVisible {
                 playerChrome
                     .transition(.opacity)
+                    .zIndex(2)
             }
         }
         .preferredColorScheme(.dark)
         .toolbar(.hidden, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
-        .onAppear { model.start() }
-        .onDisappear { model.stop() }
+        .onAppear {
+            model.start()
+            revealControls()
+        }
+        .onDisappear {
+            controlsHideTask?.cancel()
+            model.stop()
+        }
+    }
+
+    private func revealControls() {
+        controlsHideTask?.cancel()
+        if !controlsVisible {
+            withAnimation(.easeOut(duration: 0.15)) { controlsVisible = true }
+        }
+        controlsHideTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.18)) { controlsVisible = false }
+        }
     }
 
     private var playerChrome: some View {
@@ -708,7 +732,10 @@ struct XSSportsPlayerV33: View {
 
                 Spacer()
 
-                Button { model.reload() } label: {
+                Button {
+                    revealControls()
+                    model.reload()
+                } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 14, weight: .bold))
                         .frame(width: 42, height: 42)
@@ -721,6 +748,7 @@ struct XSSportsPlayerV33: View {
                     Menu {
                         ForEach(Array(urls.enumerated()), id: \.offset) { index, url in
                             Button {
+                                revealControls()
                                 model.play(index: index)
                             } label: {
                                 Label(
@@ -755,7 +783,10 @@ struct XSSportsPlayerV33: View {
 
                 Spacer()
 
-                Button { model.togglePlayPause() } label: {
+                Button {
+                    revealControls()
+                    model.togglePlayPause()
+                } label: {
                     Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 15, weight: .bold))
                         .frame(width: 42, height: 42)
@@ -895,11 +926,13 @@ private struct XSVLCVideoSurface: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
         let view = UIView(frame: .zero)
         view.backgroundColor = .black
+        view.isUserInteractionEnabled = false
         player.drawable = view
         return view
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
+        uiView.isUserInteractionEnabled = false
         if player.drawable as AnyObject? !== uiView {
             player.drawable = uiView
         }
