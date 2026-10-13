@@ -1,16 +1,16 @@
-name: Build XS TV IPA V32
+name: Build XS TV IPA V33
 
 on:
   push:
     branches: ["frame-native"]
     paths:
       - "FrameNative/Views/GlobalSearchView.swift"
-      - "FrameNative/Views/SportsLiveViewV32.swift"
+      - "FrameNative/Views/SportsLiveViewV33.swift"
       - "FrameNative/Views/EnhancedRootView.swift"
       - "FrameNative/Views/ReferenceBrowseViews.swift"
       - "FrameNative/Services/IPTVService.swift"
       - "project-native.yml"
-      - "scripts/test_v32_sports_search.py"
+      - "scripts/test_v33_sports_vlc.py"
       - ".github/workflows/build-native-ipa-v32.yml"
   workflow_dispatch:
 
@@ -18,9 +18,9 @@ permissions:
   contents: read
 
 jobs:
-  build-native-unsigned-ipa-v32:
+  build-native-unsigned-ipa-v33:
     runs-on: macos-15
-    timeout-minutes: 35
+    timeout-minutes: 45
     env:
       APP_NAME: XS TV
       BUNDLE_ID: com.xsstore.xstv
@@ -150,8 +150,8 @@ jobs:
         run: python3 scripts/test_v29_compact_promotion.py
       - name: Verify V30 reference UI
         run: python3 scripts/test_v30_reference_ui.py
-      - name: Verify V32 sports and search
-        run: python3 scripts/test_v32_sports_search.py
+      - name: Verify V33 sports VLC and server-only settings
+        run: python3 scripts/test_v33_sports_vlc.py
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -172,7 +172,7 @@ jobs:
             -derivedDataPath build-native/DerivedData \
             PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
             APP_DISPLAY_NAME="$APP_NAME" \
-            MARKETING_VERSION="2.0.32" \
+            MARKETING_VERSION="2.0.33" \
             CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -187,19 +187,19 @@ jobs:
           APP_PATH="$(find build-native/DerivedData/Build/Products/Release-iphoneos -maxdepth 1 -type d -name '*.app' | head -n 1)"
           test -n "$APP_PATH"; test -d "$APP_PATH"
           rm -rf "$APP_PATH/_CodeSignature"; rm -f "$APP_PATH/embedded.mobileprovision"
-          PACKAGE_DIR="build-native/UnsignedPackage"; IPA_PATH="build-native/XS-TV-V32-unsigned.ipa"
+          PACKAGE_DIR="build-native/UnsignedPackage"; IPA_PATH="build-native/XS-TV-V33-unsigned.ipa"
           rm -rf "$PACKAGE_DIR" "$IPA_PATH"; mkdir -p "$PACKAGE_DIR/Payload"
           ditto "$APP_PATH" "$PACKAGE_DIR/Payload/XSTV.app"
-          (cd "$PACKAGE_DIR" && /usr/bin/zip -qry "../XS-TV-V32-unsigned.ipa" Payload)
+          (cd "$PACKAGE_DIR" && /usr/bin/zip -qry "../XS-TV-V33-unsigned.ipa" Payload)
           unzip -t "$IPA_PATH"
           {
             echo "App name: $APP_NAME"
             echo "Bundle ID: $BUNDLE_ID"
             echo "Playback: V24 subtitle/server engine preserved"
-            echo "V32 Sports: HLS-first playback with TS fallback and native controls"
-            echo "V32 Sports: channel artwork with provider-logo and branded fallback"
+            echo "V33 Sports: VLCKit playback for IPTV codecs and containers unsupported by AVPlayer"
+            echo "V33 Sports: provider extension first, TS and HLS fallback sources"
+            echo "V33 Sports: server-only settings; IPTV username/password are never shown in UI"
             echo "V32 Search: global search button in every main tab"
-            echo "V32 Search: professional text-rich search results and normal details navigation"
             echo "Performance: ProMotion opt-in up to 120Hz on supported devices"
             echo "Minimum iOS: 16.0"
             echo "Signing: none"
@@ -212,7 +212,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          CHECK_DIR="$RUNNER_TEMP/xstv-v32-check"
+          CHECK_DIR="$RUNNER_TEMP/xstv-v33-check"
           rm -rf "$CHECK_DIR"; mkdir -p "$CHECK_DIR"
           unzip -q "$FINAL_IPA" -d "$CHECK_DIR"
           APP="$CHECK_DIR/Payload/XSTV.app"
@@ -226,12 +226,12 @@ jobs:
           test "$PROMOTION" = "true"
           IPA_BYTES="$(stat -f%z "$FINAL_IPA")"
           test "$IPA_BYTES" -gt 1500000
-          echo "V32 IPA validation PASS: $IPA_BYTES bytes, bundle=$ACTUAL_BUNDLE, minOS=$MIN_OS, ProMotion=$PROMOTION"
+          echo "V33 IPA validation PASS: $IPA_BYTES bytes, bundle=$ACTUAL_BUNDLE, minOS=$MIN_OS, ProMotion=$PROMOTION"
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: xs-tv-v32-sports-search-unsigned-ipa
+          name: xs-tv-v33-vlc-sports-unsigned-ipa
           path: |
             ${{ env.FINAL_IPA }}
             build-native/BUILD-INFO.txt
@@ -242,6 +242,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: xs-tv-v32-build-log
+          name: xs-tv-v33-build-log
           path: build-native/xcodebuild-device.log
           retention-days: 7
