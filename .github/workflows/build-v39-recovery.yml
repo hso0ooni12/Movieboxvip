@@ -233,10 +233,13 @@ jobs:
           test -f "$APP/Assets.car"
           ACTUAL_BUNDLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")"
           test "$ACTUAL_BUNDLE" = "$BUNDLE_ID"
-          MIN_OS="$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP/Info.pllist" 2>/dev/null || /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP/Info.plist")"
+          MIN_OS="$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP/Info.plist")"
           test "$MIN_OS" = "16.0"
           PROMOTION="$(/usr/libexec/PlistBuddy -c 'Print :CADisableMinimumFrameDuration' "$APP/Info.plist")"
-          test "$PROMOTION" = "true"
+          case "$PROMOTION" in
+            true|TRUE|YES|1) ;;
+            *) echo "Unexpected CADisableMinimumFrameDuration value: $PROMOTION" >&2; exit 1 ;;
+          esac
           EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")"
           test -x "$APP/$EXECUTABLE"
           IPA_BYTES="$(stat -f%z "$FINAL_IPA")"
