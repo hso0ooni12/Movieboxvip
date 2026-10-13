@@ -4,6 +4,10 @@ options:
   deploymentTarget:
     iOS: "16.0"
   developmentLanguage: en
+packages:
+  VLCKitSPM:
+    url: https://github.com/rursache/VLCKitSPM
+    branch: master
 settings:
   base:
     SWIFT_VERSION: "5.9"
@@ -27,6 +31,8 @@ targets:
           - FrameXTVPlayerV4.swift
           - FrameXTVPlayerV5.swift
           - Views/GenreCatalogView.swift
+    dependencies:
+      - package: VLCKitSPM
     info:
       path: FrameNative/Info.plist
       properties:
@@ -36,6 +42,7 @@ targets:
         UIRequiresFullScreen: false
         CADisableMinimumFrameDuration: true
         NSAppTransportSecurity:
+          NSAllowsArbitraryLoadsInMedia: true
           NSExceptionDomains:
             otv8k.com:
               NSIncludesSubdomains: true
