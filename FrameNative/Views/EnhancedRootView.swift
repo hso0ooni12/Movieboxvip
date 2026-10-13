@@ -55,9 +55,9 @@ struct EnhancedRootView: View {
             .tabItem { Label("Anime", systemImage: "sparkles") }
 
             NavigationStack {
-                SearchView()
+                XSSportsLiveView()
             }
-            .tabItem { Label("Search", systemImage: "magnifyingglass") }
+            .tabItem { Label("Sports", systemImage: "sportscourt.fill") }
         }
         .tint(Color(red: 1.0, green: 0.12, blue: 0.38))
         .toolbarBackground(Color.black.opacity(0.97), for: .tabBar)
