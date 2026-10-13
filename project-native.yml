@@ -35,6 +35,11 @@ targets:
         UIApplicationSupportsIndirectInputEvents: true
         UIRequiresFullScreen: false
         CADisableMinimumFrameDuration: true
+        NSAppTransportSecurity:
+          NSExceptionDomains:
+            otv8k.com:
+              NSIncludesSubdomains: true
+              NSExceptionAllowsInsecureHTTPLoads: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
