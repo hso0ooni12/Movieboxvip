@@ -42,6 +42,12 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: "YES"
         INFOPLIST_KEY_UIRequiresFullScreen: "NO"
+        INFOPLIST_KEY_CADisableMinimumFrameDuration: "YES"
+        DEAD_CODE_STRIPPING: "YES"
+      configs:
+        Release:
+          SWIFT_OPTIMIZATION_LEVEL: "-O"
+          SWIFT_COMPILATION_MODE: "wholemodule"
 schemes:
   FrameNative:
     build:
