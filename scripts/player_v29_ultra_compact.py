@@ -77,8 +77,12 @@ rep('trailingPanel(width: min(proxy.size.width * 0.50, 590), title: "Playback")'
     'trailingPanel(width: min(proxy.size.width * 0.40, 470), title: "Playback")', 'playback sheet')
 rep('VStack(alignment: .leading, spacing: 18) {', 'VStack(alignment: .leading, spacing: 12) {', 'sheet spacing')
 rep('Text(title).font(.title3.bold())', 'Text(title).font(.system(size: 17, weight: .bold))', 'sheet title')
-rep('.padding(26)\n            .frame(width: width, maxHeight: .infinity, alignment: .topLeading)',
-    '.padding(18)\n            .frame(width: width, maxHeight: .infinity, alignment: .topLeading)', 'sheet padding')
+# visibility_fix may split the width/maxHeight frame, so compact the first trailing-panel padding directly.
+if '.padding(26)' in s:
+    s = s.replace('.padding(26)', '.padding(18)', 1)
+else:
+    rep('.padding(26)\n            .frame(width: width, maxHeight: .infinity, alignment: .topLeading)',
+        '.padding(18)\n            .frame(width: width, maxHeight: .infinity, alignment: .topLeading)', 'sheet padding', required=False)
 
 # Rows/settings: tighter vertical rhythm.
 s = s.replace('Text(title).font(.headline)', 'Text(title).font(.system(size: 16, weight: .semibold))')
