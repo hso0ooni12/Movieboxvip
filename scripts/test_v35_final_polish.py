@@ -18,6 +18,8 @@ required_sports = [
     "XSVLCDrawableHostView",
     "onNeedsRebind",
     "player.drawable = view",
+    "let media = VLCMedia(url: urls[index])",
+    "player.media = media",
     "network-caching",
     "live-caching",
     "http-reconnect",
