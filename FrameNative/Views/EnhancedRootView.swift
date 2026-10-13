@@ -36,32 +36,63 @@ struct EnhancedRootView: View {
         TabView {
             NavigationStack {
                 XSReferenceHomeView(showSettings: $showSettings)
+                    .xsGlobalSearchToolbar()
             }
             .tabItem { Label("Home", systemImage: "house.fill") }
 
             NavigationStack {
                 XSReferenceCatalogView(kind: .movie, title: "Movies")
+                    .xsGlobalSearchToolbar()
             }
             .tabItem { Label("Movies", systemImage: "film.fill") }
 
             NavigationStack {
                 XSReferenceCatalogView(kind: .tv, title: "Series")
+                    .xsGlobalSearchToolbar()
             }
             .tabItem { Label("Series", systemImage: "play.tv.fill") }
 
             NavigationStack {
                 XSReferenceCatalogView(kind: .anime, title: "Anime")
+                    .xsGlobalSearchToolbar()
             }
             .tabItem { Label("Anime", systemImage: "sparkles") }
 
             NavigationStack {
-                XSSportsLiveView()
+                XSSportsLiveViewV32()
+                    .xsGlobalSearchToolbar()
             }
             .tabItem { Label("Sports", systemImage: "sportscourt.fill") }
         }
         .tint(Color(red: 1.0, green: 0.12, blue: 0.38))
         .toolbarBackground(Color.black.opacity(0.97), for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
+    }
+}
+
+private struct XSGlobalSearchToolbarModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink {
+                        XSGlobalSearchView()
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 16, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Search XS TV")
+                }
+            }
+    }
+}
+
+private extension View {
+    func xsGlobalSearchToolbar() -> some View {
+        modifier(XSGlobalSearchToolbarModifier())
     }
 }
 
