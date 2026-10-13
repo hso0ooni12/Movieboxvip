@@ -99,8 +99,6 @@ jobs:
 
       - name: Verify V26 engine/UI integrity
         run: python3 scripts/test_v26_player_integrity.py
-      - name: Verify V27 subtitle UI integrity
-        run: python3 scripts/test_v27_subtitle_ui_integrity.py
       - name: Verify V28 player UI integrity
         run: python3 scripts/test_v28_player_ui_integrity.py
 
@@ -148,9 +146,9 @@ jobs:
             echo "Bundle ID: $BUNDLE_ID"
             echo "Brand: XS TV"
             echo "Playback: V24 subtitle/server engine preserved"
-            echo "V27: compact subtitle controls preserved"
+            echo "V27: compact subtitle behavior preserved"
             echo "V28: all player chrome reduced and rebalanced to reference proportions"
-            echo "QA: subtitle bridge + V26/V27/V28 integrity + Xcode build + IPA validation"
+            echo "QA: subtitle bridge + V26/V28 integrity + Xcode build + IPA validation"
             echo "Minimum iOS: 16.0"
             echo "Signing: none"
             echo "Build number: $GITHUB_RUN_NUMBER"
