@@ -207,23 +207,81 @@ if install_marker in s:
 # backgroundOpacity state, but the JS command bridge rebuilt subtitleStyle with
 # only the old Boolean `background`, silently discarding BOTH new values. That
 # made Black/Gray look the same and made opacity appear to do nothing.
-# Preserve all fields explicitly and call the source adapter's style function.
-style_patterns = [
-    re.compile(r"else if\(a==='subtitleStyle'\)\{subtitleStyle=\{size:Number\(p\.size\|\|1\),color:String\(p\.color\|\|'#ffffff'\),background:!!p\.background,bottom:Number\(p\.bottom\|\|76\)\};(?P<call>applyCueStyle\(\)|applySubtitleStyle\(\))\}"),
-    re.compile(r"else if \(a === 'subtitleStyle'\) \{[^\n]*?\}")
-]
-style_replaced = False
-for pattern in style_patterns:
-    m = pattern.search(s)
-    if not m:
-        continue
-    call = 'applySubtitleStyle()' if 'applySubtitleStyle' in s else 'applyCueStyle()'
-    new = "else if(a==='subtitleStyle'){subtitleStyle={size:Number(p.size||1),color:String(p.color||'#ffffff'),background:!!p.background,backgroundStyle:String(p.backgroundStyle||(p.background===false?'none':'black')),backgroundOpacity:Math.max(0,Math.min(1,Number(p.backgroundOpacity==null?0.68:p.backgroundOpacity))),bottom:Number(p.bottom||76)};" + call + "}"
-    s = s[:m.start()] + new + s[m.end():]
-    style_replaced = True
-    break
-if not style_replaced:
+#
+# V11 uses `command(payload)` + `action`; older baselines used `command(p)` +
+# `a`. Do not depend on whitespace or one exact historical formatting. Locate
+# the subtitleStyle branch *inside command()* and replace only that one branch.
+command_match = re.search(r'      function command\((?P<payload>[A-Za-z_$][\w$]*)\)\s*\{', s)
+if not command_match:
+    raise SystemExit("V39R: command function not found")
+command_start = command_match.start()
+command_end = s.find("\n      window.addEventListener", command_match.end())
+if command_end < 0:
+    raise SystemExit("V39R: command function end not found")
+command_block = s[command_start:command_end]
+
+style_condition = re.search(
+    r"else\s+if\s*\(\s*(?:action|a)\s*===\s*['\"]subtitleStyle['\"]\s*\)\s*\{",
+    command_block,
+)
+if not style_condition:
     raise SystemExit("V39R: subtitleStyle command bridge not found")
+
+# Find the balanced closing brace for just this else-if. The branch contains an
+# object literal, so a one-line regex is intentionally avoided.
+branch_start = style_condition.start()
+brace_start = command_block.find("{", style_condition.start(), style_condition.end() + 1)
+if brace_start < 0:
+    raise SystemExit("V39R: subtitleStyle branch opening brace not found")
+
+def balanced_js_block_end(text: str, opening: int) -> int:
+    depth = 0
+    quote = None
+    escaped = False
+    i = opening
+    while i < len(text):
+        ch = text[i]
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in ("'", '"', '`'):
+            quote = ch
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    return -1
+
+branch_end = balanced_js_block_end(command_block, brace_start)
+if branch_end < 0:
+    raise SystemExit("V39R: subtitleStyle branch closing brace not found")
+
+payload_name = command_match.group("payload")
+# Final V39 (after V11/V24) exposes applySubtitleStyle(); retain fallback only
+# for older generated baselines so this surgical patch remains reproducible.
+call = "applySubtitleStyle()" if "applySubtitleStyle()" in s else "applyCueStyle()"
+new_style_branch = f'''else if (action === 'subtitleStyle') {{
+            subtitleStyle = {{
+              size: Number({payload_name}.size || 1),
+              color: String({payload_name}.color || '#ffffff'),
+              background: !!{payload_name}.background,
+              backgroundStyle: String({payload_name}.backgroundStyle || ({payload_name}.background === false ? 'none' : 'black')),
+              backgroundOpacity: Math.max(0, Math.min(1, Number({payload_name}.backgroundOpacity == null ? 0.68 : {payload_name}.backgroundOpacity))),
+              bottom: Number({payload_name}.bottom || 76)
+            }};
+            {call};
+          }}'''
+command_block = command_block[:branch_start] + new_style_branch + command_block[branch_end:]
+s = s[:command_start] + command_block + s[command_end:]
 
 # Strengthen actual source caption painting. V27 already targets descendants;
 # this adds the two properties WebKit caption renderers most consistently obey.
