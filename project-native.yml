@@ -7,7 +7,7 @@ options:
 packages:
   VLCKitSPM:
     url: https://github.com/rursache/VLCKitSPM
-    branch: master
+    revision: aa0082dd94e4c91450dc3b9cbadb2b385f1e995e
 settings:
   base:
     SWIFT_VERSION: "5.9"
