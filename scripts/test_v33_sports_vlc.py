@@ -1,8 +1,10 @@
 from pathlib import Path
 import runpy
 
-# Apply the latest hardening layer before integrity checks / Xcode build.
+# Apply the latest hardening layer and the compile-safe VLCKit construction
+# before integrity checks / Xcode build.
 runpy.run_path('scripts/app_v34_content_sports_hardening.py', run_name='__main__')
+runpy.run_path('scripts/app_v34_compile_fix.py', run_name='__main__')
 
 sports = Path('FrameNative/Views/SportsLiveViewV33.swift').read_text(encoding='utf-8')
 root = Path('FrameNative/Views/EnhancedRootView.swift').read_text(encoding='utf-8')
@@ -12,7 +14,7 @@ tmdb = Path('FrameNative/Services/TMDBClient.swift').read_text(encoding='utf-8')
 required = [
     'import VLCKitSPM',
     'VLCMediaPlayer(options:',
-    'VLCMedia(url:',
+    'guard let media = VLCMedia(url:',
     'XSVLCVideoSurface',
     'XSSportsServerSettingsView',
     'Server Address',
