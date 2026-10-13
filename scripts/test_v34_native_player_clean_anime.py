@@ -11,6 +11,11 @@ required_sports = [
     "Playback sources",
     "Reload live channel",
     "model.togglePlayPause()",
+    ".allowsHitTesting(false)",
+    "view.isUserInteractionEnabled = false",
+    "uiView.isUserInteractionEnabled = false",
+    "revealControls()",
+    "controlsHideTask",
 ]
 for marker in required_sports:
     assert marker in sports, f"missing sports marker: {marker}"
@@ -18,6 +23,11 @@ for marker in required_sports:
 # The working VLC decoder must remain underneath the native-style controls.
 assert "private final class XSSportsVLCPlayerModel" in sports
 assert "let player = VLCMediaPlayer()" in sports
+
+# A tap on the video surface only reveals controls. It must never reach the VLC
+# drawable because VLCKit may interpret that tap as play/pause.
+assert 'withAnimation(.easeOut(duration: 0.15)) { controlsVisible.toggle() }' not in sports
+assert '.onTapGesture {\n                    revealControls()\n                }' in sports
 
 required_anime = [
     'include_adult", value: "false"',
@@ -40,4 +50,4 @@ for marker in required_anime:
 assert '"TV-MA"' not in tmdb
 assert "R18+" in tmdb
 
-print("V34 integrity PASS: working VLC backend + iOS-style chrome + targeted clean-anime filter")
+print("V34 integrity PASS: VLC backend + iOS chrome + tap-to-show controls + targeted clean-anime filter")
