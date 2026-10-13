@@ -3,18 +3,6 @@ from pathlib import Path
 p = Path('FrameNative/FrameXTVPlayerV6.swift')
 s = p.read_text()
 
-old = '''                    HStack(spacing: 20) {
-                        Button { openPanel(.subtitleDelay) } label: { Image(systemName: "tortoise") }
-                        Button { openPanel(.subtitleStyle) } label: { Text("Aa").font(.system(size: 20, weight: .medium)) }
-                        Button { openPanel(.subtitles) } label: { Image(systemName: "character.bubble") }
-                        Button { player.selectSubtitle(nil); revealControls() } label: { Image(systemName: "xmark") }
-                    }
-                    .padding(.horizontal, 20)
-                    .frame(height: 48)
-                    .background(.black.opacity(0.46), in: Capsule())
-                    .overlay(Capsule().stroke(.white.opacity(0.16)))
-'''
-
 new = '''                    // V26: compact subtitle tools dock. Language/Off remain in the real CC menu;
                     // this dock is only for appearance and sync, so there are no duplicate controls.
                     HStack(spacing: 7) {
@@ -47,12 +35,38 @@ new = '''                    // V26: compact subtitle tools dock. Language/Off r
                     .offset(y: -max(72, min(110, proxy.size.height * 0.12)))
 '''
 
-if old not in s:
-    raise SystemExit('V26 subtitle toolbar marker not found; refusing to alter V24/V25 behavior')
-s = s.replace(old, new, 1)
+# V8/V24/V25 may slightly change the original spacing/labels. Locate the actual
+# subtitle quick-control cluster structurally instead of depending on one exact string.
+needle = 'openPanel(.subtitleDelay)'
+pos = s.find(needle)
+if pos < 0:
+    raise SystemExit('V26 could not find subtitle timing launcher; refusing to alter working playback')
 
-# Remove motion from the tool panels themselves as well. They should fade cleanly
-# instead of sliding in from the edge/bottom while the user is watching video.
+start = s.rfind('                    HStack(', 0, pos)
+if start < 0:
+    raise SystemExit('V26 could not locate start of subtitle toolbar')
+
+# The old toolbar is a capsule ending at the first matching overlay after the timing/style buttons.
+end_marker = '                    .overlay(Capsule().stroke(.white.opacity(0.16)))'
+end = s.find(end_marker, pos)
+if end < 0:
+    # Compatibility with minor lineWidth/style variants.
+    end_marker = '                    .overlay(Capsule().stroke(.white.opacity(0.16), lineWidth: 1))'
+    end = s.find(end_marker, pos)
+if end < 0:
+    raise SystemExit('V26 could not locate end of subtitle toolbar')
+end += len(end_marker)
+while end < len(s) and s[end] in '\r\n':
+    end += 1
+
+cluster = s[start:end]
+if 'openPanel(.subtitleStyle)' not in cluster:
+    raise SystemExit('V26 candidate toolbar does not contain appearance launcher')
+
+s = s[:start] + new + s[end:]
+
+# Remove motion from player panels. Subtitle text itself was already made stationary in V25;
+# V26 also keeps the settings panels to a clean fade so the whole player feels consistent.
 old_transition = '''                if panel != .none {
                     panelOverlay(proxy)
                         .transition(.opacity.combined(with: .move(edge: .trailing)))
