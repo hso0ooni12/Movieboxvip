@@ -7,6 +7,7 @@ function createXSSourceSubtitles(env) {
   const frameID = env.frameID || 'source-' + (win.crypto.randomUUID ? win.crypto.randomUUID() : Math.random().toString(36).slice(2));
   let generation = 0, catalog = [], pending = null, active = null, opening = null;
   let lastVideo = null, lastSource = '', lastCaption = '', delay = 0, disposed = false;
+  let timingTrack = null;
   let style = {size: 1, color: '#ffffff', background: true, bottom: 76};
   const timers = new Set();
   const text = el => String(el && el.textContent || '').replace(/\s+/g, ' ').trim();
@@ -115,7 +116,8 @@ function createXSSourceSubtitles(env) {
   }
   function trackFor(item) {
     const name = item.label.replace(/ \((In-Stream|Uploaded)\)$/, '');
-    return tracks().find(t => normal(t.label || t.language) === name) || null;
+    return tracks().find(t => normal(t.label || t.language) === name ||
+      ((!t.label || t.label === 'Subtitles') && normal(t.language) === name)) || null;
   }
   function caption(value) {
     if (value === lastCaption) return;
@@ -140,9 +142,18 @@ function createXSSourceSubtitles(env) {
     }
   }
   function reportCaption() {
+    const selectedTrack = delay && active ? trackFor(active) : null;
+    if (timingTrack && timingTrack !== selectedTrack) {
+      if (timingTrack.mode === 'hidden' && timingTrack.cues && timingTrack.cues.length) timingTrack.mode = 'showing';
+      timingTrack = null;
+    }
+    if (selectedTrack && selectedTrack.mode === 'showing') {
+      timingTrack = selectedTrack;
+      selectedTrack.mode = 'hidden';
+    }
     applyStyle();
     if (!delay || !active) { caption(''); return; }
-    const track = trackFor(active), v = findVideo();
+    const track = selectedTrack, v = findVideo();
     if (!track || !v) { caption(''); return; }
     const at = Number(v.currentTime || 0) + delay;
     const lines = Array.from(track.cues).filter(c => c.startTime <= at && at < c.endTime).map(c => c.text || '');

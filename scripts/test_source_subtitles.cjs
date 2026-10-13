@@ -25,7 +25,7 @@ function fixture(options = {}) {
   function load(index) {
     for (const t of textTracks) { t.mode='disabled'; t.cues=[]; }
     if (index < 0) return;
-    textTracks.push({kind:'subtitles', label:labels[index], language:index===1?'ar':'en', mode:'hidden',
+    textTracks.push({kind:'subtitles', label:options.genericTrackLabel?'Subtitles':labels[index], language:index===1?'ar':'en', mode:'hidden',
       cues:[{startTime:0,endTime:5,text:index===1?'مرحبا':'Hello'},{startTime:5,endTime:9,text:'Next'}]});
   }
   function open() {
@@ -134,11 +134,23 @@ test('empty wrapper frames cannot erase the source frame subtitle list',async()=
   const f=fixture();f.doc.querySelector('#cc').remove();await f.scan().catch(()=>{});
   assert.equal(f.last('xs:subtitles'),undefined);f.cleanup();
 });
+test('language-only source row matches the source generic TextTrack label plus language',async()=>{
+  const f=fixture({labels:['en','ar'],genericTrackLabel:true});const items=await f.scan();
+  await f.select(items[1]);await f.clock.tickAsync(1000);
+  assert.equal(f.last('xs:subtitleSelected').id,items[1].id);f.cleanup();
+});
+test('timing adjustment suppresses and then restores native in-stream cues',async()=>{
+  const f=fixture();const items=await f.scan();await f.select(items[1]);await f.clock.tickAsync(1000);
+  f.textTracks.at(-1).mode='showing';f.adapter.setDelay(1);
+  assert.equal(f.textTracks.at(-1).mode,'hidden');f.adapter.setDelay(0);
+  assert.equal(f.textTracks.at(-1).mode,'showing');f.cleanup();
+});
 test('generated production bridge parses and safely starts before documentElement exists',()=>{
   const swift=fs.readFileSync('FrameNative/FrameXTVPlayerV6.swift','utf8');
   assert(swift.includes('.init(name: "controls", value: "1")'));
   const match=swift.match(/private static let bridgeScript = #"""\n([\s\S]*?)    """#/);
   assert(match);new vm.Script(match[1]);
+  assert(match[1].split('\n').every(line=>!line.trim() || line.startsWith('    ')), 'Swift raw multiline string indentation');
   const listeners={};let intervals=0;
   const doc={documentElement:null,body:null,addEventListener:(n,f)=>listeners[n]=f};
   const win={crypto:{randomUUID:()=> 'frame-test'},addEventListener:()=>{},setTimeout:()=>1};

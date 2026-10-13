@@ -1,5 +1,6 @@
 """Apply after the V11 playback baseline; replace subtitle interception entirely."""
 from pathlib import Path
+from textwrap import indent
 
 p = Path('FrameNative/FrameXTVPlayerV6.swift')
 s = p.read_text()
@@ -135,7 +136,7 @@ replace("          if (event.data && event.data.__xsCommand) command(event.data.
             });
           }''')
 
-adapter = Path('scripts/xs_source_subtitles.js').read_text()
+adapter = indent(Path('scripts/xs_source_subtitles.js').read_text(), '      ')
 section('      let networkSubtitleItems = [];', '\n      function parseServerRow', adapter + '''
       const sourceSubtitles = createXSSourceSubtitles({document, window, findVideo, emit: bridge});
       function scanSubtitles(finalPass) { sourceSubtitles.publish(!!finalPass); }
