@@ -59,7 +59,7 @@ struct EnhancedRootView: View {
             .tabItem { Label("Anime", systemImage: "sparkles") }
 
             NavigationStack {
-                XSSportsLiveViewV32()
+                XSSportsLiveViewV33()
                     .xsGlobalSearchToolbar()
             }
             .tabItem { Label("Sports", systemImage: "sportscourt.fill") }
