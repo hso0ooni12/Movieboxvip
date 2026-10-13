@@ -6,6 +6,7 @@ import runpy
 # this hardened source, while older QA remains a clean regression boundary.
 runpy.run_path("scripts/app_v36_hardening.py", run_name="__main__")
 runpy.run_path("scripts/app_v36_speed_fix.py", run_name="__main__")
+runpy.run_path("scripts/app_v36_compile_compat.py", run_name="__main__")
 
 sports = Path("FrameNative/Views/SportsLiveViewV33.swift").read_text(encoding="utf-8")
 iptv = Path("FrameNative/Services/IPTVService.swift").read_text(encoding="utf-8")
@@ -17,6 +18,7 @@ player = Path("FrameNative/FrameXTVPlayerV6.swift").read_text(encoding="utf-8")
 required_sports = [
     "V35_FINAL_POLISH",
     "V36_ROTATION_HARDENING",
+    "V36_COMPILE_COMPAT",
     "toggleControlsFromCanvas()",
     "private func toggleControlsFromCanvas()",
     "private func keepControlsVisible()",
@@ -35,7 +37,7 @@ required_sports = [
     "closePlayer()",
     ".frame(maxWidth: .infinity, maxHeight: .infinity)",
     ".clipped()",
-    "let media = VLCMedia(url: urls[index])",
+    "guard let media = VLCMedia(url: urls[index])",
     "player.media = media",
     '":network-caching": 1100',
     '":live-caching": 1100',
@@ -43,6 +45,8 @@ required_sports = [
     "2_500_000_000",
     "scheduleFallback",
     "userPaused",
+    "suppressStoppedUntil",
+    "state == .stopped",
 ]
 for marker in required_sports:
     assert marker in sports, f"missing final sports marker: {marker}"
@@ -63,6 +67,14 @@ assert "self.player.state == .paused" in recovery
 assert "if sizeChanged, player.drawable as AnyObject? === view" in sports
 assert "player.drawable = nil\n            }\n            if player.drawable as AnyObject? !== view || sizeChanged" in sports
 assert "UIScreen.main.bounds" not in sports
+
+# Pinned VLCKit compatibility: no force unwraps and no unsupported `.ended`
+# state. Explicit stop events are suppressed so closing/replacing a source does
+# not accidentally start a backup stream.
+assert "VLCMedia(url: urls[index])!" not in sports
+assert "state == .ended" not in sports
+assert "guard Date() >= suppressStoppedUntil else { return }" in sports
+assert "userPaused = true\n        suppressStoppedUntil = Date().addingTimeInterval(0.75)\n        player.stop()" in sports
 
 # Sports credentials remain hidden; only server override is exposed.
 assert "xs.iptv.serverOverride" in sports
