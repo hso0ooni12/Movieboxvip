@@ -76,16 +76,16 @@ struct IPTVLiveStream: Identifiable, Hashable, Decodable {
 
 private extension KeyedDecodingContainer {
     func xsString(forKey key: Key) -> String? {
-        if let value = try? decodeIfPresent(String.self, forKey: key) { return value }
-        if let value = try? decodeIfPresent(Int.self, forKey: key) { return value.map(String.init) }
-        if let value = try? decodeIfPresent(Double.self, forKey: key) { return value.map { String(Int($0)) } }
+        if let value = try? decode(String.self, forKey: key) { return value }
+        if let value = try? decode(Int.self, forKey: key) { return String(value) }
+        if let value = try? decode(Double.self, forKey: key) { return String(Int(value)) }
         return nil
     }
 
     func xsInt(forKey key: Key) -> Int? {
-        if let value = try? decodeIfPresent(Int.self, forKey: key) { return value }
-        if let value = try? decodeIfPresent(String.self, forKey: key), let value, let intValue = Int(value) { return intValue }
-        if let value = try? decodeIfPresent(Double.self, forKey: key) { return value.map(Int.init) }
+        if let value = try? decode(Int.self, forKey: key) { return value }
+        if let value = try? decode(String.self, forKey: key), let intValue = Int(value) { return intValue }
+        if let value = try? decode(Double.self, forKey: key) { return Int(value) }
         return nil
     }
 }
