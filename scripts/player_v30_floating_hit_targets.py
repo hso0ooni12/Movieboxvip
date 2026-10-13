@@ -36,7 +36,8 @@ replacement = '''    private func trailingPanel<Content: View>(width: CGFloat, t
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             .padding(14)
-            .frame(width: width, maxHeight: .infinity, alignment: .topLeading)
+            .frame(width: width, alignment: .topLeading)
+            .frame(maxHeight: .infinity, alignment: .topLeading)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(.white.opacity(0.14), lineWidth: 1))
             .shadow(color: .black.opacity(0.38), radius: 18, y: 7)
