@@ -1,0 +1,110 @@
+name: Build XS TV IPA V15
+
+on:
+  push:
+    branches: ["frame-native"]
+    paths:
+      - "scripts/player_v15_actionable_tracks.py"
+      - ".github/workflows/build-native-ipa-v15.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-native-unsigned-ipa-v15:
+    runs-on: macos-15
+    timeout-minutes: 35
+    env:
+      APP_NAME: XS TV
+      BUNDLE_ID: com.xsstore.xstv
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply XS Player interaction fix
+        run: python3 scripts/player_visibility_fix.py
+
+      - name: Apply stable XS Player v7 engine
+        run: python3 scripts/player_v7_stable_engine.py
+
+      - name: Apply XS Player v8 functional controls
+        run: python3 scripts/player_v8_functional_fix.py
+
+      - name: Apply XS Player v9 subtitle and tap fix
+        run: python3 scripts/player_v9_subtitle_tap_fix.py
+
+      - name: Apply XS Player v11 subtitle network and server fix
+        run: python3 scripts/player_v11_subtitle_network_server_fix.py
+
+      - name: Apply XS Player v12 deterministic subtitle selection fix
+        run: python3 scripts/player_v12_subtitle_selection_fix.py
+
+      - name: Normalize player state for V13
+        run: python3 scripts/player_v13_compat.py
+
+      - name: Apply XS Player v13 subtitle assets and server recovery
+        run: python3 scripts/player_v13_subtitle_assets_server_recovery.py
+
+      - name: Apply XS Player v14 recursive provider-frame bridge
+        run: python3 scripts/player_v14_recursive_frame_bridge.py
+
+      - name: Apply XS Player v15 actionable controls
+        run: python3 scripts/player_v15_actionable_tracks.py
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate native Xcode project
+        run: xcodegen generate --spec project-native.yml
+
+      - name: Build unsigned native device app
+        shell: bash
+        run: |
+          mkdir -p build-native
+          set -o pipefail
+          xcodebuild \
+            -project FrameNative.xcodeproj \
+            -scheme FrameNative \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build-native/DerivedData \
+            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+            APP_DISPLAY_NAME="$APP_NAME" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            clean build | tee build-native/xcodebuild-device.log
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          APP_PATH="$(find build-native/DerivedData/Build/Products/Release-iphoneos -maxdepth 1 -type d -name '*.app' | head -n 1)"
+          test -n "$APP_PATH"; test -d "$APP_PATH"
+          rm -rf "$APP_PATH/_CodeSignature"; rm -f "$APP_PATH/embedded.mobileprovision"
+          PACKAGE_DIR="build-native/UnsignedPackage"; IPA_PATH="build-native/XS-TV-V15-unsigned.ipa"
+          rm -rf "$PACKAGE_DIR" "$IPA_PATH"; mkdir -p "$PACKAGE_DIR/Payload"
+          ditto "$APP_PATH" "$PACKAGE_DIR/Payload/XSTV.app"
+          (cd "$PACKAGE_DIR" && /usr/bin/zip -qry "../XS-TV-V15-unsigned.ipa" Payload)
+          unzip -t "$IPA_PATH"
+          echo "FINAL_IPA=$IPA_PATH" >> "$GITHUB_ENV"
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: xs-tv-v15-unsigned-ipa
+          path: ${{ env.FINAL_IPA }}
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xs-tv-v15-build-log
+          path: build-native/xcodebuild-device.log
+          retention-days: 7
