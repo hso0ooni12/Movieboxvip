@@ -1,14 +1,46 @@
 from pathlib import Path
-import re
 
 p = Path('FrameNative/FrameXTVPlayerV6.swift')
 s = p.read_text()
 
 # Keep the proven V24 subtitle/server engine untouched. V30 changes presentation and hit testing only.
+# Replace individual Swift functions by matching braces, never a broad regex range. This preserves
+# every helper function between trailingPanel/panelRow and the surrounding player code.
 
-# Make all right-side menus float inside the player instead of touching screen edges.
-pattern = re.compile(r'    private func trailingPanel<Content: View>\(width: CGFloat, title: String, @ViewBuilder content: \(\) -> Content\) -> some View \{.*?(?=\n    private var qualityPanel: some View)', re.S)
-replacement = '''    private func trailingPanel<Content: View>(width: CGFloat, title: String, @ViewBuilder content: () -> Content) -> some View {
+def replace_swift_function(source: str, signature: str, replacement: str) -> str:
+    start = source.find(signature)
+    if start < 0:
+        raise SystemExit(f'V30 function marker missing: {signature}')
+    brace = source.find('{', start)
+    if brace < 0:
+        raise SystemExit(f'V30 opening brace missing: {signature}')
+
+    depth = 0
+    i = brace
+    in_string = False
+    escaped = False
+    while i < len(source):
+        ch = source[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == '\\':
+                escaped = True
+            elif ch == '"':
+                in_string = False
+        else:
+            if ch == '"':
+                in_string = True
+            elif ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    return source[:start] + replacement + source[i + 1:]
+        i += 1
+    raise SystemExit(f'V30 closing brace missing: {signature}')
+
+trailing_replacement = '''    private func trailingPanel<Content: View>(width: CGFloat, title: String, @ViewBuilder content: () -> Content) -> some View {
         ZStack(alignment: .trailing) {
             Color.black.opacity(0.14)
                 .ignoresSafeArea()
@@ -45,18 +77,18 @@ replacement = '''    private func trailingPanel<Content: View>(width: CGFloat, t
             .padding(.vertical, 18)
         }
         .transition(.opacity)
-    }
-'''
-s, count = pattern.subn(replacement, s, count=1)
-if count != 1:
-    raise SystemExit('V30 could not replace trailingPanel')
+    }'''
 
-# Narrower floating cards leave more of the video visible.
+s = replace_swift_function(
+    s,
+    '    private func trailingPanel<Content: View>(width: CGFloat, title: String, @ViewBuilder content: () -> Content) -> some View',
+    trailing_replacement,
+)
+
+# Narrower floating cards leave more of the video visible. V29 supplies the compact starting widths.
 s = s.replace('proxy.size.width * 0.40, 470', 'proxy.size.width * 0.36, 430')
 s = s.replace('proxy.size.width * 0.36, 420', 'proxy.size.width * 0.33, 390')
 
-# Make language/server rows respond across the entire row, with comfortable invisible hit area.
-row_pattern = re.compile(r'    private func panelRow\(title: String, detail: String\?, action: @escaping \(\) -> Void\) -> some View \{.*?(?=\n    private func pushSubtitleStyle\(\))', re.S)
 row_replacement = '''    private func panelRow(title: String, detail: String?, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 10) {
@@ -80,14 +112,15 @@ row_replacement = '''    private func panelRow(title: String, detail: String?, a
             .contentShape(Rectangle())
         }
         .buttonStyle(XSPlayerTapButtonStyle())
-    }
+    }'''
 
-'''
-s, row_count = row_pattern.subn(row_replacement, s, count=1)
-if row_count != 1:
-    raise SystemExit('V30 could not replace panelRow')
+s = replace_swift_function(
+    s,
+    '    private func panelRow(title: String, detail: String?, action: @escaping () -> Void) -> some View',
+    row_replacement,
+)
 
-# Replace plain styles throughout the custom player with a more forgiving press target.
+# More forgiving invisible touch area on the rest of the player buttons.
 s = s.replace('.buttonStyle(.plain)', '.buttonStyle(XSPlayerTapButtonStyle())')
 
 if 'private struct XSPlayerTapButtonStyle: ButtonStyle' not in s:
@@ -97,4 +130,4 @@ if 'V30_FLOATING_HIT_TARGETS' not in s:
     s = '// V30_FLOATING_HIT_TARGETS: floating player menus + forgiving button hit areas.\n' + s
 
 p.write_text(s)
-print('Applied V30 floating menus and responsive hit targets')
+print('Applied V30 floating menus and responsive hit targets safely')
