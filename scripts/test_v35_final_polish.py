@@ -5,6 +5,7 @@ import runpy
 # validated the V34/V35 generated source. The workflow then compiles/packages
 # this hardened source, while older QA remains a clean regression boundary.
 runpy.run_path("scripts/app_v36_hardening.py", run_name="__main__")
+runpy.run_path("scripts/app_v36_speed_fix.py", run_name="__main__")
 
 sports = Path("FrameNative/Views/SportsLiveViewV33.swift").read_text(encoding="utf-8")
 iptv = Path("FrameNative/Services/IPTVService.swift").read_text(encoding="utf-8")
