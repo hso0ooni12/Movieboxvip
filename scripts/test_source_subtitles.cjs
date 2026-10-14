@@ -62,9 +62,9 @@ function fixture(options = {}) {
     clicks:()=>clickCount,opens:()=>openClicks,labels};
 }
 
-test('list is exactly the source popup, excluding checkmarks, unrelated DOM and network indexes', async()=>{
+test('list exposes only the Arabic and English source rows, with no inferred indexes', async()=>{
   const f=fixture(); const items=await f.scan();
-  assert.deepEqual(items.map(x=>x.label),f.labels);
+  assert.deepEqual(items.map(x=>x.label),['English','Arabic']);
   assert(items.every(x=>x.source==='source-menu' && x.index===null && x.frameID==='frame-A'));
   const p1=f.adapter.scan(),p2=f.adapter.scan(); await f.clock.tickAsync(100);await Promise.all([p1,p2]);
   assert.equal(f.opens(),1); f.cleanup();
@@ -72,7 +72,7 @@ test('list is exactly the source popup, excluding checkmarks, unrelated DOM and 
 test('synchronously mounted source popup publishes without an artificial scan delay', async()=>{
   const f=fixture();
   await f.adapter.scan();
-  assert.deepEqual(f.last('xs:subtitles').items.map(x=>x.label),f.labels);
+  assert.deepEqual(f.last('xs:subtitles').items.map(x=>x.label),['English','Arabic']);
   assert.equal(f.opens(),1);
   f.cleanup();
 });
@@ -90,11 +90,12 @@ test('reselecting the checked language ignores ✓ and does not toggle the popup
   await f.select(items[1],'r2');await f.clock.tickAsync(1000);
   assert.equal(f.last('xs:subtitleSelected').requestID,'r2');f.cleanup();
 });
-test('similar and duplicate labels retain distinct source row identities',async()=>{
-  const f=fixture({labels:['Arabic','Arabic','Arabic (SDH)']});const items=await f.scan();
-  assert.equal(new Set(items.map(x=>x.id)).size,3);
-  await f.select(items[1]);await f.clock.tickAsync(1000);
-  assert.equal(f.last('xs:subtitleSelected').id,items[1].id);f.cleanup();
+test('subtitle variants and unrelated source languages stay hidden without changing source selection',async()=>{
+  const f=fixture({labels:['Arabic','Arabic (SDH)','English','Español']});const items=await f.scan();
+  assert.deepEqual(items.map(x=>x.label),['Arabic','English']);
+  await f.select(items[0]);await f.clock.tickAsync(1000);
+  assert.equal(f.last('xs:subtitleSelected').id,items[0].id);
+  assert.equal(f.textTracks.at(-1).label,'Arabic');f.cleanup();
 });
 test('Off goes through the source handler and only confirms after cues are cleared',async()=>{
   const f=fixture();const items=await f.scan();await f.select(items[1]);await f.clock.tickAsync(1000);

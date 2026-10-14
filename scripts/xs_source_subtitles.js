@@ -77,11 +77,31 @@ function createXSSourceSubtitles(env) {
         label: name, occurrence, row, checked: isChecked(row)};
     }).filter(it => it.label && it.label !== '✕');
   }
+
+  // Keep the source menu as the authority for loading and selecting tracks,
+  // but keep the native list focused on the two languages this app exposes.
+  // `catalog` intentionally retains every source row so no source-owned ID or
+  // click behaviour is rewritten; these rows are only filtered for display.
+  function preferredLanguage(item) {
+    const value = normal(item && item.label).toLowerCase();
+    if (/(^|[^a-z])(arabic|ar|ara)([^a-z]|$)/.test(value) || /العرب|عربي|عربية/.test(value)) return 'arabic';
+    if (/(^|[^a-z])(english|en|eng)([^a-z]|$)/.test(value) || /إنجلي|انجلي/.test(value)) return 'english';
+    return '';
+  }
+  function visibleCatalog() {
+    const seen = new Set();
+    return catalog.filter(item => {
+      const language = preferredLanguage(item);
+      if (!language || seen.has(language)) return false;
+      seen.add(language);
+      return true;
+    });
+  }
   function publish(final) {
     const current = rows();
     if (current) catalog = current;
     if (!ccButton()) return; // Empty wrapper/advertising frames cannot overwrite the owner.
-    send({event: 'xs:subtitles', final: !!final, items: catalog.filter(it => it.label !== 'Off').map(it => ({
+    send({event: 'xs:subtitles', final: !!final, items: visibleCatalog().map(it => ({
       id: it.id, label: it.label, language: '', source: 'source-menu', frameID, index: null
     }))});
     hidePanels();
