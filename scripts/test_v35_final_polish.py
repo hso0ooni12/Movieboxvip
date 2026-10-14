@@ -4,6 +4,7 @@ import runpy
 # V36/V37/V38/V39 are intentionally applied here after every earlier regression
 # suite has validated the older generated source. The workflow then compiles
 # and packages this final source while older QA remains a regression boundary.
+# V39.1 also verifies that no stale V38 remount task survives the final patch.
 runpy.run_path("scripts/app_v36_hardening.py", run_name="__main__")
 runpy.run_path("scripts/app_v36_speed_fix.py", run_name="__main__")
 runpy.run_path("scripts/app_v36_compile_compat.py", run_name="__main__")
