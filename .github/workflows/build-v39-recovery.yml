@@ -33,6 +33,11 @@ jobs:
           test -f scripts/app_v39_stable_vlc_surface.py
           test -f scripts/app_v39r_surgical_player_fix.py
           test -f scripts/test_v39r_surgical_player_fix.py
+          test -f scripts/app_v39r3_smoothness.py
+          test -f scripts/app_v39r4_final_polish.py
+          test -f scripts/app_v39r5_app_performance.py
+          test -f scripts/test_v39r3_smoothness.py
+          test -f scripts/test_v39r5_app_performance.py
 
       - name: Embed Sports IPTV credentials from GitHub Secrets
         shell: bash
@@ -151,6 +156,16 @@ jobs:
       - name: Apply and verify only V39 recovery fixes
         run: python3 scripts/test_v39r_surgical_player_fix.py
 
+      - name: Apply and verify V39 smoothness and app performance fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/app_v39r3_smoothness.py
+          python3 scripts/app_v39r4_final_polish.py
+          python3 scripts/app_v39r5_app_performance.py
+          python3 scripts/test_v39r3_smoothness.py
+          python3 scripts/test_v39r5_app_performance.py
+
       - name: Guard against post-V39 player contamination
         shell: bash
         run: |
@@ -159,6 +174,9 @@ jobs:
           ! grep -q "V42_FRAME_SOURCE_SERVER_QUALITY" FrameNative/FrameXTVPlayerV6.swift
           ! grep -q "xsNetworkServers" FrameNative/FrameXTVPlayerV6.swift
           grep -q "V39R_SURGICAL_PLAYER_FIX" FrameNative/FrameXTVPlayerV6.swift
+          grep -q "V39R4_FINAL_POLISH" FrameNative/FrameXTVPlayerV6.swift
+          grep -q "V39R5_APP_PERFORMANCE" FrameNative/Core/AppState.swift
+          grep -q "V39R5_APP_PERFORMANCE" FrameNative/Views/DetailView.swift
           grep -q "V39_STABLE_VLC_SURFACE" FrameNative/Views/SportsLiveViewV33.swift
 
       - name: Install XcodeGen
