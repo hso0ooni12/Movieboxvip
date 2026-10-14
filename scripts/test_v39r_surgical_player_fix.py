@@ -2,12 +2,9 @@ from pathlib import Path
 import runpy
 
 # Apply only the robust V39 recovery patch after the proven V39 generator/test.
-# Keep the QA script repeatable when a working tree already contains V39R2.
-player_path = Path("FrameNative/FrameXTVPlayerV6.swift")
-if "V39R_SURGICAL_PLAYER_FIX" not in player_path.read_text(encoding="utf-8"):
-    runpy.run_path("scripts/app_v39r2_surgical_player_fix.py", run_name="__main__")
+runpy.run_path("scripts/app_v39r2_surgical_player_fix.py", run_name="__main__")
 
-player = player_path.read_text(encoding="utf-8")
+player = Path("FrameNative/FrameXTVPlayerV6.swift").read_text(encoding="utf-8")
 sports = Path("FrameNative/Views/SportsLiveViewV33.swift").read_text(encoding="utf-8")
 
 assert "V39R_SURGICAL_PLAYER_FIX" in player
@@ -70,10 +67,7 @@ assert '@AppStorage("XSTV.subtitleBackgroundStyle")' in player
 assert '@AppStorage("XSTV.subtitleBackgroundOpacity")' in player
 assert ".onChange(of: subtitleBackgroundStyle)" in player
 assert ".onChange(of: subtitleBackgroundOpacity)" in player
-assert (
-    "backgroundStyle: subtitleBackgroundStyle" in player or
-    "backgroundStyle: subtitleBackground ? subtitleBackgroundStyle : \"none\"" in player
-)
+assert "backgroundStyle: subtitleBackgroundStyle" in player
 assert "backgroundOpacity: subtitleBackgroundOpacity" in player
 
 # Both source DOM/WebVTT and Swift delayed-caption paths use the chosen style.
@@ -86,9 +80,6 @@ assert "background-image', 'none'" in apply_style
 assert "deepest.length ? deepest : [el]" in apply_style
 assert "-webkit-box-decoration-break" in apply_style
 assert 'subtitleBackgroundColor.opacity(subtitleBackgroundOpacity)' in player
-assert (
-    'subtitleBackgroundStyle == "none" ? Color.clear' in player or
-    'effectiveSubtitleBackgroundStyle == "none" ? Color.clear' in player
-)
+assert 'subtitleBackgroundStyle == "none" ? Color.clear' in player
 
 print("V39R QA PASS: V39 preserved, server/subtitle isolation enforced, quality decorated, subtitle background/opacity propagated")
