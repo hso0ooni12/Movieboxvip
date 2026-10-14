@@ -206,7 +206,7 @@ jobs:
           PACKAGE_DIR="build-native/UnsignedPackage"; IPA_PATH="build-native/XS-TV-V39-Native-Polish-R3-unsigned.ipa"
           rm -rf "$PACKAGE_DIR" "$IPA_PATH"; mkdir -p "$PACKAGE_DIR/Payload"
           ditto "$APP_PATH" "$PACKAGE_DIR/Payload/XSTV.app"
-          (cd "$PACKAGE_DIR" && /usr/bin/zip -qry "../XS-TV-V39-Native-Polish-R2-unsigned.ipa" Payload)
+          (cd "$PACKAGE_DIR" && /usr/bin/zip -qry "../XS-TV-V39-Native-Polish-R3-unsigned.ipa" Payload)
           unzip -t "$IPA_PATH"
           {
             echo "App name: $APP_NAME"
