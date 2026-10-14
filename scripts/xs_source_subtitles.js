@@ -94,14 +94,21 @@ function createXSSourceSubtitles(env) {
     const epoch = generation;
     opening = new Promise(resolve => {
       cc.click(); // A single normal click invokes the site's own React handler.
+      // Most source builds mount the menu synchronously. Read it immediately so
+      // the native panel does not wait for an arbitrary timer before it can
+      // show the exact source-owned subtitle list.
+      if (panel()) { hidePanels(); resolve(true); return; }
       let tries = 0;
       const check = () => {
         if (epoch !== generation || disposed) return resolve(false);
         if (panel()) { hidePanels(); return resolve(true); }
         if (++tries >= 20) return resolve(false);
-        later(check, 75);
+        // Be eager during the source UI's normal first render, then retain the
+        // original slower polling window for devices where its React popup is
+        // mounted later.
+        later(check, tries < 8 ? 40 : 75);
       };
-      later(check, 25);
+      later(check, 0);
     }).finally(() => { opening = null; });
     return opening;
   }
@@ -207,9 +214,11 @@ function createXSSourceSubtitles(env) {
         reportCaption(); return;
       }
       if (++tries >= 60) { finishFailure(request, 'The source could not load this subtitle. Try another subtitle or server.'); return; }
-      later(verify, 250);
+      // Confirm fast-loading tracks quickly, but keep the original long tail
+      // so a slower source response is never mistaken for a failed selection.
+      later(verify, tries < 8 ? 90 : 250);
     };
-    later(verify, 100);
+    later(verify, 70);
   }
   function tick() { observeSource(); reportCaption(); }
   function dispose() { disposed = true; pending = null; for (const id of timers) win.clearTimeout(id); timers.clear(); }

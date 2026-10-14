@@ -283,7 +283,7 @@ struct XSGlobalSearchView: View {
 
         searchTask = Task {
             if !immediate {
-                try? await Task.sleep(nanoseconds: 320_000_000)
+                try? await Task.sleep(nanoseconds: 220_000_000)
             }
             guard !Task.isCancelled else { return }
             await performSearch(cleaned)

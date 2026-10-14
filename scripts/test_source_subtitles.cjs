@@ -69,6 +69,13 @@ test('list is exactly the source popup, excluding checkmarks, unrelated DOM and 
   const p1=f.adapter.scan(),p2=f.adapter.scan(); await f.clock.tickAsync(100);await Promise.all([p1,p2]);
   assert.equal(f.opens(),1); f.cleanup();
 });
+test('synchronously mounted source popup publishes without an artificial scan delay', async()=>{
+  const f=fixture();
+  await f.adapter.scan();
+  assert.deepEqual(f.last('xs:subtitles').items.map(x=>x.label),f.labels);
+  assert.equal(f.opens(),1);
+  f.cleanup();
+});
 test('Arabic invokes the source row and waits for both selection and loaded cues', async()=>{
   const f=fixture();const items=await f.scan();await f.select(items[1]);
   await f.clock.tickAsync(150);assert.equal(f.last('xs:subtitleSelected'),undefined);

@@ -27,6 +27,10 @@ final class AppState: ObservableObject {
     var client: TMDBClient { TMDBClient(token: "", language: language) }
 
     func loadHome(force: Bool = false) async {
+        // Multiple SwiftUI surfaces can ask for the same home data while the
+        // app starts. Coalescing that work keeps the first launch responsive
+        // without changing the content or playback pipeline.
+        guard !isLoading else { return }
         if didLoad && !force { return }
         isLoading = true
         errorMessage = nil
