@@ -42,6 +42,9 @@ targets:
         UIRequiresFullScreen: false
         CADisableMinimumFrameDuration: true
         NSAppTransportSecurity:
+          # IPTV endpoints can supply their own channel logo URLs. Permit those
+          # source-provided images as well as the already-supported media URLs.
+          NSAllowsArbitraryLoads: true
           NSAllowsArbitraryLoadsInMedia: true
           NSExceptionDomains:
             otv8k.com:

@@ -1,4 +1,4 @@
-name: Build XS TV V39 Native Polish R2
+name: Build XS TV V39 Native Polish R3
 
 on:
   push:
@@ -162,6 +162,10 @@ jobs:
         run: python3 scripts/app_v39_device_refinements.py
       - name: Verify V39 device refinements
         run: python3 scripts/test_v39_device_refinements.py
+      - name: Apply R3 on-device server and live fixes
+        run: python3 scripts/app_v39_r3_device_fixes.py
+      - name: Verify R3 on-device server and live fixes
+        run: python3 scripts/test_v39_r3_device_fixes.py
       - name: Guard V39 native polish and source-owned controls
         run: python3 scripts/test_v39_native_polish.py
 
@@ -199,7 +203,7 @@ jobs:
           APP_PATH="$(find build-native/DerivedData/Build/Products/Release-iphoneos -maxdepth 1 -type d -name '*.app' | head -n 1)"
           test -n "$APP_PATH"; test -d "$APP_PATH"
           rm -rf "$APP_PATH/_CodeSignature"; rm -f "$APP_PATH/embedded.mobileprovision"
-          PACKAGE_DIR="build-native/UnsignedPackage"; IPA_PATH="build-native/XS-TV-V39-Native-Polish-R2-unsigned.ipa"
+          PACKAGE_DIR="build-native/UnsignedPackage"; IPA_PATH="build-native/XS-TV-V39-Native-Polish-R3-unsigned.ipa"
           rm -rf "$PACKAGE_DIR" "$IPA_PATH"; mkdir -p "$PACKAGE_DIR/Payload"
           ditto "$APP_PATH" "$PACKAGE_DIR/Payload/XSTV.app"
           (cd "$PACKAGE_DIR" && /usr/bin/zip -qry "../XS-TV-V39-Native-Polish-R2-unsigned.ipa" Payload)
@@ -214,8 +218,10 @@ jobs:
             echo "Subtitle appearance: style and opacity are forwarded to the source renderer"
             echo "Server quality: source labels only; no inferred server quality"
             echo "Server panel: compact source-server list with no AUTO spacing gap"
+            echo "Server handoff: exact source label and quality match, with acknowledgement before subtitle reset"
             echo "Sports: VLCKit live decoder with direct tap hide/show controls"
-            echo "Sports: first play waits for a valid drawable; early rotation is surface-gated"
+            echo "Sports: final-layout VLC drawable rebind fixes an immediate rotation after opening"
+            echo "Sports: source-provided channel logos load over the configured IPTV endpoint"
             echo "Sports: faster live startup/failover and local catalog cache"
             echo "Sports settings: server-only editing; account fields hidden"
             echo "Navigation: global search remains available in every main tab"
@@ -250,12 +256,12 @@ jobs:
           find "$APP" -name '*VLCKit*' -o -name '*VLC*' | head -n 20
           IPA_BYTES="$(stat -f%z "$FINAL_IPA")"
           test "$IPA_BYTES" -gt 1500000
-          echo "V39 Native Polish R2 IPA validation PASS: $IPA_BYTES bytes, bundle=$ACTUAL_BUNDLE, minOS=$MIN_OS, ProMotion=$PROMOTION"
+          echo "V39 Native Polish R3 IPA validation PASS: $IPA_BYTES bytes, bundle=$ACTUAL_BUNDLE, minOS=$MIN_OS, ProMotion=$PROMOTION"
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: xs-tv-v39-native-polish-r2-unsigned-ipa
+          name: xs-tv-v39-native-polish-r3-unsigned-ipa
           path: |
             ${{ env.FINAL_IPA }}
             build-native/BUILD-INFO.txt
