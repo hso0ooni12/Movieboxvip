@@ -50,8 +50,6 @@ struct XSCinematicHomeView: View {
                             .padding(.top, 38)
                         cinemaRail("Stories worth staying for", overline: "BINGE-WORTHY SERIES", items: app.popularTV)
                             .padding(.top, 36)
-                        cinemaRail("Animated worlds", overline: "ANIME & MORE", items: app.anime)
-                            .padding(.top, 36)
                     }
                     .padding(.bottom, 64)
                 }
@@ -197,7 +195,6 @@ struct XSCinematicHomeView: View {
                 HStack(spacing: 10) {
                     exploreLink("Movies", symbol: "film.stack", tint: .orange, kind: .movie)
                     exploreLink("Series", symbol: "play.tv", tint: .purple, kind: .tv)
-                    exploreLink("Anime", symbol: "sparkles.tv", tint: .pink, kind: .anime)
                 }
                 .padding(.horizontal, 22)
             }
