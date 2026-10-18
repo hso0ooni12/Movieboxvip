@@ -13,6 +13,7 @@ struct DetailView: View {
     @State private var error: String?
     @State private var heroAppeared = false
     @State private var synopsisExpanded = false
+    @State private var episodeRequestID = UUID()
 
     var body: some View {
         ZStack {
@@ -380,39 +381,54 @@ struct DetailView: View {
     @ViewBuilder
     private var episodeSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("THE EPISODE GUIDE")
+                        .font(.system(size: 10, weight: .heavy, design: .rounded))
+                        .tracking(2.1)
+                        .foregroundStyle(XSV3.coral)
                     Text("Episodes")
-                        .font(.title2.bold())
-                    if let selectedSeason {
-                        Text("Season \(selectedSeason) · \(episodes.count) episodes")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                        .font(.system(size: 27, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
                 }
-
                 Spacer()
+                Text("\(episodes.count) episodes")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(XSV3.muted)
+            }
 
-                if !seasons.isEmpty {
-                    Picker(
-                        "Season",
-                        selection: Binding(
-                            get: { selectedSeason ?? seasons.first?.seasonNumber ?? 1 },
-                            set: { value in
-                                selectedSeason = value
-                                Task { await loadEpisodes(season: value) }
-                            }
-                        )
-                    ) {
+            if !seasons.isEmpty {
+                ScrollView(.horizontal) {
+                    LazyHStack(spacing: 9) {
                         ForEach(seasons) { season in
-                            Text(season.name).tag(season.seasonNumber)
+                            let isSelected = selectedSeason == season.seasonNumber
+                            Button {
+                                guard selectedSeason != season.seasonNumber else { return }
+                                selectedSeason = season.seasonNumber
+                                Task { await loadEpisodes(season: season.seasonNumber) }
+                            } label: {
+                                HStack(spacing: 7) {
+                                    Text(season.name)
+                                        .lineLimit(1)
+                                    if isSelected {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 10, weight: .heavy))
+                                    }
+                                }
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundStyle(isSelected ? .black : .white)
+                                .padding(.horizontal, 16)
+                                .frame(height: 43)
+                                .background(isSelected ? Color.white : XSV3.lifted, in: Capsule())
+                                .overlay(Capsule().stroke(isSelected ? Color.clear : .white.opacity(0.12)))
+                            }
+                            .buttonStyle(XSV3PressStyle())
+                            .accessibilityAddTraits(isSelected ? .isSelected : [])
                         }
                     }
-                    .pickerStyle(.menu)
-                    .padding(.horizontal, 12)
-                    .frame(height: 40)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(.vertical, 2)
                 }
+                .scrollIndicators(.hidden)
             }
 
             if episodeLoading {
@@ -543,13 +559,26 @@ struct DetailView: View {
 
     @MainActor
     private func loadEpisodes(season: Int) async {
+        // Switching seasons quickly must never display the response for a
+        // previous season. The newest request owns the episode list.
+        let requestID = UUID()
+        episodeRequestID = requestID
         episodeLoading = true
+        episodes = []
+        error = nil
+
         do {
-            episodes = try await app.episodes(tmdbID: item.tmdbID, season: season)
+            let fetched = try await app.episodes(tmdbID: item.tmdbID, season: season)
+            guard episodeRequestID == requestID, selectedSeason == season else { return }
+            episodes = fetched
         } catch {
+            guard episodeRequestID == requestID, selectedSeason == season else { return }
             self.error = error.localizedDescription
         }
-        episodeLoading = false
+
+        if episodeRequestID == requestID {
+            episodeLoading = false
+        }
     }
 }
 
