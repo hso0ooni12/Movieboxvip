@@ -54,11 +54,11 @@ struct XSCinematicHomeView: View {
                     .padding(.bottom, 64)
                 }
                 .scrollIndicators(.hidden)
+                .ignoresSafeArea(edges: .top)
                 .refreshable { await app.loadHome(force: true) }
             }
         }
-        .toolbarBackground(XSCinemaStyle.background.opacity(0.92), for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .principal) { XSWordmark(compact: true) }
             ToolbarItemGroup(placement: .topBarTrailing) {
@@ -81,111 +81,136 @@ struct XSCinematicHomeView: View {
 
     private var cinematicHero: some View {
         let item = featuredItems[min(featuredIndex, featuredItems.count - 1)]
-        return ZStack(alignment: .bottomLeading) {
-            RemotePoster(item: item, backdrop: true, cornerRadius: 0)
-                .frame(height: 555)
-                .clipped()
-                .id(item.id)
-                .transition(.opacity)
-            LinearGradient(
-                stops: [
-                    .init(color: .black.opacity(0.12), location: 0),
-                    .init(color: .black.opacity(0.08), location: 0.26),
-                    .init(color: XSCinemaStyle.background.opacity(0.45), location: 0.48),
-                    .init(color: XSCinemaStyle.background.opacity(0.96), location: 0.82),
-                    .init(color: XSCinemaStyle.background, location: 1)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 7) {
-                    Circle().fill(XSCinemaStyle.accent).frame(width: 7, height: 7)
-                    Text("TONIGHT'S FEATURE")
-                        .font(.system(size: 10, weight: .heavy, design: .rounded))
-                        .tracking(3)
-                        .foregroundStyle(.white.opacity(0.95))
-                }
+        return VStack(alignment: .leading, spacing: 0) {
+            ZStack(alignment: .bottomLeading) {
+                RemotePoster(item: item, backdrop: true, cornerRadius: 0)
+                    .frame(height: 545)
+                    .clipped()
+                    .id(item.id)
 
-                Text(item.title)
-                    .font(.system(size: 38, weight: .black, design: .rounded))
-                    .tracking(-1.1)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.75)
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.5), radius: 20, y: 3)
+                LinearGradient(
+                    stops: [
+                        .init(color: .black.opacity(0.46), location: 0.0),
+                        .init(color: .clear, location: 0.27),
+                        .init(color: XSCinemaStyle.background.opacity(0.25), location: 0.45),
+                        .init(color: XSCinemaStyle.background.opacity(0.88), location: 0.78),
+                        .init(color: XSCinemaStyle.background, location: 1.0)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
 
-                HStack(spacing: 10) {
-                    Text(item.year)
-                    Circle().frame(width: 3, height: 3)
-                    Text(item.kind == .tv ? "SERIES" : "MOVIE")
-                    if item.voteAverage > 0 {
-                        Circle().frame(width: 3, height: 3)
-                        Image(systemName: "star.fill").foregroundStyle(XSCinemaStyle.warm)
-                        Text(item.ratingText)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(XSCinemaStyle.accent)
+                            .frame(width: 7, height: 7)
+                        Text("THE SPOTLIGHT")
+                            .font(.system(size: 10, weight: .black, design: .rounded))
+                            .tracking(2.8)
+                        Spacer()
+                        Text(String(format: "%02d  /  %02d", featuredIndex + 1, featuredItems.count))
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     }
-                }
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .tracking(1.1)
-                .foregroundStyle(.white.opacity(0.83))
+                    .foregroundStyle(.white.opacity(0.92))
 
-                if !item.overview.isEmpty {
-                    Text(item.overview)
-                        .font(.system(size: 14, weight: .regular))
-                        .lineSpacing(4)
+                    Spacer(minLength: 20)
+
+                    Text("FEATURED TONIGHT")
+                        .font(.system(size: 10, weight: .black, design: .rounded))
+                        .tracking(2.2)
+                        .foregroundStyle(XSCinemaStyle.warm)
+                        .padding(.bottom, 8)
+
+                    Text(item.title)
+                        .font(.system(size: 37, weight: .black, design: .rounded))
+                        .tracking(-1.3)
                         .lineLimit(2)
-                        .foregroundStyle(.white.opacity(0.77))
-                        .padding(.top, 1)
-                }
+                        .minimumScaleFactor(0.68)
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.40), radius: 10, y: 3)
 
-                HStack(spacing: 10) {
-                    NavigationLink {
-                        FrameXTVPlayerScreen(item: item, playback: FrameXTVPlayback(tmdbID: item.tmdbID))
-                    } label: {
-                        Label("Watch now", systemImage: "play.fill")
-                            .font(.system(size: 15, weight: .bold))
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 52)
-                            .foregroundStyle(.black)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-                    }
-                    NavigationLink(value: item) {
-                        Label("Explore", systemImage: "info.circle")
-                            .font(.system(size: 15, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 52)
-                            .foregroundStyle(.white)
-                            .background(.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 15).stroke(.white.opacity(0.18)))
-                    }
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 6)
-
-                HStack(spacing: 8) {
-                    ForEach(featuredItems.indices, id: \.self) { index in
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.28)) { featuredIndex = index }
-                        } label: {
-                            Capsule()
-                                .fill(index == featuredIndex ? .white : .white.opacity(0.32))
-                                .frame(width: index == featuredIndex ? 28 : 7, height: 5)
-                                .frame(height: 22)
+                    HStack(spacing: 10) {
+                        Text(item.year)
+                        Circle().frame(width: 3, height: 3)
+                        Text(item.kind == .tv ? "SERIES" : "FILM")
+                        if item.voteAverage > 0 {
+                            Circle().frame(width: 3, height: 3)
+                            Image(systemName: "star.fill")
+                                .foregroundStyle(XSCinemaStyle.warm)
+                            Text(item.ratingText)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Feature \(index + 1)")
                     }
-                    Spacer()
-                    Text("\(featuredIndex + 1) / \(featuredItems.count)")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.58))
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .tracking(0.9)
+                    .foregroundStyle(.white.opacity(0.84))
+                    .padding(.top, 12)
+
+                    if !item.overview.isEmpty {
+                        Text(item.overview)
+                            .font(.system(size: 13))
+                            .lineSpacing(3)
+                            .lineLimit(2)
+                            .foregroundStyle(.white.opacity(0.80))
+                            .padding(.top, 13)
+                    }
+
+                    HStack(spacing: 11) {
+                        NavigationLink {
+                            FrameXTVPlayerScreen(item: item, playback: FrameXTVPlayback(tmdbID: item.tmdbID))
+                                .toolbar(.hidden, for: .tabBar)
+                        } label: {
+                            Label("Play now", systemImage: "play.fill")
+                                .font(.system(size: 15, weight: .bold))
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 49)
+                                .foregroundStyle(.black)
+                                .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+                        NavigationLink(value: item) {
+                            Label("Details", systemImage: "info.circle")
+                                .font(.system(size: 15, weight: .semibold))
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 49)
+                                .foregroundStyle(.white)
+                                .background(.white.opacity(0.13), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.22)))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 18)
                 }
-                .padding(.top, 7)
+                .padding(.horizontal, 22)
+                // The image extends beneath the status/nav bars; the content does not.
+                .padding(.top, 78)
+                .padding(.bottom, 18)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 16)
+            .frame(height: 545)
+
+            HStack(spacing: 9) {
+                ForEach(featuredItems.indices, id: \.self) { index in
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.24)) {
+                            featuredIndex = index
+                        }
+                    } label: {
+                        RemotePoster(item: featuredItems[index], cornerRadius: 9)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 74)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                    .stroke(index == featuredIndex ? XSCinemaStyle.accent : .white.opacity(0.13),
+                                            lineWidth: index == featuredIndex ? 2.5 : 1)
+                            )
+                            .opacity(index == featuredIndex ? 1 : 0.65)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Featured title \(index + 1): \(featuredItems[index].title)")
+                }
+            }
+            .padding(.horizontal, 22)
+            .padding(.top, 3)
         }
-        .frame(height: 555)
     }
 
     private var exploreStrip: some View {
