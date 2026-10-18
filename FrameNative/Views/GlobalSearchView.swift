@@ -16,7 +16,7 @@ struct XSGlobalSearchView: View {
 
     var body: some View {
         ZStack {
-            XSCinemaStyle.background.ignoresSafeArea()
+            XSV3ScreenBackdrop()
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 22) {
@@ -114,6 +114,36 @@ struct XSGlobalSearchView: View {
 
     private var discover: some View {
         VStack(alignment: .leading, spacing: 24) {
+            if let featured = app.spotlight.first ?? app.popularMovies.first {
+                NavigationLink(value: featured) {
+                    ZStack(alignment: .bottomLeading) {
+                        RemotePoster(item: featured, backdrop: true, cornerRadius: 23)
+                            .frame(height: 235)
+                            .clipped()
+                        LinearGradient(colors: [.clear, .black.opacity(0.94)],
+                                       startPoint: .top, endPoint: .bottom)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("SPOTLIGHT DISCOVERY")
+                                .font(.system(size: 10, weight: .heavy))
+                                .tracking(2.1)
+                                .foregroundStyle(XSV3.amber)
+                            Text(featured.title)
+                                .font(.system(size: 25, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .lineLimit(2)
+                            Label("Discover", systemImage: "arrow.up.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.85))
+                        }
+                        .padding(20)
+                    }
+                    .frame(height: 235)
+                    .clipShape(RoundedRectangle(cornerRadius: 23))
+                    .overlay(RoundedRectangle(cornerRadius: 23).stroke(.white.opacity(0.12)))
+                }
+                .buttonStyle(XSV3PressStyle())
+                .padding(.horizontal, 22)
+            }
             searchRail(
                 title: "Trending Now",
                 subtitle: "Popular picks to start exploring",
@@ -152,78 +182,35 @@ struct XSGlobalSearchView: View {
     }
 
     private var resultsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Results")
-                        .font(.title3.bold())
-                    Text("\(results.count) matches for “\(trimmedQuery)”")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.52))
-                }
-                Spacer()
-                if isSearching {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(xsGlobalSearchAccent)
-                }
-            }
-            .padding(.horizontal, 18)
-
-            LazyVStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 17) {
+            XSV3SectionTitle(
+                eyebrow: "YOUR DISCOVERIES",
+                title: "Search results",
+                count: "\(results.count) found"
+            )
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 140, maximum: 200), spacing: 14)],
+                      alignment: .center, spacing: 23) {
                 ForEach(results) { item in
                     NavigationLink(value: item) {
-                        HStack(spacing: 14) {
-                            RemotePoster(item: item, backdrop: false, cornerRadius: 11)
-                                .frame(width: 78, height: 114)
-                                .clipped()
-
-                            VStack(alignment: .leading, spacing: 7) {
-                                HStack(spacing: 8) {
-                                    Text(item.title)
-                                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.white)
-                                        .lineLimit(2)
-                                    Spacer(minLength: 4)
-                                }
-
-                                HStack(spacing: 7) {
-                                    Text(item.year)
-                                    Text("•")
-                                    Text(kindText(item.kind))
-                                    if item.voteAverage > 0 {
-                                        Text("•")
-                                        Label(item.ratingText, systemImage: "star.fill")
-                                            .foregroundStyle(.yellow.opacity(0.92))
-                                    }
-                                }
-                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                .foregroundStyle(.white.opacity(0.56))
-
-                                if !item.overview.isEmpty {
-                                    Text(item.overview)
-                                        .font(.caption)
-                                        .foregroundStyle(.white.opacity(0.62))
-                                        .lineLimit(2)
-                                        .multilineTextAlignment(.leading)
-                                }
-
-                                Label("Open Details", systemImage: "chevron.right")
-                                    .font(.caption2.bold())
-                                    .foregroundStyle(xsGlobalSearchAccent)
-                            }
-
-                            Spacer(minLength: 0)
-                        }
-                        .padding(10)
-                        .background(XSCinemaStyle.surface, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.white.opacity(0.08)))
+                        XSCinemaPosterTile(item: item)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
-                    .buttonStyle(.plain)
-                    .contentShape(Rectangle())
+                    .buttonStyle(XSV3PressStyle())
+                    .accessibilityLabel("Discover \(item.title)")
                 }
             }
             .padding(.horizontal, 22)
+            .padding(.bottom, 20)
+
+            if isSearching {
+                HStack(spacing: 8) {
+                    ProgressView().tint(XSV3.coral)
+                    Text("Finding more…")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(XSV3.muted)
+                }
+                .frame(maxWidth: .infinity)
+            }
         }
     }
 

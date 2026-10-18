@@ -12,10 +12,11 @@ struct DetailView: View {
     @State private var episodeLoading = false
     @State private var error: String?
     @State private var heroAppeared = false
+    @State private var synopsisExpanded = false
 
     var body: some View {
         ZStack {
-            XSCinemaStyle.background.ignoresSafeArea()
+            XSV3ScreenBackdrop()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -37,14 +38,37 @@ struct DetailView: View {
                                 .foregroundStyle(.white.opacity(0.86))
                         }
 
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("The story")
-                                .font(.system(size: 24, weight: .bold, design: .rounded))
+                        VStack(alignment: .leading, spacing: 13) {
+                            HStack(spacing: 10) {
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(XSV3.coral)
+                                    .frame(width: 4, height: 26)
+                                Text("The story")
+                                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                                    .tracking(-0.5)
+                            }
                             Text(currentItem.overview.isEmpty ? "No overview available." : currentItem.overview)
-                                .font(.body)
-                                .foregroundStyle(.white.opacity(0.78))
+                                .font(.system(size: 15))
+                                .foregroundStyle(.white.opacity(0.80))
                                 .lineSpacing(5)
+                                .lineLimit(synopsisExpanded ? nil : 5)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            if currentItem.overview.count > 220 {
+                                Button {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        synopsisExpanded.toggle()
+                                    }
+                                } label: {
+                                    Label(synopsisExpanded ? "Show less" : "Read full story",
+                                          systemImage: synopsisExpanded ? "chevron.up" : "chevron.down")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundStyle(XSV3.amber)
+                                        .frame(height: 44)
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
+                        .padding(.top, 4)
 
                         if item.kind != .movie {
                             episodeSection
@@ -53,8 +77,8 @@ struct DetailView: View {
                         let related = app.related(to: currentItem)
                         if !related.isEmpty {
                             VStack(alignment: .leading, spacing: 14) {
-                                Text("You might also like")
-                                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                                Text("Keep exploring")
+                                    .font(.system(size: 25, weight: .bold, design: .rounded))
                                 Text("More titles from the XS TV catalog you may enjoy")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -62,7 +86,7 @@ struct DetailView: View {
                                     LazyHStack(spacing: 14) {
                                         ForEach(related) { relatedItem in
                                             NavigationLink(value: relatedItem) {
-                                                MediaCard(item: relatedItem, width: 148)
+                                                XSCinemaPosterTile(item: relatedItem)
                                             }
                                             .buttonStyle(.plain)
                                         }
@@ -191,26 +215,36 @@ struct DetailView: View {
                         nextLabel: primaryNextLabel
                     )
                 } label: {
-                    Label(primaryPlayLabel, systemImage: "play.fill")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .foregroundStyle(.black)
+                    HStack(spacing: 10) {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 17, weight: .bold))
+                        Text(primaryPlayLabel)
+                            .font(.system(size: 15, weight: .bold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 54)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+                    .foregroundStyle(.black)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(XSV3PressStyle())
+                .accessibilityLabel(primaryPlayLabel)
             }
 
             Button {
                 library.toggleFavorite(currentItem)
             } label: {
-                Image(systemName: library.isFavorite(currentItem) ? "checkmark" : "plus")
-                    .font(.headline.bold())
-                    .frame(width: 52, height: 52)
-                    .background(XSCinemaStyle.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.10)))
+                Label(library.isFavorite(currentItem) ? "Saved" : "My List",
+                      systemImage: library.isFavorite(currentItem) ? "checkmark" : "plus")
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
+                    .padding(.horizontal, 17)
+                    .frame(height: 54)
+                    .background(XSV3.lifted, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 17).stroke(.white.opacity(0.12)))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(XSV3PressStyle())
             .foregroundStyle(.white)
             .accessibilityLabel(library.isFavorite(currentItem) ? "Remove from My List" : "Add to My List")
         }
@@ -230,7 +264,7 @@ struct DetailView: View {
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
                     Capsule().fill(.white.opacity(0.10))
-                    LinearGradient(colors: [.purple, .pink, .orange], startPoint: .leading, endPoint: .trailing)
+                    LinearGradient(colors: [XSV3.coral, XSV3.amber], startPoint: .leading, endPoint: .trailing)
                         .frame(width: proxy.size.width * progress.fraction)
                         .clipShape(Capsule())
                 }
@@ -577,7 +611,7 @@ struct EpisodeRow: View {
                 HStack(spacing: 6) {
                     Text(episode.name)
                         .font(.subheadline.bold())
-                        .lineLimit(1)
+                        .lineLimit(2)
                     if current {
                         Image(systemName: "clock.fill")
                             .foregroundStyle(.pink)
@@ -612,8 +646,8 @@ struct EpisodeRow: View {
             Spacer(minLength: 0)
         }
         .padding(10)
-        .background(.white.opacity(current ? 0.075 : 0.035), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 17).stroke(.white.opacity(current ? 0.12 : 0.055)))
+        .background(current ? XSV3.lifted : XSV3.ink.opacity(0.66), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(current ? XSV3.coral.opacity(0.40) : .white.opacity(0.09)))
         .foregroundStyle(.white)
     }
 }
