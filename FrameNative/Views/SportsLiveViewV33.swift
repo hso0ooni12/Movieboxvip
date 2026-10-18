@@ -34,7 +34,7 @@ struct XSSportsLiveViewV33: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            XSCinemaStyle.background.ignoresSafeArea()
 
             if store.credentials == nil {
                 unavailableState
@@ -45,7 +45,7 @@ struct XSSportsLiveViewV33: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.black.opacity(0.97), for: .navigationBar)
+        .toolbarBackground(XSCinemaStyle.background.opacity(0.95), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -94,7 +94,7 @@ struct XSSportsLiveViewV33: View {
 
     private var content: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 22) {
+            LazyVStack(alignment: .leading, spacing: 27) {
                 header
                 categoryStrip
 
@@ -117,43 +117,58 @@ struct XSSportsLiveViewV33: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 13) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Live Sports")
-                    .font(.system(size: 29, weight: .black, design: .rounded))
-                Text("Fast access to your live sports channels")
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.56))
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 8) {
+                Circle().fill(.red).frame(width: 7, height: 7)
+                Text("LIVE ARENA")
+                    .font(.system(size: 10, weight: .heavy, design: .rounded))
+                    .tracking(2.6)
+                    .foregroundStyle(XSCinemaStyle.warm)
+                Spacer()
+                Text("\(store.streams.count) CHANNELS")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.53))
             }
-
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Every moment. Live.")
+                    .font(.system(size: 33, weight: .black, design: .rounded))
+                    .tracking(-0.9)
+                    .foregroundStyle(.white)
+                    .minimumScaleFactor(0.78)
+                    .lineLimit(2)
+                Text("Your front row to the action.")
+                    .font(.system(size: 14))
+                    .foregroundStyle(XSCinemaStyle.secondary)
+            }
             HStack(spacing: 10) {
-                HStack(spacing: 9) {
+                HStack(spacing: 11) {
                     Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.white.opacity(0.44))
-                    TextField("Search sports channels…", text: $query)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.58))
+                    TextField("Search live channels", text: $query)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }
-                .padding(.horizontal, 14)
-                .frame(height: 46)
-                .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 13))
-                .overlay(RoundedRectangle(cornerRadius: 13).stroke(.white.opacity(0.10)))
+                .padding(.horizontal, 15)
+                .frame(height: 52)
+                .background(XSCinemaStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.10)))
 
                 Button {
                     Task { try? await store.refresh() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 15, weight: .bold))
-                        .frame(width: 46, height: 46)
-                        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 13))
-                        .overlay(RoundedRectangle(cornerRadius: 13).stroke(.white.opacity(0.10)))
+                        .font(.system(size: 17, weight: .bold))
+                        .frame(width: 52, height: 52)
+                        .background(XSCinemaStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.10)))
                 }
                 .buttonStyle(.plain)
-                .contentShape(Rectangle())
+                .accessibilityLabel("Refresh live channels")
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 8)
+        .padding(.horizontal, 22)
+        .padding(.top, 15)
     }
 
     private var categoryStrip: some View {
@@ -197,57 +212,67 @@ struct XSSportsLiveViewV33: View {
     private func featuredCard(_ stream: IPTVLiveStream) -> some View {
         Button { selectedStream = stream } label: {
             ZStack(alignment: .bottomLeading) {
-                RoundedRectangle(cornerRadius: 20)
+                RoundedRectangle(cornerRadius: 25)
                     .fill(LinearGradient(
-                        colors: [Color(red: 0.10, green: 0.12, blue: 0.17), .black],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+                        colors: [Color(red: 0.15, green: 0.19, blue: 0.26), XSCinemaStyle.background],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
                     ))
 
                 XSSportsChannelArtworkV33(name: stream.name, logoURL: resolvedLogoURL(for: stream), compact: false)
-                    .padding(.horizontal, 90)
-                    .padding(.vertical, 28)
-                    .opacity(0.78)
+                    .padding(.leading, 95)
+                    .padding(.bottom, 30)
+                    .opacity(0.86)
 
-                LinearGradient(colors: [.clear, .black.opacity(0.94)], startPoint: .top, endPoint: .bottom)
-
-                VStack(alignment: .leading, spacing: 9) {
-                    HStack(spacing: 8) {
-                        Label("LIVE", systemImage: "dot.radiowaves.left.and.right")
-                            .font(.system(size: 10, weight: .black, design: .monospaced))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 6)
-                            .background(Color.red.opacity(0.92), in: Capsule())
-                        if let category = categoryName(for: stream.categoryID) {
-                            Text(category)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.64))
-                                .lineLimit(1)
-                        }
+                LinearGradient(
+                    colors: [.black.opacity(0.06), .black.opacity(0.22), .black.opacity(0.95)],
+                    startPoint: .top, endPoint: .bottom
+                )
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 6) {
+                        Circle().fill(.white).frame(width: 6, height: 6)
+                        Text("LIVE NOW")
+                            .font(.system(size: 10, weight: .heavy))
+                            .tracking(1.4)
                     }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 8)
+                    .background(.red, in: Capsule())
 
+                    Spacer(minLength: 6)
+
+                    if let category = categoryName(for: stream.categoryID) {
+                        Text(category.uppercased())
+                            .font(.system(size: 10, weight: .heavy))
+                            .tracking(2)
+                            .foregroundStyle(XSCinemaStyle.warm)
+                            .lineLimit(1)
+                    }
                     Text(stream.name)
-                        .font(.system(size: 23, weight: .black, design: .rounded))
+                        .font(.system(size: 27, weight: .black, design: .rounded))
                         .foregroundStyle(.white)
                         .lineLimit(2)
-
-                    Label("Watch Live", systemImage: "play.fill")
-                        .font(.subheadline.bold())
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 15)
-                        .frame(height: 39)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 10))
+                    HStack(spacing: 8) {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 27))
+                        Text("Watch live")
+                            .font(.system(size: 14, weight: .bold))
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 12, weight: .semibold))
+                        Spacer()
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.top, 4)
                 }
-                .padding(18)
+                .padding(21)
             }
-            .frame(height: 220)
-            .clipShape(RoundedRectangle(cornerRadius: 20))
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.10)))
-            .padding(.horizontal, 18)
+            .frame(height: 278)
+            .clipShape(RoundedRectangle(cornerRadius: 25))
+            .overlay(RoundedRectangle(cornerRadius: 25).stroke(.white.opacity(0.15)))
+            .padding(.horizontal, 22)
         }
         .buttonStyle(.plain)
-        .contentShape(Rectangle())
+        .accessibilityLabel("Watch live: \(stream.name)")
     }
 
     private var sectionHeader: some View {
@@ -277,7 +302,7 @@ struct XSSportsLiveViewV33: View {
                 )
             }
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 22)
     }
 
     private var loadingState: some View {
@@ -487,41 +512,41 @@ private struct XSSportsChannelCardV33: View {
     let play: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            ZStack {
+        VStack(alignment: .leading, spacing: 10) {
+            ZStack(alignment: .topTrailing) {
                 Button(action: play) {
-                    XSSportsChannelArtworkV33(name: stream.name, logoURL: logoURL, compact: true)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    ZStack(alignment: .bottomLeading) {
+                        XSSportsChannelArtworkV33(name: stream.name, logoURL: logoURL, compact: true)
+                        LinearGradient(colors: [.clear, .black.opacity(0.40)], startPoint: .center, endPoint: .bottom)
+                        Text("ON AIR")
+                            .font(.system(size: 9, weight: .heavy))
+                            .tracking(1.2)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 6)
+                            .background(.red.opacity(0.94), in: Capsule())
+                            .padding(10)
+                    }
                 }
                 .buttonStyle(.plain)
 
-                VStack {
-                    HStack {
-                        Text("LIVE")
-                            .font(.system(size: 9, weight: .black, design: .monospaced))
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 4)
-                            .background(Color.red.opacity(0.92), in: Capsule())
-                        Spacer()
-                        Button(action: toggleFavorite) {
-                            Image(systemName: isFavorite ? "star.fill" : "star")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(isFavorite ? .yellow : .white)
-                                .frame(width: 36, height: 36)
-                                .background(Color.black.opacity(0.64), in: Circle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    Spacer()
+                Button(action: toggleFavorite) {
+                    Image(systemName: isFavorite ? "star.fill" : "star")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(isFavorite ? XSCinemaStyle.warm : .white)
+                        .frame(width: 38, height: 38)
+                        .background(.black.opacity(0.69), in: Circle())
                 }
-                .padding(8)
+                .buttonStyle(.plain)
+                .padding(7)
+                .accessibilityLabel(isFavorite ? "Remove favorite" : "Add favorite")
             }
             .aspectRatio(16/10, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 15))
-            .overlay(RoundedRectangle(cornerRadius: 15).stroke(.white.opacity(0.10)))
+            .clipShape(RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.13)))
 
             Button(action: play) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 5) {
                     Text(stream.name)
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
@@ -529,8 +554,8 @@ private struct XSSportsChannelCardV33: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if let category {
                         Text(category)
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.48))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(XSCinemaStyle.secondary)
                             .lineLimit(1)
                     }
                 }

@@ -270,9 +270,12 @@ struct XSReferenceCatalogView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            XSCinemaStyle.background.ignoresSafeArea()
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 28) {
+                LazyVStack(alignment: .leading, spacing: 27) {
+                    if !isFiltering, let spotlight = trending.first ?? popular.first {
+                        catalogSpotlight(spotlight)
+                    }
                     header
                     searchAndFilters
 
@@ -297,27 +300,67 @@ struct XSReferenceCatalogView: View {
         .navigationDestination(for: MediaItem.self) { DetailView(item: $0) }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(title, systemImage: kind == .movie ? "film" : (kind == .tv ? "play.tv" : "sparkles"))
-                .font(.system(size: 30, weight: .black, design: .rounded))
-            Text(descriptionText)
-                .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.60))
-                .lineSpacing(2)
-
-            HStack(spacing: 0) {
-                modeButton(.grid, image: "rectangle.grid.1x2")
-                modeButton(.list, image: "square.grid.2x2")
+    private func catalogSpotlight(_ item: MediaItem) -> some View {
+        NavigationLink(value: item) {
+            ZStack(alignment: .bottomLeading) {
+                RemotePoster(item: item, backdrop: true, cornerRadius: 0)
+                    .frame(height: 300)
+                    .clipped()
+                LinearGradient(
+                    colors: [.black.opacity(0.05), XSCinemaStyle.background.opacity(0.38), XSCinemaStyle.background],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("NOW SHOWING  /  \(title.uppercased())")
+                        .font(.system(size: 10, weight: .heavy, design: .rounded))
+                        .tracking(2.5)
+                        .foregroundStyle(XSCinemaStyle.warm)
+                    Text(item.title)
+                        .font(.system(size: 31, weight: .black, design: .rounded))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.75)
+                    Label("Explore title", systemImage: "arrow.up.right")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.8))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 22)
+                .padding(.bottom, 22)
             }
-            .padding(4)
-            .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.10)))
-            .frame(width: 138)
-            .padding(.top, 5)
+            .frame(height: 300)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 10)
+        .buttonStyle(.plain)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("THE COLLECTION")
+                        .font(.system(size: 10, weight: .heavy, design: .rounded))
+                        .tracking(2.4)
+                        .foregroundStyle(XSCinemaStyle.accent)
+                    Text(title)
+                        .font(.system(size: 34, weight: .black, design: .rounded))
+                        .tracking(-0.8)
+                        .foregroundStyle(.white)
+                }
+                Spacer()
+                HStack(spacing: 0) {
+                    modeButton(.grid, image: "square.grid.2x2.fill")
+                    modeButton(.list, image: "list.bullet")
+                }
+                .padding(4)
+                .background(XSCinemaStyle.surface, in: RoundedRectangle(cornerRadius: 13))
+                .frame(width: 116)
+            }
+            Text(descriptionText)
+                .font(.system(size: 13))
+                .foregroundStyle(XSCinemaStyle.secondary)
+                .lineSpacing(3)
+        }
+        .padding(.horizontal, 22)
     }
 
     private func modeButton(_ mode: ViewMode, image: String) -> some View {
@@ -345,15 +388,10 @@ struct XSReferenceCatalogView: View {
                 }
                 .padding(.horizontal, 14)
                 .frame(height: 48)
-                .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.10)))
+                .background(XSCinemaStyle.surface, in: RoundedRectangle(cornerRadius: 15))
+                .overlay(RoundedRectangle(cornerRadius: 15).stroke(.white.opacity(0.10)))
 
-                Button("Find") { }
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 16)
-                    .frame(height: 40)
-                    .background(Color.white.opacity(0.28), in: RoundedRectangle(cornerRadius: 9))
-                    .buttonStyle(XSReferenceHitButtonStyle())
+
             }
 
             VStack(alignment: .leading, spacing: 12) {
@@ -462,7 +500,7 @@ private struct XSReferenceCatalogSection: View {
                     .padding(.top, -8)
 
                 if viewModeGrid {
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 20) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 110, maximum: 190), spacing: 12)], spacing: 22) {
                         ForEach(Array(items.prefix(18))) { item in
                             XSReferencePosterCard(item: item)
                         }
@@ -533,58 +571,52 @@ private struct XSReferencePosterCard: View {
     let item: MediaItem
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .bottomTrailing) {
                 NavigationLink(value: item) {
-                    ZStack(alignment: .top) {
-                        RemotePoster(item: item, cornerRadius: 10)
+                    ZStack(alignment: .bottomLeading) {
+                        RemotePoster(item: item, cornerRadius: 16)
                             .aspectRatio(2.0 / 3.0, contentMode: .fit)
-
-                        HStack {
-                            Text(item.kind == .tv ? "TV" : (item.kind == .anime ? "ANIME" : "MOVIE"))
-                                .font(.system(size: 8, weight: .black, design: .monospaced))
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 4)
-                                .background(.black.opacity(0.80), in: RoundedRectangle(cornerRadius: 4))
-                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(.white.opacity(0.14)))
-                            Spacer()
-                            if item.voteAverage > 0 {
-                                Label(item.ratingText, systemImage: "star.fill")
-                                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(.yellow)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 4)
-                                    .background(.black.opacity(0.80), in: RoundedRectangle(cornerRadius: 4))
-                            }
+                        LinearGradient(colors: [.clear, .black.opacity(0.60)], startPoint: .center, endPoint: .bottom)
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                        if item.voteAverage > 0 {
+                            Label(item.ratingText, systemImage: "star.fill")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(XSCinemaStyle.warm)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(.black.opacity(0.76), in: Capsule())
+                                .padding(9)
                         }
-                        .padding(8)
                     }
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.13)))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(XSReferenceHitButtonStyle())
 
                 Button { library.toggleFavorite(item) } label: {
                     Image(systemName: library.isFavorite(item) ? "bookmark.fill" : "bookmark")
-                        .font(.caption.weight(.semibold))
-                        .frame(width: 34, height: 34)
-                        .background(.black.opacity(0.62), in: Circle())
-                        .overlay(Circle().stroke(.white.opacity(0.20)))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(library.isFavorite(item) ? XSCinemaStyle.warm : .white)
+                        .frame(width: 38, height: 38)
+                        .background(.black.opacity(0.70), in: Circle())
+                        .overlay(Circle().stroke(.white.opacity(0.15)))
                 }
                 .buttonStyle(XSReferenceHitButtonStyle())
-                .padding(8)
+                .padding(7)
+                .accessibilityLabel(library.isFavorite(item) ? "Remove from My List" : "Add to My List")
             }
 
             Text(item.title)
-                .font(.subheadline.bold())
-                .lineLimit(1)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack(spacing: 5) {
-                Text(item.year)
-                Text("•")
-                Text(item.kind == .tv ? "Series" : "Film")
-            }
-            .font(.system(size: 10, weight: .medium, design: .monospaced))
-            .foregroundStyle(.white.opacity(0.56))
+            Text("\(item.year)  ·  \(item.kind == .tv ? "Series" : "Film")")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(XSCinemaStyle.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .contentShape(Rectangle())
     }

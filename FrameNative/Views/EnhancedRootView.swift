@@ -4,6 +4,7 @@ struct EnhancedRootView: View {
     @EnvironmentObject private var app: AppState
     @State private var showSettings = false
     @State private var showSplash = true
+    @State private var selectedTab = 0
 
     var body: some View {
         ZStack {
@@ -25,7 +26,7 @@ struct EnhancedRootView: View {
         }
         .task { await app.loadHome() }
         .task {
-            try? await Task.sleep(nanoseconds: 1_250_000_000)
+            try? await Task.sleep(nanoseconds: 650_000_000)
             await MainActor.run {
                 withAnimation(.easeOut(duration: 0.24)) { showSplash = false }
             }
@@ -33,41 +34,43 @@ struct EnhancedRootView: View {
     }
 
     private var mainTabs: some View {
-        TabView {
+        // Navigation chrome MUST belong to TabView, never to a root ZStack.
+        // The former root overlay leaked over pushed fullscreen movie players
+        // and VLC fullScreenCover, obscuring subtitles and scrub controls.
+        TabView(selection: $selectedTab) {
             NavigationStack {
-                XSReferenceHomeView(showSettings: $showSettings)
+                XSCinematicHomeView(showSettings: $showSettings)
                     .xsGlobalSearchToolbar()
             }
             .tabItem { Label("Home", systemImage: "house.fill") }
+            .tag(0)
 
             NavigationStack {
                 XSReferenceCatalogView(kind: .movie, title: "Movies")
                     .xsGlobalSearchToolbar()
             }
-            .tabItem { Label("Movies", systemImage: "film.fill") }
+            .tabItem { Label("Movies", systemImage: "film.stack") }
+            .tag(1)
 
             NavigationStack {
                 XSReferenceCatalogView(kind: .tv, title: "Series")
                     .xsGlobalSearchToolbar()
             }
-            .tabItem { Label("Series", systemImage: "play.tv.fill") }
-
-            NavigationStack {
-                XSReferenceCatalogView(kind: .anime, title: "Anime")
-                    .xsGlobalSearchToolbar()
-            }
-            .tabItem { Label("Anime", systemImage: "sparkles") }
+            .tabItem { Label("Series", systemImage: "play.tv") }
+            .tag(2)
 
             NavigationStack {
                 XSSportsLiveViewV33()
                     .xsGlobalSearchToolbar()
             }
             .tabItem { Label("Sports", systemImage: "sportscourt.fill") }
+            .tag(3)
         }
-        .tint(Color(red: 1.0, green: 0.12, blue: 0.38))
-        .toolbarBackground(Color.black.opacity(0.97), for: .tabBar)
+        .tint(XSCinemaStyle.accent)
+        .toolbarBackground(XSCinemaStyle.background.opacity(0.96), for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
     }
+
 }
 
 private struct XSGlobalSearchToolbarModifier: ViewModifier {
@@ -116,7 +119,7 @@ private struct EnhancedXSTVSplashView: View {
                     .opacity(animate ? 1 : 0)
                 VStack(spacing: 5) {
                     XSWordmark()
-                    Text("ENTERTAINMENT · REIMAGINED")
+                    Text("YOUR CINEMA. YOUR WORLD.")
                         .font(.caption2.bold())
                         .tracking(2.5)
                         .foregroundStyle(.white.opacity(0.46))
