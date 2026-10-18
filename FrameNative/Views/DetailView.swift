@@ -354,7 +354,7 @@ struct DetailView: View {
                         selection: Binding(
                             get: { selectedSeason ?? seasons.first?.seasonNumber ?? 1 },
                             set: { value in
-                                guard selectedSeason != value else { return }
+                                guard selectedSeason != value || (!episodeLoading && episodes.isEmpty) else { return }
                                 episodesTask?.cancel()
                                 selectedSeason = value
                                 episodes = []
@@ -519,7 +519,7 @@ struct DetailView: View {
         } catch {
             guard selectedSeason == season else { return }
             episodes = []
-            self.error = "Couldn't load episodes. Select the season again to retry."
+            self.error = "Couldn't load episodes. Tap Try Again to retry."
         }
     }
 }
