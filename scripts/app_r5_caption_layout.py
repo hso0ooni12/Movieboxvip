@@ -1,36 +1,64 @@
-"""R5 portrait caption geometry after generated player pipeline.
+"""Normalize portrait subtitle placement after V39's generated player layers.
 
-The V24→V39 build scripts rewrite the player view; this runs last. Avoid touching
-subtitle tracks, source selection, server bridge, or playback lifecycle.
+Some R5 compatibility scripts change the body of captionOverlay while keeping
+its call signature. This step repairs the final generated view without changing
+subtitle selection, source server switching or video playback controls.
 """
 from pathlib import Path
 
-path = Path("FrameNative/FrameXTVPlayerV6.swift")
-s = path.read_text(encoding="utf-8")
+p = Path("FrameNative/FrameXTVPlayerV6.swift")
+source = p.read_text(encoding="utf-8")
+old_call = "captionOverlay(width: proxy.size.width)"
+new_call = "captionOverlay(width: proxy.size.width, height: proxy.size.height)"
+begin = source.find("    private func captionOverlay(")
+end = source.find("    private var loadingOverlay:", begin)
+if begin < 0 or end < 0:
+    raise SystemExit("R5 captions: final captionOverlay function boundary missing")
+block = source[begin:end]
+width_height_header = "private func captionOverlay(width: CGFloat, height: CGFloat)" in block
+width_only_header = "private func captionOverlay(width: CGFloat)" in block
+if not width_height_header and not width_only_header:
+    raise SystemExit("R5 captions: unrecognized caption function: " + repr(block[:600]))
 
-native_geometry = ("visibleVideoBottomPadding" in s and
-                   "captionOverlay(width: proxy.size.width, height: proxy.size.height)" in s)
-final_offset = ("R5_ASPECTFIT_CAPTION" in s and "captionLetterboxAdjustment" in s)
-
-if native_geometry or final_offset:
-    print("R5 caption video-bounds geometry already present.")
+# Normalize call to the function actually emitted by the old generation steps.
+if width_height_header:
+    if new_call not in source:
+        if old_call not in source:
+            raise SystemExit("R5 captions: call missing for height-aware caption")
+        source = source.replace(old_call, new_call, 1)
+    selected_call = new_call
 else:
-    # Older code-generation scripts restore the one-argument caption overlay.
-    old = "captionOverlay(width: proxy.size.width)"
-    if old not in s:
-        index = s.find("captionOverlay(")
-        raise SystemExit("R5 caption patch: no supported call. Nearby: " +
-                         repr(s[max(0, index - 50):index + 230]))
-    s = s.replace(
-        old,
-        old + "\n                        .offset(y: captionLetterboxAdjustment(width: proxy.size.width, height: proxy.size.height))",
-        1,
-    )
-    anchor = "    private var loadingOverlay: some View {"
-    if anchor not in s:
-        raise SystemExit("R5 caption patch: loading overlay insertion marker missing")
-    helper = """    // R5_ASPECTFIT_CAPTION: keep portrait captions near the visible video,
-    // rather than at the physical bottom of the letterboxed black canvas.
+    if new_call in source:
+        source = source.replace(new_call, old_call, 1)
+    elif old_call not in source:
+        raise SystemExit("R5 captions: call missing for width-only caption")
+    selected_call = old_call
+
+# The fully-native geometry path is already correct.
+native_complete = (
+    width_height_header
+    and "let visibleVideoBottomPadding" in block
+    and "lowerBlackBar" in block
+    and ".padding(.bottom, visibleVideoBottomPadding)" in block
+)
+if native_complete:
+    print("R5 captions: native visible-video geometry intact.")
+else:
+    # Remove any stale reference to a variable that regeneration removed.
+    if ".padding(.bottom, visibleVideoBottomPadding)" in block:
+        block = block.replace(".padding(.bottom, visibleVideoBottomPadding)",
+                              ".padding(.bottom, subtitleBottom)", 1)
+        source = source[:begin] + block + source[end:]
+    marker = "R5_ASPECTFIT_CAPTION"
+    if marker not in source:
+        replacement = (
+            selected_call + "\n                        "
+            ".offset(y: captionLetterboxAdjustment(width: proxy.size.width, height: proxy.size.height))"
+        )
+        source = source.replace(selected_call, replacement, 1)
+        anchor = "    private var loadingOverlay: some View {"
+        helper = """    // R5_ASPECTFIT_CAPTION: position visible captions within letterboxed
+    // portrait video rather than at the bottom of the entire phone screen.
     private func captionLetterboxAdjustment(width: CGFloat, height: CGFloat) -> CGFloat {
         guard height > width * 1.12, aspectMode == "adapt" else { return 0 }
         let videoHeight = min(height, width * (9.0 / 16.0))
@@ -39,9 +67,10 @@ else:
     }
 
 """
-    s = s.replace(anchor, helper + anchor, 1)
-    path.write_text(s, encoding="utf-8")
-    print("R5 portrait subtitle overlay moved onto visible aspect-fit video.")
+        source = source.replace(anchor, helper + anchor, 1)
+    print("R5 captions: corrected portrait offset after generated-player changes.")
 
-assert (("visibleVideoBottomPadding" in s) or ("R5_ASPECTFIT_CAPTION" in s))
-assert "sourceSubtitles.select(payload)" in s
+assert "captionOverlay(" in source
+assert ("let visibleVideoBottomPadding" in source or "R5_ASPECTFIT_CAPTION" in source)
+assert "sourceSubtitles.select(payload)" in source
+p.write_text(source, encoding="utf-8")
