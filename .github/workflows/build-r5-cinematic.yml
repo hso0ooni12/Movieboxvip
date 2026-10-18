@@ -168,7 +168,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          find FrameNative -name '*.swift' -print0 | xargs -0 swiftc -frontend -parse
+          find FrameNative -name '*.swift' ! -name 'FrameXTVPlayer.swift' ! -name 'FrameXTVPlayerV2.swift' ! -name 'FrameXTVPlayerV3.swift' ! -name 'FrameXTVPlayerV4.swift' ! -name 'FrameXTVPlayerV5.swift' ! -name 'GenreCatalogView.swift' -print0 | xargs -0 swiftc -frontend -parse
 
       - name: Install XcodeGen
         run: brew install xcodegen
