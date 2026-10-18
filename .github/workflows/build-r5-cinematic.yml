@@ -150,20 +150,17 @@ jobs:
       - name: Verify V35 full app polish
         run: python3 scripts/test_v35_final_polish.py
 
-      - name: Restore protected R5 playback and live-channel surface
+      - name: Apply and validate protected R5 engine layers in order
         run: |
           python3 scripts/app_v39_native_polish.py
-          python3 scripts/app_v39_device_refinements.py
-          python3 scripts/app_v39_r3_device_fixes.py
-          python3 scripts/app_v39_r4_root_fixes.py
-          python3 scripts/app_v39_r5_stability_restore.py
-
-      - name: Verify R5 engine and cinematic UI regression guards
-        run: |
           python3 scripts/test_v39_native_polish.py
+          python3 scripts/app_v39_device_refinements.py
           python3 scripts/test_v39_device_refinements.py
+          python3 scripts/app_v39_r3_device_fixes.py
           python3 scripts/test_v39_r3_device_fixes.py
+          python3 scripts/app_v39_r4_root_fixes.py
           python3 scripts/test_v39_r4_root_fixes.py
+          python3 scripts/app_v39_r5_stability_restore.py
           python3 scripts/test_v39_r5_stability_restore.py
           python3 scripts/test_r5_cinema_ui.py
 
