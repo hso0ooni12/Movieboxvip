@@ -182,7 +182,7 @@ struct XSCinematicHomeView: View {
                 }
                 .padding(.horizontal, 22)
                 // The image extends beneath the status/nav bars; the content does not.
-                .padding(.top, 78)
+                .padding(.top, 126)
                 .padding(.bottom, 18)
             }
             .frame(height: 545)
