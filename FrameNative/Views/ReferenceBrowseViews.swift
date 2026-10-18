@@ -191,6 +191,7 @@ struct XSReferenceCatalogView: View {
     let title: String
 
     @State private var query = ""
+    @State private var filtersExpanded = false
     @State private var viewMode: ViewMode = .grid
     @State private var selectedGenre: Int? = nil
     @State private var selectedYear: String = "All Years"
@@ -270,7 +271,7 @@ struct XSReferenceCatalogView: View {
 
     var body: some View {
         ZStack {
-            XSCinemaStyle.background.ignoresSafeArea()
+            XSV3ScreenBackdrop()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 27) {
                     if !isFiltering, let spotlight = trending.first ?? popular.first {
@@ -295,7 +296,7 @@ struct XSReferenceCatalogView: View {
             .refreshable { await app.loadHome(force: true) }
         }
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.black.opacity(0.97), for: .navigationBar)
+        .toolbarBackground(XSV3.ink.opacity(0.96), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .navigationDestination(for: MediaItem.self) { DetailView(item: $0) }
     }
@@ -304,33 +305,56 @@ struct XSReferenceCatalogView: View {
         NavigationLink(value: item) {
             ZStack(alignment: .bottomLeading) {
                 RemotePoster(item: item, backdrop: true, cornerRadius: 0)
-                    .frame(height: 300)
+                    .frame(height: 360)
                     .clipped()
                 LinearGradient(
-                    colors: [.black.opacity(0.05), XSCinemaStyle.background.opacity(0.38), XSCinemaStyle.background],
-                    startPoint: .top,
-                    endPoint: .bottom
+                    stops: [
+                        .init(color: .black.opacity(0.10), location: 0),
+                        .init(color: .black.opacity(0.24), location: 0.30),
+                        .init(color: XSV3.ink.opacity(0.82), location: 0.78),
+                        .init(color: XSV3.ink, location: 1)
+                    ],
+                    startPoint: .top, endPoint: .bottom
                 )
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("NOW SHOWING  /  \(title.uppercased())")
-                        .font(.system(size: 10, weight: .heavy, design: .rounded))
-                        .tracking(2.5)
-                        .foregroundStyle(XSCinemaStyle.warm)
-                    Text(item.title)
-                        .font(.system(size: 31, weight: .black, design: .rounded))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.75)
-                    Label("Explore title", systemImage: "arrow.up.right")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.8))
+
+                HStack(alignment: .bottom, spacing: 14) {
+                    RemotePoster(item: item, cornerRadius: 14)
+                        .frame(width: 112, height: 168)
+                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.20)))
+                        .shadow(color: .black.opacity(0.42), radius: 16, y: 8)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("THE FEATURED COLLECTION")
+                            .font(.system(size: 9, weight: .heavy, design: .rounded))
+                            .tracking(2.1)
+                            .foregroundStyle(XSV3.amber)
+                        Text(item.title)
+                            .font(.system(size: 23, weight: .black, design: .rounded))
+                            .lineLimit(3)
+                            .minimumScaleFactor(0.78)
+                            .foregroundStyle(.white)
+                        HStack(spacing: 8) {
+                            Text(item.year)
+                            if item.voteAverage > 0 {
+                                Image(systemName: "star.fill")
+                                    .foregroundStyle(XSV3.amber)
+                                Text(item.ratingText)
+                            }
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.76))
+                        Label("Discover", systemImage: "arrow.up.right")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.top, 6)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .foregroundStyle(.white)
                 .padding(.horizontal, 22)
-                .padding(.bottom, 22)
+                .padding(.bottom, 23)
             }
-            .frame(height: 300)
+            .frame(height: 360)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(XSV3PressStyle())
     }
 
     private var header: some View {
@@ -377,49 +401,102 @@ struct XSReferenceCatalogView: View {
     }
 
     private var searchAndFilters: some View {
-        VStack(spacing: 16) {
-            HStack(spacing: 10) {
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.white.opacity(0.42))
-                    TextField("Search \(title.lowercased()) catalog…", text: $query)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                }
-                .padding(.horizontal, 14)
-                .frame(height: 48)
-                .background(XSCinemaStyle.surface, in: RoundedRectangle(cornerRadius: 15))
-                .overlay(RoundedRectangle(cornerRadius: 15).stroke(.white.opacity(0.10)))
-
-
-            }
-
-            VStack(alignment: .leading, spacing: 12) {
-                Label("Filters & Discovery", systemImage: "slider.horizontal.3")
-                    .font(.headline)
-                    .foregroundStyle(.white.opacity(0.88))
-                    .symbolRenderingMode(.hierarchical)
-
-                HStack(spacing: 10) {
-                    filterMenu(title: selectedGenreName, options: ["All Genres"] + genreOptions.map(\.1)) { value in
-                        selectedGenre = genreOptions.first(where: { $0.1 == value })?.0
+        VStack(alignment: .leading, spacing: 13) {
+            HStack(spacing: 11) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.57))
+                TextField("Search \(title.lowercased())…", text: $query)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.search)
+                    .foregroundStyle(.white)
+                if !query.isEmpty {
+                    Button {
+                        query = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 17))
+                            .foregroundStyle(.white.opacity(0.60))
+                            .frame(width: 36, height: 36)
                     }
-                    filterMenu(title: selectedYear, options: yearOptions) { selectedYear = $0 }
-                }
-                HStack(spacing: 10) {
-                    filterMenu(title: ratingTitle, options: ["Any Rating", "6.0+", "7.0+", "8.0+"]) { value in
-                        minimumRating = Double(value.replacingOccurrences(of: "+", with: "")) ?? 0
-                    }
-                    filterMenu(title: sort.rawValue, options: SortMode.allCases.map(\.rawValue)) { value in
-                        sort = SortMode(rawValue: value) ?? .defaultOrder
-                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
                 }
             }
-            .padding(16)
-            .background(Color.white.opacity(0.018), in: RoundedRectangle(cornerRadius: 20))
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.085)))
+            .padding(.horizontal, 16)
+            .frame(height: 55)
+            .background(XSV3.lifted, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 17).stroke(.white.opacity(0.12)))
+
+            HStack(spacing: 9) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        filtersExpanded.toggle()
+                    }
+                } label: {
+                    Label(filtersExpanded ? "Hide filters" : "Refine results", systemImage: "slider.horizontal.3")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(filtersExpanded ? .black : .white)
+                        .padding(.horizontal, 14)
+                        .frame(height: 43)
+                        .background(filtersExpanded ? Color.white : XSV3.lifted, in: Capsule())
+                }
+                .buttonStyle(XSV3PressStyle())
+                .accessibilityValue(filtersExpanded ? "Expanded" : "Collapsed")
+
+                if isFiltering {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            query = ""
+                            selectedGenre = nil
+                            selectedYear = "All Years"
+                            minimumRating = 0
+                            sort = .defaultOrder
+                        }
+                    } label: {
+                        Label("Clear all", systemImage: "xmark")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(XSV3.coral)
+                            .padding(.horizontal, 12)
+                            .frame(height: 43)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer(minLength: 0)
+                Text("\(filtered.count) TITLES")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.59))
+            }
+
+            if filtersExpanded {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("MAKE IT YOURS")
+                        .font(.system(size: 10, weight: .heavy))
+                        .tracking(2.0)
+                        .foregroundStyle(XSV3.amber)
+                    HStack(spacing: 9) {
+                        filterMenu(title: selectedGenreName, options: ["All Genres"] + genreOptions.map(\.1)) { value in
+                            selectedGenre = genreOptions.first(where: { $0.1 == value })?.0
+                        }
+                        filterMenu(title: selectedYear, options: yearOptions) { selectedYear = $0 }
+                    }
+                    HStack(spacing: 9) {
+                        filterMenu(title: ratingTitle, options: ["Any Rating", "6.0+", "7.0+", "8.0+"]) { value in
+                            minimumRating = Double(value.replacingOccurrences(of: "+", with: "")) ?? 0
+                        }
+                        filterMenu(title: sort.rawValue, options: SortMode.allCases.map(\.rawValue)) { value in
+                            sort = SortMode(rawValue: value) ?? .defaultOrder
+                        }
+                    }
+                }
+                .padding(15)
+                .background(XSV3.lifted.opacity(0.70), in: RoundedRectangle(cornerRadius: 19))
+                .overlay(RoundedRectangle(cornerRadius: 19).stroke(.white.opacity(0.08)))
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 22)
     }
 
     private func filterMenu(title: String, options: [String], select: @escaping (String) -> Void) -> some View {
@@ -592,7 +669,7 @@ private struct XSReferencePosterCard: View {
                     .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.13)))
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(XSReferenceHitButtonStyle())
+                .buttonStyle(XSV3PressStyle())
 
                 Button { library.toggleFavorite(item) } label: {
                     Image(systemName: library.isFavorite(item) ? "bookmark.fill" : "bookmark")
@@ -608,7 +685,7 @@ private struct XSReferencePosterCard: View {
             }
 
             Text(item.title)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(.system(size: 13, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
