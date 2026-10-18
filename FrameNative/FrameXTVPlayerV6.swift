@@ -667,6 +667,8 @@ struct FrameXTVPlayerScreen: View {
     @State private var resolvingNext = false
     @State private var advancing = false
     @State private var aspectMode = "adapt"
+    @State private var selectionNotice: String?
+    @State private var noticeTask: Task<Void, Never>?
 
     @AppStorage("XSTV.autoNextEpisode") private var autoNext = true
     @AppStorage("XSTV.subtitleFontScale") private var subtitleScale = 1.0
@@ -752,6 +754,18 @@ struct FrameXTVPlayerScreen: View {
             else { hideTask?.cancel(); controlsVisible = true }
         }
         .onChange(of: player.currentTime) { _ in handlePlaybackProgress() }
+.overlay(alignment: .top) {
+            if let selectionNotice {
+                Label(selectionNotice, systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+                    .background(.black.opacity(0.90), in: Capsule())
+                    .padding(.top, 58)
+                    .allowsHitTesting(false)
+            }
+        }
         .onChange(of: subtitleDelay) { value in player.setSubtitleDelay(value) }
         .onChange(of: subtitleScale) { _ in pushSubtitleStyle() }
         .onChange(of: subtitleBottom) { _ in pushSubtitleStyle() }
@@ -976,6 +990,16 @@ struct FrameXTVPlayerScreen: View {
         .ignoresSafeArea()
     }
 
+    private func showSelectionNotice(_ message: String) {
+        noticeTask?.cancel()
+        selectionNotice = message
+        noticeTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_200_000_000)
+            guard !Task.isCancelled else { return }
+            selectionNotice = nil
+        }
+    }
+
     private var qualityPanel: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
@@ -993,6 +1017,7 @@ struct FrameXTVPlayerScreen: View {
                     panelRow(title: server.name, detail: server.quality.isEmpty ? (server.selected ? "Connected" : "Available") : "\(server.quality) · \(server.selected ? "Connected" : "Available")") {
                         player.selectServer(server)
                         closePanel()
+                        showSelectionNotice("Server selected: \(server.name)")
                     }
                 }
             }
@@ -1009,6 +1034,7 @@ struct FrameXTVPlayerScreen: View {
                 panelRow(title: "Off", detail: player.selectedSubtitleID == nil ? "Selected" : nil) {
                     player.selectSubtitle(nil)
                     closePanel()
+                    showSelectionNotice("Subtitles turned off")
                 }
 
                 if player.subtitleOptions.isEmpty {
@@ -1029,6 +1055,7 @@ struct FrameXTVPlayerScreen: View {
                         panelRow(title: option.displayName, detail: player.selectedSubtitleID == option.id ? "Selected" : languageDetail(option)) {
                             player.selectSubtitle(option)
                             closePanel()
+                            showSelectionNotice("Subtitle requested: \(option.displayName)")
                         }
                     }
                 }
