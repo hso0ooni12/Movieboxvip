@@ -4,6 +4,7 @@ struct EnhancedRootView: View {
     @EnvironmentObject private var app: AppState
     @State private var showSettings = false
     @State private var showSplash = true
+    @State private var selectedTab = 0
 
     var body: some View {
         ZStack {
@@ -33,41 +34,85 @@ struct EnhancedRootView: View {
     }
 
     private var mainTabs: some View {
-        TabView {
-            NavigationStack {
-                XSCinematicHomeView(showSettings: $showSettings)
-                    .xsGlobalSearchToolbar()
-            }
-            .tabItem { Label("Home", systemImage: "house.fill") }
+        ZStack(alignment: .bottom) {
+            TabView(selection: $selectedTab) {
+                NavigationStack {
+                    XSCinematicHomeView(showSettings: $showSettings)
+                        .xsGlobalSearchToolbar()
+                }
+                .tabItem { Label("Home", systemImage: "house.fill") }
+                .tag(0)
 
-            NavigationStack {
-                XSReferenceCatalogView(kind: .movie, title: "Movies")
-                    .xsGlobalSearchToolbar()
-            }
-            .tabItem { Label("Movies", systemImage: "film.fill") }
+                NavigationStack {
+                    XSReferenceCatalogView(kind: .movie, title: "Movies")
+                        .xsGlobalSearchToolbar()
+                }
+                .tabItem { Label("Movies", systemImage: "film.fill") }
+                .tag(1)
 
-            NavigationStack {
-                XSReferenceCatalogView(kind: .tv, title: "Series")
-                    .xsGlobalSearchToolbar()
-            }
-            .tabItem { Label("Series", systemImage: "play.tv.fill") }
+                NavigationStack {
+                    XSReferenceCatalogView(kind: .tv, title: "Series")
+                        .xsGlobalSearchToolbar()
+                }
+                .tabItem { Label("Series", systemImage: "play.tv.fill") }
+                .tag(2)
 
-            NavigationStack {
-                XSReferenceCatalogView(kind: .anime, title: "Anime")
-                    .xsGlobalSearchToolbar()
+                NavigationStack {
+                    XSSportsLiveViewV33()
+                        .xsGlobalSearchToolbar()
+                }
+                .tabItem { Label("Sports", systemImage: "sportscourt.fill") }
+                .tag(3)
             }
-            .tabItem { Label("Anime", systemImage: "sparkles") }
+            .tint(XSCinemaStyle.accent)
+            .toolbar(.hidden, for: .tabBar)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Color.clear.frame(height: 76)
+            }
 
-            NavigationStack {
-                XSSportsLiveViewV33()
-                    .xsGlobalSearchToolbar()
+            HStack(spacing: 4) {
+                tabControl("Home", icon: "house.fill", index: 0)
+                tabControl("Movies", icon: "film.stack", index: 1)
+                tabControl("Series", icon: "play.tv", index: 2)
+                tabControl("Sports", icon: "sportscourt.fill", index: 3)
             }
-            .tabItem { Label("Sports", systemImage: "sportscourt.fill") }
+            .padding(7)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 23, style: .continuous))
+            .background(XSCinemaStyle.background.opacity(0.75), in: RoundedRectangle(cornerRadius: 23, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 23).stroke(.white.opacity(0.15)))
+            .shadow(color: .black.opacity(0.48), radius: 21, y: 9)
+            .frame(maxWidth: 520)
+            .padding(.horizontal, 18)
+            .padding(.bottom, 4)
         }
-        .tint(XSCinemaStyle.accent)
-        .toolbarBackground(XSCinemaStyle.background.opacity(0.98), for: .tabBar)
-        .toolbarBackground(.visible, for: .tabBar)
     }
+
+    private func tabControl(_ title: String, icon: String, index: Int) -> some View {
+        let isSelected = selectedTab == index
+        return Button {
+            withAnimation(.easeInOut(duration: 0.20)) {
+                selectedTab = index
+            }
+        } label: {
+            VStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .symbolVariant(isSelected ? .fill : .none)
+                Text(title)
+                    .font(.system(size: 10, weight: isSelected ? .bold : .medium))
+            }
+            .foregroundStyle(isSelected ? .white : .white.opacity(0.58))
+            .frame(maxWidth: .infinity)
+            .frame(height: 53)
+            .background(isSelected ? XSCinemaStyle.accent.opacity(0.24) : .clear,
+                        in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+
 }
 
 private struct XSGlobalSearchToolbarModifier: ViewModifier {
