@@ -14,6 +14,7 @@ struct XSCinematicHomeView: View {
     @EnvironmentObject private var library: LibraryStore
     @Binding var showSettings: Bool
     @State private var featuredIndex = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var featuredItems: [MediaItem] {
         let items = Array(app.trendingMovies.prefix(5))
@@ -44,6 +45,10 @@ struct XSCinematicHomeView: View {
                             .padding(.top, 27)
                         continueWatching
                             .padding(.top, 34)
+                        personalizedDiscovery
+                            .padding(.top, 32)
+                        savedWatchlist
+                            .padding(.top, 35)
                         curatedRanking
                             .padding(.top, 40)
                         cinemaRail("Trending this week", overline: "NEW TO THE SPOTLIGHT", items: app.trendingMovies)
@@ -118,6 +123,8 @@ struct XSCinematicHomeView: View {
                     .frame(height: 545)
                     .clipped()
                     .id(item.id)
+                    .transition(.opacity.combined(with: .scale(scale: 1.025)))
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.36), value: featuredIndex)
 
                 LinearGradient(
                     stops: [
@@ -217,6 +224,19 @@ struct XSCinematicHomeView: View {
                 .padding(.bottom, 18)
             }
             .frame(height: 545)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 44)
+                    .onEnded { gesture in
+                        let dx = gesture.translation.width
+                        let dy = gesture.translation.height
+                        guard abs(dx) > 65, abs(dx) > abs(dy) * 1.4,
+                              featuredItems.count > 1 else { return }
+                        let direction = dx < 0 ? 1 : -1
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.27)) {
+                            featuredIndex = (featuredIndex + featuredItems.count + direction) % featuredItems.count
+                        }
+                    }
+            )
 
             HStack(spacing: 9) {
                 ForEach(featuredItems.indices, id: \.self) { index in
@@ -376,9 +396,66 @@ struct XSCinematicHomeView: View {
         }
     }
 
+    // Personal discovery is derived from saved viewing history and the
+    // existing related-content algorithm, never invented recommendations.
+    @ViewBuilder
+    private var personalizedDiscovery: some View {
+        if let recent = library.continueWatching.first?.item ?? library.favoriteItems.first {
+            let recommendations = app.related(to: recent, limit: 12)
+            if !recommendations.isEmpty {
+                VStack(alignment: .leading, spacing: 14) {
+                    XSV3SectionTitle(
+                        eyebrow: "BASED ON YOUR LIBRARY",
+                        title: "More like \(recent.title)",
+                        count: nil
+                    )
+                    ScrollView(.horizontal) {
+                        LazyHStack(alignment: .top, spacing: 13) {
+                            ForEach(recommendations) { title in
+                                NavigationLink(value: title) {
+                                    XSCinemaPosterTile(item: title)
+                                }
+                                .buttonStyle(XSV3PressStyle())
+                            }
+                        }
+                        .padding(.horizontal, 22)
+                        .padding(.bottom, 7)
+                    }
+                    .scrollIndicators(.hidden)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var savedWatchlist: some View {
+        if !library.favoriteItems.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                XSV3SectionTitle(
+                    eyebrow: "YOUR PRIVATE COLLECTION",
+                    title: "Saved for later",
+                    count: "\(library.favoriteItems.count) titles"
+                )
+                ScrollView(.horizontal) {
+                    LazyHStack(alignment: .top, spacing: 13) {
+                        ForEach(Array(library.favoriteItems.prefix(16))) { title in
+                            NavigationLink(value: title) {
+                                XSCinemaPosterTile(item: title)
+                            }
+                            .buttonStyle(XSV3PressStyle())
+                        }
+                    }
+                    .padding(.horizontal, 22)
+                    .padding(.bottom, 7)
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+    }
+
     @ViewBuilder
     private var curatedRanking: some View {
-        let picks = Array(app.popularMovies.prefix(10))
+        let picks = app.topTen
         if !picks.isEmpty {
             VStack(alignment: .leading, spacing: 16) {
                 XSV3SectionTitle(
