@@ -60,25 +60,52 @@ struct XSCinematicHomeView: View {
                 .refreshable { await app.loadHome(force: true) }
             }
         }
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .principal) { XSWordmark(compact: true) }
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                NavigationLink { MyListView() } label: {
-                    Image(systemName: "bookmark")
-                        .font(.system(size: 17, weight: .semibold))
-                        .frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("My List")
-                Button { showSettings = true } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 17, weight: .semibold))
-                        .frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("Settings")
-            }
-        }
+        .overlay(alignment: .top) { cinematicHeader }
+        .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(for: MediaItem.self) { DetailView(item: $0) }
+    }
+
+    private var cinematicHeader: some View {
+        HStack(spacing: 10) {
+            XSWordmark(compact: true)
+                .accessibilityLabel("XS TV")
+            Spacer(minLength: 5)
+            NavigationLink {
+                XSGlobalSearchView()
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 19, weight: .semibold))
+                    .frame(width: 41, height: 44)
+            }
+            .accessibilityLabel("Search")
+
+            NavigationLink {
+                MyListView()
+            } label: {
+                Image(systemName: "bookmark")
+                    .font(.system(size: 19, weight: .semibold))
+                    .frame(width: 41, height: 44)
+            }
+            .accessibilityLabel("My List")
+
+            Button { showSettings = true } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 19, weight: .semibold))
+                    .frame(width: 41, height: 44)
+            }
+            .accessibilityLabel("Settings")
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 8)
+        .background(
+            LinearGradient(
+                colors: [XSCinemaStyle.background.opacity(0.90),
+                         XSCinemaStyle.background.opacity(0.40)],
+                startPoint: .top, endPoint: .bottom
+            )
+        )
     }
 
     private var cinematicHero: some View {
