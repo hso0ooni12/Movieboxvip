@@ -11,6 +11,7 @@ struct XSSportsLiveViewV33: View {
     @State private var selectedCategoryID: String?
     @State private var selectedStream: IPTVLiveStream?
     @State private var showServerSettings = false
+    @State private var favoritesOnly = false
     @AppStorage("xs.iptv.favoriteStreamIDs") private var favoriteIDsRaw = ""
     @AppStorage(xsSportsServerOverrideKey) private var serverOverride = ""
 
@@ -23,7 +24,8 @@ struct XSSportsLiveViewV33: View {
         return store.streams.filter { stream in
             let categoryMatch = selectedCategoryID == nil || stream.categoryID == selectedCategoryID
             let queryMatch = text.isEmpty || stream.name.localizedCaseInsensitiveContains(text)
-            return categoryMatch && queryMatch
+            let favoriteMatch = !favoritesOnly || favoriteIDs.contains(stream.streamID)
+            return categoryMatch && queryMatch && favoriteMatch
         }
     }
 
@@ -107,7 +109,34 @@ struct XSSportsLiveViewV33: View {
                 }
 
                 sectionHeader
-                channelGrid
+                if filteredStreams.isEmpty {
+                    VStack(spacing: 13) {
+                        Image(systemName: favoritesOnly ? "star.slash" : "magnifyingglass")
+                            .font(.system(size: 29, weight: .medium))
+                            .foregroundStyle(XSV3.amber)
+                        Text(favoritesOnly ? "No saved channels yet" : "No channels match")
+                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                        Text(favoritesOnly ? "Tap the star on a channel to save it here." : "Try another category or search.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(XSV3.muted)
+                            .multilineTextAlignment(.center)
+                        Button("Show all channels") {
+                            favoritesOnly = false
+                            selectedCategoryID = nil
+                            query = ""
+                        }
+                        .font(.system(size: 13, weight: .bold))
+                        .padding(.horizontal, 18)
+                        .frame(height: 44)
+                        .background(.white, in: Capsule())
+                        .foregroundStyle(.black)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 45)
+                    .padding(.horizontal, 24)
+                } else {
+                    channelGrid
+                }
             }
             .padding(.bottom, 34)
         }
@@ -172,18 +201,42 @@ struct XSSportsLiveViewV33: View {
     }
 
     private var categoryStrip: some View {
-        ScrollView(.horizontal) {
-            LazyHStack(spacing: 8) {
-                categoryChip(title: "All Sports", id: nil, count: store.streams.count)
-                ForEach(store.categories) { category in
-                    let count = store.streams.lazy.filter { $0.categoryID == category.categoryID }.count
-                    categoryChip(title: category.categoryName, id: category.categoryID, count: count)
-                }
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("BROWSE THE ACTION")
+                    .font(.system(size: 10, weight: .heavy, design: .rounded))
+                    .tracking(2.2)
+                    .foregroundStyle(XSV3.amber)
+                Spacer()
+                Text("\(store.categories.count) CATEGORIES")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.52))
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 2)
+            .padding(.horizontal, 22)
+            ScrollView(.horizontal) {
+                LazyHStack(spacing: 9) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.18)) { favoritesOnly.toggle() }
+                    } label: {
+                        Label("Saved", systemImage: favoritesOnly ? "star.fill" : "star")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(favoritesOnly ? .black : XSV3.amber)
+                            .padding(.horizontal, 14)
+                            .frame(height: 39)
+                            .background(favoritesOnly ? XSV3.amber : XSV3.lifted, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    categoryChip(title: "All Sports", id: nil, count: store.streams.count)
+                    ForEach(store.categories) { category in
+                        let count = store.streams.lazy.filter { $0.categoryID == category.categoryID }.count
+                        categoryChip(title: category.categoryName, id: category.categoryID, count: count)
+                    }
+                }
+                .padding(.horizontal, 22)
+                .padding(.vertical, 3)
+            }
+            .scrollIndicators(.hidden)
         }
-        .scrollIndicators(.hidden)
     }
 
     private func categoryChip(title: String, id: String?, count: Int) -> some View {
@@ -276,21 +329,27 @@ struct XSSportsLiveViewV33: View {
     }
 
     private var sectionHeader: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(selectedCategoryID.flatMap(categoryName(for:)) ?? "Sports Channels")
-                    .font(.title3.bold())
-                Text("\(filteredStreams.count) live channels")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.50))
+        HStack(alignment: .bottom, spacing: 9) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(favoritesOnly ? "YOUR SAVED STREAMS" : "ALL LIVE CHANNELS")
+                    .font(.system(size: 10, weight: .heavy, design: .rounded))
+                    .tracking(2.1)
+                    .foregroundStyle(XSV3.coral)
+                Text(selectedCategoryID.flatMap(categoryName(for:))
+                     ?? (favoritesOnly ? "Your favorites" : "Live channels"))
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
             }
             Spacer()
+            Text("\(filteredStreams.count) CHANNELS")
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.56))
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 22)
     }
 
     private var channelGrid: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 148, maximum: 220), spacing: 12)], spacing: 16) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 250), spacing: 13)], spacing: 20) {
             ForEach(filteredStreams) { stream in
                 XSSportsChannelCardV33(
                     stream: stream,
@@ -528,7 +587,7 @@ private struct XSSportsChannelCardV33: View {
                             .padding(10)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(XSV3PressStyle())
 
                 Button(action: toggleFavorite) {
                     Image(systemName: isFavorite ? "star.fill" : "star")
@@ -543,7 +602,7 @@ private struct XSSportsChannelCardV33: View {
             }
             .aspectRatio(16/10, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 18))
-            .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.13)))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.17)))
 
             Button(action: play) {
                 VStack(alignment: .leading, spacing: 5) {
