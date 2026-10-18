@@ -27,12 +27,18 @@ struct XSGlobalSearchView: View {
                     } else if isSearching && results.isEmpty {
                         loadingState
                     } else if let errorMessage, results.isEmpty {
-                        EmptyStateView(
-                            title: "Search Failed",
-                            message: errorMessage,
-                            systemImage: "exclamationmark.magnifyingglass"
-                        )
-                        .padding(.top, 50)
+                        VStack(spacing: 16) {
+                            EmptyStateView(
+                                title: "Search Failed",
+                                message: errorMessage,
+                                systemImage: "exclamationmark.magnifyingglass"
+                            )
+                            Button("Retry Search") { scheduleSearch(query, immediate: true) }
+                                .buttonStyle(.borderedProminent)
+                                .tint(xsGlobalSearchAccent)
+                                .accessibilityHint("Try searching again")
+                        }
+                        .padding(.top, 24)
                     } else if results.isEmpty {
                         EmptyStateView(
                             title: "No Results",
@@ -61,6 +67,7 @@ struct XSGlobalSearchView: View {
         }
         .onDisappear {
             searchTask?.cancel()
+            isSearching = false
         }
     }
 
@@ -281,6 +288,9 @@ struct XSGlobalSearchView: View {
             return
         }
 
+        isSearching = true
+        errorMessage = nil
+        results = []
         searchTask = Task {
             if !immediate {
                 try? await Task.sleep(nanoseconds: 320_000_000)
@@ -296,10 +306,10 @@ struct XSGlobalSearchView: View {
         errorMessage = nil
         do {
             let found = try await app.search(text)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, text == trimmedQuery else { return }
             results = found
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, text == trimmedQuery else { return }
             results = []
             errorMessage = error.localizedDescription
         }

@@ -27,8 +27,9 @@ final class AppState: ObservableObject {
     var client: TMDBClient { TMDBClient(token: "", language: language) }
 
     func loadHome(force: Bool = false) async {
-        if didLoad && !force { return }
+        if isLoading || (didLoad && !force) { return }
         isLoading = true
+        defer { isLoading = false }
         errorMessage = nil
         do {
             async let movies = client.trendingMovies()
@@ -42,11 +43,13 @@ final class AppState: ObservableObject {
             popularMovies = result.2
             popularTV = result.3
             anime = result.4
+            try Task.checkCancellation()
             didLoad = true
+        } catch is CancellationError {
+            return
         } catch {
             errorMessage = error.localizedDescription
         }
-        isLoading = false
     }
 
     func list(for kind: MediaKind) -> [MediaItem] {

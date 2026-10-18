@@ -487,6 +487,7 @@ private struct TopTenCard: View {
 
 struct PremiumLoadingView: View {
     let message: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var shimmer = false
 
     var body: some View {
@@ -523,6 +524,7 @@ struct PremiumLoadingView: View {
         .background(XSBackground())
         .clipped()
         .onAppear {
+            guard !reduceMotion else { return }
             withAnimation(.linear(duration: 1.25).repeatForever(autoreverses: false)) {
                 shimmer = true
             }

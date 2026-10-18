@@ -12,6 +12,7 @@ struct DetailView: View {
     @State private var episodeLoading = false
     @State private var error: String?
     @State private var heroAppeared = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -94,7 +95,7 @@ struct DetailView: View {
         .navigationDestination(for: MediaItem.self) { DetailView(item: $0) }
         .task { await load() }
         .onAppear {
-            withAnimation(.easeOut(duration: 0.78)) {
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.36)) {
                 heroAppeared = true
             }
         }
@@ -468,11 +469,12 @@ struct DetailView: View {
         error = nil
 
         do {
-            async let detailRequest = app.details(for: item)
-            async let seasonRequest = app.seasons(for: item)
-            details = try await detailRequest
-
-            if item.kind != .movie {
+            if item.kind == .movie {
+                details = try await app.details(for: item)
+            } else {
+                async let detailRequest = app.details(for: item)
+                async let seasonRequest = app.seasons(for: item)
+                details = try await detailRequest
                 seasons = try await seasonRequest
                 let preferred = saved?.season.flatMap { season in
                     seasons.contains(where: { $0.seasonNumber == season }) ? season : nil
