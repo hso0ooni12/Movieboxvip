@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import CryptoKit
 
 struct IPTVCredentials: Codable, Equatable {
     var host: String
@@ -15,12 +16,30 @@ struct IPTVCredentials: Codable, Equatable {
         return value
     }
 
+    // A change in server, user or password invalidates cached channel data,
+    // without persisting any login fields into the cache key.
+    var fingerprint: String {
+        let source = "\(normalizedHost.lowercased())\u{001F}\(username)\u{001F}\(password)"
+        return SHA256.hash(data: Data(source.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    var alternateHosts: [String] {
+        // Public provider endpoints only; credentials are never added to source.
+        let primary = normalizedHost
+        let providerHosts = [
+            "http://vpn.liondnscloud.ru:80",
+            "http://line.goalozne.store:80"
+        ]
+        let isKnownProvider = providerHosts.contains { $0.lowercased() == primary.lowercased() }
+        return isKnownProvider ? [primary] + providerHosts.filter { $0.lowercased() != primary.lowercased() } : [primary]
+    }
+
     var isComplete: Bool {
         !normalizedHost.isEmpty && !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !password.isEmpty
     }
 }
 
-struct IPTVCategory: Identifiable, Hashable, Decodable {
+struct IPTVCategory: Identifiable, Hashable, Codable {
     let categoryID: String
     let categoryName: String
     let parentID: Int?
@@ -41,7 +60,7 @@ struct IPTVCategory: Identifiable, Hashable, Decodable {
     }
 }
 
-struct IPTVLiveStream: Identifiable, Hashable, Decodable {
+struct IPTVLiveStream: Identifiable, Hashable, Codable {
     let streamID: Int
     let name: String
     let streamIcon: String?
@@ -99,7 +118,7 @@ enum IPTVError: LocalizedError {
         switch self {
         case .invalidCredentials: return "The IPTV login details were rejected by the server."
         case .invalidServerResponse: return "The IPTV server returned an invalid response."
-        case .noSportsChannels: return "No sports channels were found in this subscription."
+        case .noSportsChannels: return "No live channels were returned by this IPTV subscription. Check the server and account status."
         }
     }
 }
@@ -165,39 +184,81 @@ actor IPTVService {
         return URLSession(configuration: configuration)
     }()
 
+    // Check all provider endpoints in order. Never change the user's chosen
+    // player server or send credentials to unrelated domains.
     func validate(_ credentials: IPTVCredentials) async throws {
-        let data = try await request(credentials: credentials, action: nil)
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let userInfo = object["user_info"] as? [String: Any] else {
-            throw IPTVError.invalidServerResponse
+        var lastError: Error = IPTVError.invalidServerResponse
+        for host in credentials.alternateHosts {
+            var candidate = credentials
+            candidate.host = host
+            do {
+                let data = try await request(credentials: candidate, action: nil)
+                guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let userInfo = object["user_info"] as? [String: Any] else {
+                    throw IPTVError.invalidServerResponse
+                }
+                let auth: Bool
+                if let value = userInfo["auth"] as? Int { auth = value == 1 }
+                else if let value = userInfo["auth"] as? String { auth = value == "1" || value.lowercased() == "true" }
+                else if let value = userInfo["auth"] as? Bool { auth = value }
+                else { auth = false }
+                guard auth else { throw IPTVError.invalidCredentials }
+                return
+            } catch {
+                lastError = error
+            }
         }
-
-        let auth: Bool
-        if let value = userInfo["auth"] as? Int { auth = value == 1 }
-        else if let value = userInfo["auth"] as? String { auth = value == "1" || value.lowercased() == "true" }
-        else if let value = userInfo["auth"] as? Bool { auth = value }
-        else { auth = false }
-
-        guard auth else { throw IPTVError.invalidCredentials }
+        throw lastError
     }
 
     func loadSports(credentials: IPTVCredentials) async throws -> ([IPTVCategory], [IPTVLiveStream]) {
-        async let categoriesData = request(credentials: credentials, action: "get_live_categories")
-        async let streamsData = request(credentials: credentials, action: "get_live_streams")
+        let (_, categories, streams) = try await loadLiveCatalog(credentials: credentials)
+        return (categories, streams)
+    }
 
-        let (categoryBytes, streamBytes) = try await (categoriesData, streamsData)
-        let decoder = JSONDecoder()
-        let categories = (try? decoder.decode([IPTVCategory].self, from: categoryBytes)) ?? []
-        let streams = (try? decoder.decode([IPTVLiveStream].self, from: streamBytes)) ?? []
+    // Categories and live streams are fetched concurrently on each candidate.
+    // The successful host is passed back so stream playback uses THAT endpoint.
+    func loadLiveCatalog(credentials: IPTVCredentials) async throws -> (IPTVCredentials, [IPTVCategory], [IPTVLiveStream]) {
+        var lastError: Error = IPTVError.invalidServerResponse
+        for host in credentials.alternateHosts {
+            var candidate = credentials
+            candidate.host = host
+            do {
+                async let categoryData = request(credentials: candidate, action: "get_live_categories")
+                async let streamData = request(credentials: candidate, action: "get_live_streams")
+                let (catBytes, liveBytes) = try await (categoryData, streamData)
+                let decoder = JSONDecoder()
+                guard let categories = try? decoder.decode([IPTVCategory].self, from: catBytes),
+                      let streams = try? decoder.decode([IPTVLiveStream].self, from: liveBytes) else {
+                    throw IPTVError.invalidServerResponse
+                }
 
-        let sportsCategories = categories.filter { Self.isSportsCategory($0.categoryName) }
-        let sportsIDs = Set(sportsCategories.map(\.categoryID))
-        let sportsStreams = streams.filter { stream in
-            sportsIDs.contains(stream.categoryID) || Self.isSportsChannel(stream.name)
+                let permitted = streams.filter { $0.streamID > 0 && !Self.isAdultChannel($0.name) }
+                guard !permitted.isEmpty else {
+                    throw IPTVError.noSportsChannels
+                }
+
+                let sportsCategories = categories.filter { Self.isSportsCategory($0.categoryName) }
+                let sportsIDs = Set(sportsCategories.map(\.categoryID))
+                let matched = permitted.filter { stream in
+                    sportsIDs.contains(stream.categoryID) || Self.isSportsChannel(stream.name)
+                }
+
+                // The old app displayed nothing for subscriptions whose category
+                // names didn't contain English sports keywords. When there are
+                // real channels but no match, show the non-adult live catalog.
+                if matched.isEmpty {
+                    return (candidate, categories, permitted)
+                }
+
+                let filteredIDs = Set(matched.map(\.categoryID))
+                let visibleCategories = categories.filter { filteredIDs.contains($0.categoryID) }
+                return (candidate, visibleCategories, matched)
+            } catch {
+                lastError = error
+            }
         }
-
-        guard !sportsStreams.isEmpty else { throw IPTVError.noSportsChannels }
-        return (sportsCategories, sportsStreams)
+        throw lastError
     }
 
     nonisolated func streamURL(for stream: IPTVLiveStream, credentials: IPTVCredentials) -> URL? {
@@ -233,10 +294,15 @@ actor IPTVService {
         return data
     }
 
+    private static func isAdultChannel(_ raw: String) -> Bool {
+        let value = normalized(raw)
+        return ["adult", "xxx", "18+", "porn", "erotic", "sex channel", "للكبار", "إباحي"].contains { value.contains($0) }
+    }
+
     private static func isSportsCategory(_ raw: String) -> Bool {
         let value = normalized(raw)
         let keywords = [
-            "sport", "sports", "football", "soccer", "bein", "dazn", "espn", "sky sports",
+            "sport", "sports", "football", "soccer", "bein", "dazn", "espn", "sky sports", "ssc", "match", "arena",
             "رياض", "رياضي", "رياضة", "كورة", "كرة", "مباريات", "الدوري", "دوري"
         ]
         return keywords.contains { value.contains($0) }
@@ -245,7 +311,7 @@ actor IPTVService {
     private static func isSportsChannel(_ raw: String) -> Bool {
         let value = normalized(raw)
         let keywords = [
-            "bein sport", "bein sports", "sport", "espn", "dazn", "sky sport", "ssc", "ad sport",
+            "bein sport", "bein sports", "bein", "sport", "espn", "dazn", "sky sport", "ssc", "ad sport",
             "dubai sport", "riyadiya", "رياض", "رياضي", "كورة", "مباراة"
         ]
         return keywords.contains { value.contains($0) }
@@ -269,6 +335,36 @@ final class IPTVSportsStore: ObservableObject {
 
     private let service = IPTVService.shared
     private let vault = IPTVCredentialVault.shared
+    private let cacheKey = "xs.iptv.liveCatalog.v5"
+    private var loadTask: Task<Void, Error>?
+
+    private struct CatalogCache: Codable {
+        let credentialSignature: String
+        let savedAt: Date
+        let categories: [IPTVCategory]
+        let streams: [IPTVLiveStream]
+    }
+
+    private func restoreCache(for credentials: IPTVCredentials) {
+        guard let data = UserDefaults.standard.data(forKey: cacheKey),
+              let cached = try? JSONDecoder().decode(CatalogCache.self, from: data),
+              cached.credentialSignature == credentials.fingerprint,
+              Date().timeIntervalSince(cached.savedAt) < 3600 else { return }
+        categories = cached.categories
+        streams = cached.streams
+    }
+
+    private func persistCache(for credentials: IPTVCredentials) {
+        let entry = CatalogCache(
+            credentialSignature: credentials.fingerprint,
+            savedAt: Date(),
+            categories: categories,
+            streams: streams
+        )
+        if let data = try? JSONEncoder().encode(entry) {
+            UserDefaults.standard.set(data, forKey: cacheKey)
+        }
+    }
 
     var usesEmbeddedCredentials: Bool {
         XSIPTVEmbeddedConfig.isConfigured && XSIPTVEmbeddedConfig.credentials != nil
@@ -281,12 +377,15 @@ final class IPTVSportsStore: ObservableObject {
         } else {
             credentials = vault.load()
         }
+        if let credentials { restoreCache(for: credentials) }
     }
 
     func save(credentials: IPTVCredentials) async throws {
         try await service.validate(credentials)
         try vault.save(credentials)
         self.credentials = credentials
+        categories = []
+        streams = []
         try await refresh()
     }
 
@@ -295,6 +394,7 @@ final class IPTVSportsStore: ObservableObject {
         categories = []
         streams = []
         errorMessage = nil
+        UserDefaults.standard.removeObject(forKey: cacheKey)
         if let embedded = XSIPTVEmbeddedConfig.credentials {
             credentials = embedded
             try? vault.save(embedded)
@@ -304,15 +404,23 @@ final class IPTVSportsStore: ObservableObject {
     }
 
     func refresh() async throws {
-        guard let credentials else { return }
+        guard let original = credentials else { throw IPTVError.invalidCredentials }
+        guard !isLoading else { return }
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
         do {
-            let (categories, streams) = try await service.loadSports(credentials: credentials)
-            self.categories = categories
-            self.streams = streams
+            let (resolved, resultCategories, resultStreams) =
+                try await service.loadLiveCatalog(credentials: original)
+            // Do not overwrite a newer account when a prior refresh finishes.
+            guard credentials == original else { return }
+            credentials = resolved
+            categories = resultCategories
+            streams = resultStreams
+            persistCache(for: resolved)
+            try? vault.save(resolved)
         } catch {
+            // Cached channels remain visible during temporary server outages.
             errorMessage = error.localizedDescription
             throw error
         }
