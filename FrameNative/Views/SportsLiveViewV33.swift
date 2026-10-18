@@ -19,9 +19,18 @@ struct XSSportsLiveViewV33: View {
         Set(favoriteIDsRaw.split(separator: ",").compactMap { Int($0) })
     }
 
+    // Only explicitly AR-prefixed channels are shown; all other streams
+    // remain untouched in the provider catalog.
+    private var arabicStreams: [IPTVLiveStream] {
+        store.streams.filter {
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                .uppercased().hasPrefix("AR")
+        }
+    }
+
     private var filteredStreams: [IPTVLiveStream] {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return store.streams.filter { stream in
+        return arabicStreams.filter { stream in
             let categoryMatch = selectedCategoryID == nil || stream.categoryID == selectedCategoryID
             let queryMatch = text.isEmpty || stream.name.localizedCaseInsensitiveContains(text)
             let favoriteMatch = !favoritesOnly || favoriteIDs.contains(stream.streamID)
@@ -154,7 +163,7 @@ struct XSSportsLiveViewV33: View {
                     .tracking(2.6)
                     .foregroundStyle(XSCinemaStyle.warm)
                 Spacer()
-                Text("\(store.streams.count) CHANNELS")
+                Text("\(arabicStreams.count) AR CHANNELS")
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.53))
             }
@@ -208,7 +217,7 @@ struct XSSportsLiveViewV33: View {
                     .tracking(2.2)
                     .foregroundStyle(XSV3.amber)
                 Spacer()
-                Text("\(store.categories.count) CATEGORIES")
+                Text("\(store.categories.filter { category in arabicStreams.contains { $0.categoryID == category.categoryID } }.count) CATEGORIES")
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.52))
             }
@@ -226,9 +235,9 @@ struct XSSportsLiveViewV33: View {
                             .background(favoritesOnly ? XSV3.amber : XSV3.lifted, in: Capsule())
                     }
                     .buttonStyle(.plain)
-                    categoryChip(title: "All Sports", id: nil, count: store.streams.count)
-                    ForEach(store.categories) { category in
-                        let count = store.streams.lazy.filter { $0.categoryID == category.categoryID }.count
+                    categoryChip(title: "All Arabic", id: nil, count: arabicStreams.count)
+                    ForEach(store.categories.filter { category in arabicStreams.contains { $0.categoryID == category.categoryID } }) { category in
+                        let count = arabicStreams.lazy.filter { $0.categoryID == category.categoryID }.count
                         categoryChip(title: category.categoryName, id: category.categoryID, count: count)
                     }
                 }
