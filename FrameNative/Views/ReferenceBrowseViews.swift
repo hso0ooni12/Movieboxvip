@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 private let xsAccent = Color(red: 1.0, green: 0.12, blue: 0.38)
 
@@ -462,7 +463,7 @@ private struct XSReferenceCatalogSection: View {
                     .padding(.top, -8)
 
                 if viewModeGrid {
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 20) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 128, maximum: 185), spacing: 12)], spacing: 20) {
                         ForEach(Array(items.prefix(18))) { item in
                             XSReferencePosterCard(item: item)
                         }
@@ -563,7 +564,10 @@ private struct XSReferencePosterCard: View {
                 }
                 .buttonStyle(XSReferenceHitButtonStyle())
 
-                Button { library.toggleFavorite(item) } label: {
+                Button {
+                library.toggleFavorite(item)
+                UISelectionFeedbackGenerator().selectionChanged()
+            } label: {
                     Image(systemName: library.isFavorite(item) ? "bookmark.fill" : "bookmark")
                         .font(.caption.weight(.semibold))
                         .frame(width: 34, height: 34)
@@ -571,6 +575,7 @@ private struct XSReferencePosterCard: View {
                         .overlay(Circle().stroke(.white.opacity(0.20)))
                 }
                 .buttonStyle(XSReferenceHitButtonStyle())
+                .accessibilityLabel(library.isFavorite(item) ? "Remove from favorites" : "Add to favorites")
                 .padding(8)
             }
 
@@ -613,11 +618,15 @@ private struct XSReferenceListCard: View {
                 }
             }
             Spacer()
-            Button { library.toggleFavorite(item) } label: {
+            Button {
+                library.toggleFavorite(item)
+                UISelectionFeedbackGenerator().selectionChanged()
+            } label: {
                 Image(systemName: library.isFavorite(item) ? "bookmark.fill" : "bookmark")
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(XSReferenceHitButtonStyle())
+            .accessibilityLabel(library.isFavorite(item) ? "Remove from favorites" : "Add to favorites")
         }
         .padding(10)
         .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 13))

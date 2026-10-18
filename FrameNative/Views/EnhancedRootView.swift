@@ -3,20 +3,9 @@ import SwiftUI
 struct EnhancedRootView: View {
     @EnvironmentObject private var app: AppState
     @State private var showSettings = false
-    @State private var showSplash = true
 
     var body: some View {
-        ZStack {
-            mainTabs
-                .opacity(showSplash ? 0 : 1)
-                .scaleEffect(showSplash ? 1.006 : 1)
-
-            if showSplash {
-                EnhancedXSTVSplashView()
-                    .transition(.opacity)
-                    .zIndex(10)
-            }
-        }
+        mainTabs
         .sheet(isPresented: $showSettings) {
             NavigationStack {
                 SettingsView()
@@ -24,12 +13,6 @@ struct EnhancedRootView: View {
             .preferredColorScheme(.dark)
         }
         .task { await app.loadHome() }
-        .task {
-            try? await Task.sleep(nanoseconds: 1_250_000_000)
-            await MainActor.run {
-                withAnimation(.easeOut(duration: 0.24)) { showSplash = false }
-            }
-        }
     }
 
     private var mainTabs: some View {

@@ -10,6 +10,7 @@ struct DetailView: View {
     @State private var episodes: [Episode] = []
     @State private var loading = true
     @State private var episodeLoading = false
+    @State private var episodesTask: Task<Void, Never>?
     @State private var error: String?
     @State private var heroAppeared = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -75,12 +76,17 @@ struct DetailView: View {
                         }
 
                         if let error {
-                            Label(error, systemImage: "exclamationmark.triangle.fill")
-                                .font(.footnote.weight(.medium))
-                                .foregroundStyle(.orange)
-                                .padding(14)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(.orange.opacity(0.09), in: RoundedRectangle(cornerRadius: 16))
+                            VStack(alignment: .leading, spacing: 10) {
+                                Label(error, systemImage: "exclamationmark.triangle.fill")
+                                    .font(.footnote.weight(.medium))
+                                    .foregroundStyle(.orange)
+                                Button("Try Again") { Task { await load() } }
+                                    .buttonStyle(.bordered)
+                                    .tint(.white)
+                            }
+                            .padding(14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.orange.opacity(0.09), in: RoundedRectangle(cornerRadius: 16))
                         }
                     }
                     .padding(.horizontal, 18)
@@ -99,6 +105,7 @@ struct DetailView: View {
                 heroAppeared = true
             }
         }
+        .onDisappear { episodesTask?.cancel() }
     }
 
     private var currentItem: MediaItem {
@@ -347,8 +354,13 @@ struct DetailView: View {
                         selection: Binding(
                             get: { selectedSeason ?? seasons.first?.seasonNumber ?? 1 },
                             set: { value in
+                                guard selectedSeason != value else { return }
+                                episodesTask?.cancel()
                                 selectedSeason = value
-                                Task { await loadEpisodes(season: value) }
+                                episodes = []
+                                error = nil
+                                episodeLoading = true
+                                episodesTask = Task { await loadEpisodes(season: value) }
                             }
                         )
                     ) {
@@ -466,6 +478,7 @@ struct DetailView: View {
     @MainActor
     private func load() async {
         loading = true
+        defer { loading = false }
         error = nil
 
         do {
@@ -483,22 +496,31 @@ struct DetailView: View {
                 selectedSeason = first
                 if let first { await loadEpisodes(season: first) }
             }
+        } catch is CancellationError {
+            return
         } catch {
-            self.error = error.localizedDescription
+            self.error = "Couldn't load this title. Please try again."
         }
-
-        loading = false
     }
 
     @MainActor
     private func loadEpisodes(season: Int) async {
+        guard selectedSeason == season else { return }
         episodeLoading = true
+        defer { if selectedSeason == season { episodeLoading = false } }
         do {
-            episodes = try await app.episodes(tmdbID: item.tmdbID, season: season)
+            let fetched = try await app.episodes(tmdbID: item.tmdbID, season: season)
+            try Task.checkCancellation()
+            guard selectedSeason == season else { return }
+            episodes = fetched
+            error = nil
+        } catch is CancellationError {
+            return
         } catch {
-            self.error = error.localizedDescription
+            guard selectedSeason == season else { return }
+            episodes = []
+            self.error = "Couldn't load episodes. Select the season again to retry."
         }
-        episodeLoading = false
     }
 }
 
