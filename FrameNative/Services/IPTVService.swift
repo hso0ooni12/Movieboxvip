@@ -233,7 +233,10 @@ actor IPTVService {
                     throw IPTVError.invalidServerResponse
                 }
 
-                let permitted = streams.filter { $0.streamID > 0 && !Self.isAdultChannel($0.name) }
+                let excludedIDs = Set(categories.filter { Self.isAdultChannel($0.categoryName) }.map(\.categoryID))
+                let permitted = streams.filter {
+                    $0.streamID > 0 && !excludedIDs.contains($0.categoryID) && !Self.isAdultChannel($0.name)
+                }
                 guard !permitted.isEmpty else {
                     throw IPTVError.noSportsChannels
                 }
@@ -248,7 +251,7 @@ actor IPTVService {
                 // names didn't contain English sports keywords. When there are
                 // real channels but no match, show the non-adult live catalog.
                 if matched.isEmpty {
-                    return (candidate, categories, permitted)
+                    return (candidate, categories.filter { !excludedIDs.contains($0.categoryID) }, permitted)
                 }
 
                 let filteredIDs = Set(matched.map(\.categoryID))
