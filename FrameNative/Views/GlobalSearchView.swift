@@ -53,9 +53,9 @@ struct XSGlobalSearchView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(XSCinemaStyle.background.opacity(0.96), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
-        .navigationDestination(for: MediaItem.self) { item in
-            DetailView(item: item)
-        }
+        // Search owns direct destinations. The parent Home/Catalog stack
+        // already registers MediaItem routes; duplicate value resolution
+        // could pop back to browsing instead of pushing the chosen detail.
         .onChange(of: query) { newValue in
             scheduleSearch(newValue)
         }
@@ -115,7 +115,9 @@ struct XSGlobalSearchView: View {
     private var discover: some View {
         VStack(alignment: .leading, spacing: 24) {
             if let featured = app.spotlight.first ?? app.popularMovies.first {
-                NavigationLink(value: featured) {
+                NavigationLink {
+                    DetailView(item: featured)
+                } label: {
                     ZStack(alignment: .bottomLeading) {
                         RemotePoster(item: featured, backdrop: true, cornerRadius: 23)
                             .frame(height: 235)
@@ -168,7 +170,9 @@ struct XSGlobalSearchView: View {
             ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: 13) {
                     ForEach(items) { item in
-                        NavigationLink(value: item) {
+                        NavigationLink {
+                            DetailView(item: item)
+                        } label: {
                             XSCinemaPosterTile(item: item)
                         }
                         .buttonStyle(.plain)
@@ -191,7 +195,9 @@ struct XSGlobalSearchView: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 140, maximum: 200), spacing: 14)],
                       alignment: .center, spacing: 23) {
                 ForEach(results) { item in
-                    NavigationLink(value: item) {
+                    NavigationLink {
+                            DetailView(item: item)
+                        } label: {
                         XSCinemaPosterTile(item: item)
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
