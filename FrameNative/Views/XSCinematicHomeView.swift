@@ -22,7 +22,7 @@ struct XSCinematicHomeView: View {
 
     var body: some View {
         ZStack {
-            XSCinemaStyle.background.ignoresSafeArea()
+            XSV3ScreenBackdrop()
             if app.isLoading && !app.didLoad {
                 PremiumLoadingView(message: "Setting the scene…")
             } else if let error = app.errorMessage, !app.didLoad {
@@ -44,8 +44,10 @@ struct XSCinematicHomeView: View {
                             .padding(.top, 27)
                         continueWatching
                             .padding(.top, 34)
-                        cinemaRail("Trending this week", overline: "THE SPOTLIGHT", items: app.trendingMovies)
-                            .padding(.top, 37)
+                        curatedRanking
+                            .padding(.top, 40)
+                        cinemaRail("Trending this week", overline: "NEW TO THE SPOTLIGHT", items: app.trendingMovies)
+                            .padding(.top, 36)
                         cinemaRail("Movie night", overline: "HANDPICKED FOR YOU", items: app.popularMovies)
                             .padding(.top, 36)
                         editorialFeature
@@ -242,48 +244,33 @@ struct XSCinematicHomeView: View {
         }
     }
 
+    // Posters are the content: replacing the old colored utility tiles with
+    // fully-immersive discovery cards gives Movies and Series their own identity.
     private var exploreStrip: some View {
         VStack(alignment: .leading, spacing: 15) {
-            XSCinemaHeadline(eyebrow: "YOUR WORLD OF ENTERTAINMENT", title: "Explore")
-            ScrollView(.horizontal) {
-                HStack(spacing: 10) {
-                    exploreLink("Movies", symbol: "film.stack", tint: .orange, kind: .movie)
-                    exploreLink("Series", symbol: "play.tv", tint: .purple, kind: .tv)
+            XSV3SectionTitle(eyebrow: "PICK YOUR STORY", title: "Where to next?")
+            HStack(alignment: .top, spacing: 12) {
+                if let item = app.popularMovies.first ?? app.trendingMovies.first {
+                    NavigationLink {
+                        XSReferenceCatalogView(kind: .movie, title: "Movies")
+                    } label: {
+                        XSV3WorldCard(item: item, title: "Movies", eyebrow: "THE BIG SCREEN",
+                                      icon: "film", accent: XSV3.amber)
+                    }
+                    .buttonStyle(XSV3PressStyle())
                 }
-                .padding(.horizontal, 22)
-            }
-            .scrollIndicators(.hidden)
-        }
-    }
-
-    private func exploreLink(_ title: String, symbol: String, tint: Color, kind: MediaKind) -> some View {
-        NavigationLink {
-            XSReferenceCatalogView(kind: kind, title: title)
-        } label: {
-            VStack(alignment: .leading, spacing: 23) {
-                Image(systemName: symbol)
-                    .font(.system(size: 23, weight: .medium))
-                    .foregroundStyle(tint)
-                    .frame(width: 42, height: 42, alignment: .leading)
-                HStack {
-                    Text(title)
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
-                    Spacer(minLength: 4)
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.43))
+                if let item = app.popularTV.first ?? app.trendingTV.first {
+                    NavigationLink {
+                        XSReferenceCatalogView(kind: .tv, title: "Series")
+                    } label: {
+                        XSV3WorldCard(item: item, title: "Series", eyebrow: "THE NEXT EPISODE",
+                                      icon: "play.tv", accent: XSV3.lilac)
+                    }
+                    .buttonStyle(XSV3PressStyle())
                 }
-                .foregroundStyle(.white)
             }
-            .padding(16)
-            .frame(width: 155, height: 127)
-            .background(
-                LinearGradient(colors: [tint.opacity(0.18), XSCinemaStyle.surface], startPoint: .topLeading, endPoint: .bottomTrailing),
-                in: RoundedRectangle(cornerRadius: 20, style: .continuous)
-            )
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.08)))
+            .padding(.horizontal, 22)
         }
-        .buttonStyle(.plain)
     }
 
     private var liveArenaFeature: some View {
@@ -340,10 +327,30 @@ struct XSCinematicHomeView: View {
     @ViewBuilder
     private var continueWatching: some View {
         if !library.continueWatching.isEmpty {
-            VStack(alignment: .leading, spacing: 16) {
-                XSCinemaHeadline(eyebrow: "PICK UP WHERE YOU LEFT OFF", title: "Continue watching")
+            VStack(alignment: .leading, spacing: 15) {
+                HStack(alignment: .bottom, spacing: 5) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("PICK UP WHERE YOU LEFT OFF")
+                            .font(.system(size: 10, weight: .heavy, design: .rounded))
+                            .tracking(2.1)
+                            .foregroundStyle(XSV3.coral)
+                        Text("Continue watching")
+                            .font(.system(size: 25, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                    }
+                    Spacer()
+                    NavigationLink {
+                        MyListView()
+                    } label: {
+                        Label("My List", systemImage: "arrow.up.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.75))
+                            .frame(height: 44)
+                    }
+                }
+                .padding(.horizontal, 22)
                 ScrollView(.horizontal) {
-                    LazyHStack(spacing: 13) {
+                    LazyHStack(alignment: .top, spacing: 13) {
                         ForEach(library.continueWatching, id: \.item.id) { entry in
                             NavigationLink {
                                 FrameXTVPlayerScreen(
@@ -356,42 +363,40 @@ struct XSCinematicHomeView: View {
                                     )
                                 )
                             } label: {
-                                VStack(alignment: .leading, spacing: 9) {
-                                    ZStack(alignment: .bottomLeading) {
-                                        RemotePoster(item: entry.item, backdrop: true, cornerRadius: 17)
-                                            .frame(width: 248, height: 141)
-                                        LinearGradient(colors: [.clear, .black.opacity(0.84)], startPoint: .center, endPoint: .bottom)
-                                        VStack(alignment: .leading, spacing: 9) {
-                                            HStack(spacing: 7) {
-                                                Image(systemName: "play.circle.fill")
-                                                    .font(.system(size: 29))
-                                                if let label = entry.episodeLabel {
-                                                    Text(label)
-                                                        .font(.system(size: 12, weight: .bold))
-                                                }
-                                                Spacer()
-                                                Text("\(Int(entry.fraction * 100))%")
-                                                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                                            }
-                                            .foregroundStyle(.white)
-                                            ProgressView(value: entry.fraction)
-                                                .tint(XSCinemaStyle.accent)
-                                                .progressViewStyle(.linear)
-                                        }
-                                        .padding(12)
-                                    }
-                                    .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-                                    Text(entry.item.title)
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .lineLimit(1)
-                                        .frame(width: 248, alignment: .leading)
-                                }
-                                .foregroundStyle(.white)
+                                XSV3ProgressCard(entry: entry)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(XSV3PressStyle())
                         }
                     }
                     .padding(.horizontal, 22)
+                    .padding(.bottom, 6)
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var curatedRanking: some View {
+        let picks = Array(app.popularMovies.prefix(10))
+        if !picks.isEmpty {
+            VStack(alignment: .leading, spacing: 16) {
+                XSV3SectionTitle(
+                    eyebrow: "THE EDITOR'S QUEUE",
+                    title: "Tonight's top picks",
+                    count: "\(picks.count) picks"
+                )
+                ScrollView(.horizontal) {
+                    LazyHStack(alignment: .top, spacing: 7) {
+                        ForEach(Array(picks.enumerated()), id: \.element.id) { index, item in
+                            NavigationLink(value: item) {
+                                XSV3RankingCard(item: item, index: index + 1)
+                            }
+                            .buttonStyle(XSV3PressStyle())
+                        }
+                    }
+                    .padding(.horizontal, 22)
+                    .padding(.bottom, 8)
                 }
                 .scrollIndicators(.hidden)
             }
