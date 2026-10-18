@@ -15,7 +15,7 @@ struct DetailView: View {
 
     var body: some View {
         ZStack {
-            XSBackground()
+            XSCinemaStyle.background.ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -38,8 +38,8 @@ struct DetailView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("About")
-                                .font(.title3.bold())
+                            Text("The story")
+                                .font(.system(size: 24, weight: .bold, design: .rounded))
                             Text(currentItem.overview.isEmpty ? "No overview available." : currentItem.overview)
                                 .font(.body)
                                 .foregroundStyle(.white.opacity(0.78))
@@ -53,8 +53,8 @@ struct DetailView: View {
                         let related = app.related(to: currentItem)
                         if !related.isEmpty {
                             VStack(alignment: .leading, spacing: 14) {
-                                Text("More Like This")
-                                    .font(.title2.bold())
+                                Text("You might also like")
+                                    .font(.system(size: 24, weight: .bold, design: .rounded))
                                 Text("More titles from the XS TV catalog you may enjoy")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -82,15 +82,15 @@ struct DetailView: View {
                                 .background(.orange.opacity(0.09), in: RoundedRectangle(cornerRadius: 16))
                         }
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 20)
+                    .padding(.horizontal, 22)
+                    .padding(.top, 16)
                     .padding(.bottom, 44)
                 }
             }
             .scrollIndicators(.hidden)
         }
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.black.opacity(0.45), for: .navigationBar)
+        .toolbarBackground(XSCinemaStyle.background.opacity(0.75), for: .navigationBar)
         .navigationDestination(for: MediaItem.self) { DetailView(item: $0) }
         .task { await load() }
         .onAppear {
@@ -111,54 +111,73 @@ struct DetailView: View {
     private var hero: some View {
         ZStack(alignment: .bottomLeading) {
             RemotePoster(item: currentItem, backdrop: true, cornerRadius: 0)
-                .frame(height: 460)
-                .scaleEffect(heroAppeared ? 1.0 : 1.04)
-                .opacity(heroAppeared ? 1 : 0.72)
+                .frame(height: 515)
+                .scaleEffect(heroAppeared ? 1.0 : 1.035)
+                .opacity(heroAppeared ? 1 : 0.75)
+                .clipped()
 
             LinearGradient(
-                colors: [.black.opacity(0.02), .black.opacity(0.16), .black.opacity(0.99)],
+                stops: [
+                    .init(color: .black.opacity(0.07), location: 0),
+                    .init(color: XSCinemaStyle.background.opacity(0.26), location: 0.32),
+                    .init(color: XSCinemaStyle.background.opacity(0.76), location: 0.70),
+                    .init(color: XSCinemaStyle.background, location: 1)
+                ],
                 startPoint: .top,
                 endPoint: .bottom
             )
 
-            LinearGradient(
-                colors: [.purple.opacity(0.22), .pink.opacity(0.08), .orange.opacity(0.03), .clear],
-                startPoint: .bottomLeading,
-                endPoint: .topTrailing
-            )
-            .blendMode(.screen)
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .bottom, spacing: 17) {
+                    RemotePoster(item: currentItem, cornerRadius: 16)
+                        .frame(width: 116, height: 176)
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.25)))
+                        .shadow(color: .black.opacity(0.42), radius: 18, y: 10)
 
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 7) {
-                    GlassBadge(text: currentItem.kind == .tv ? "SERIES" : currentItem.kind.title.uppercased())
-                    GlassBadge(text: currentItem.year)
-                    if currentItem.voteAverage > 0 {
-                        GlassBadge(text: currentItem.ratingText, systemImage: "star.fill")
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("NOW STREAMING  /  XS TV")
+                            .font(.system(size: 9, weight: .heavy, design: .rounded))
+                            .tracking(2)
+                            .foregroundStyle(XSCinemaStyle.warm)
+                        Text(currentItem.title)
+                            .font(.system(size: 30, weight: .black, design: .rounded))
+                            .tracking(-0.5)
+                            .lineLimit(3)
+                            .minimumScaleFactor(0.73)
+                            .foregroundStyle(.white)
+                        HStack(spacing: 8) {
+                            Text(currentItem.year)
+                            if currentItem.voteAverage > 0 {
+                                Image(systemName: "star.fill").foregroundStyle(XSCinemaStyle.warm)
+                                Text(currentItem.ratingText)
+                            }
+                        }
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.78))
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 4)
                 }
 
-                Text(currentItem.title)
-                    .font(.system(size: 39, weight: .black, design: .rounded))
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.72)
-
                 if let genres = details?.genres, !genres.isEmpty {
-                    Text(genres.prefix(4).joined(separator: "  •  "))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.72))
+                    Text(genres.prefix(4).joined(separator: "  ·  "))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.76))
                         .lineLimit(2)
                 } else if !currentItem.subtitle.isEmpty {
                     Text(currentItem.subtitle)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.72))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.76))
+                        .lineLimit(2)
                 }
             }
-            .padding(.horizontal, 18)
-            .padding(.bottom, 24)
-            .offset(y: heroAppeared ? 0 : 18)
+            .padding(.horizontal, 22)
+            .padding(.bottom, 27)
+            .offset(y: heroAppeared ? 0 : 15)
             .opacity(heroAppeared ? 1 : 0)
         }
-        .animation(.easeOut(duration: 0.72), value: heroAppeared)
+        .frame(height: 515)
+        .animation(.easeOut(duration: 0.68), value: heroAppeared)
     }
 
     private var actionRow: some View {
@@ -188,7 +207,7 @@ struct DetailView: View {
                 Image(systemName: library.isFavorite(currentItem) ? "checkmark" : "plus")
                     .font(.headline.bold())
                     .frame(width: 52, height: 52)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .background(XSCinemaStyle.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.10)))
             }
             .buttonStyle(.plain)
