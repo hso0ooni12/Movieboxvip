@@ -177,8 +177,8 @@ actor IPTVService {
 
     private let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 15
-        configuration.timeoutIntervalForResource = 25
+        configuration.timeoutIntervalForRequest = 11
+        configuration.timeoutIntervalForResource = 22
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.urlCache = nil
         return URLSession(configuration: configuration)
@@ -336,7 +336,6 @@ final class IPTVSportsStore: ObservableObject {
     private let service = IPTVService.shared
     private let vault = IPTVCredentialVault.shared
     private let cacheKey = "xs.iptv.liveCatalog.v5"
-    private var loadTask: Task<Void, Error>?
 
     private struct CatalogCache: Codable {
         let credentialSignature: String
@@ -417,7 +416,9 @@ final class IPTVSportsStore: ObservableObject {
             credentials = resolved
             categories = resultCategories
             streams = resultStreams
-            persistCache(for: resolved)
+            // Key cached listings by the configured account, not the chosen
+            // fallback endpoint, so relaunch displays them instantly.
+            persistCache(for: original)
             try? vault.save(resolved)
         } catch {
             // Cached channels remain visible during temporary server outages.
