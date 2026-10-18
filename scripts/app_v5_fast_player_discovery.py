@@ -56,22 +56,19 @@ section_replace(
     "duplicate subtitle menu presentation command"
 )
 
-# Warm only read-only discovery. Existing source-specific selection/acknowledgement
-# is unchanged. This is bounded to four early probes and does NOT tap any server.
-start = re.search(r"setInterval\(\(\)\s*=>\s*\{\s*scanServers\(\);\s*scanQualities\(\)\s*\}\s*,\s*1400\s*\);", s)
-if start is None:
-    # Some generated releases use a single expression instead of a block.
-    start = re.search(r"setInterval\(\(\)\s*=>\s*\{?\s*scanServers\(\);\s*scanQualities\(\)\s*\}?\s*,\s*1400\s*\);", s)
-if start is None:
-    raise SystemExit("V5 fast discovery: original read-only server scan interval missing")
-
-warm = """// V5_FAST_READONLY_DISCOVERY: show existing source server rows quickly,
-      // without touching selected provider, source popup, or subtitle owner.
+# Warm only read-only discovery. The R5 V24 adapter init is a stable
+# insertion point; later player revisions intentionally removed old timers.
+# This never opens a menu or clicks a server, and only reads source rows.
+anchor = "      const sourceSubtitles = createXSSourceSubtitles({document, window, findVideo, emit: bridge});"
+if anchor not in s:
+    raise SystemExit("V5 fast discovery: source-owned subtitle adapter initialization missing")
+warm = """      // V5_FAST_READONLY_DISCOVERY: four early read-only menu observations.
       [95, 270, 580, 1050].forEach(delay => setTimeout(() => {
         try { scanServers(); scanQualities(); } catch (_) {}
       }, delay));
-      """
-s = s[:start.start()] + warm + s[start.start():]
+"""
+s = s.replace(anchor, anchor + "\n" + warm, 1)
+
 assert "sourceSubtitles.select(payload);" in s
 assert 'var payload: [String: Any] = ["action": "server", "name": server.name]' in s
 assert "V5_FAST_READONLY_DISCOVERY" in s
