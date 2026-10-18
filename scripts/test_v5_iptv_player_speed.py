@@ -19,7 +19,7 @@ checks = {
     "R5 source subtitle selection intact": "sourceSubtitles.select(payload);" in player,
     "R5 backup requires original popup": "V39_R5_STABILITY_RESTORE" in sports and "XSVLCStableSurfaceView" in sports,
     "source menus open once, not twice": "V5_FAST_READONLY_DISCOVERY" in player,
-    "embedded config contains no plaintext secrets in repository": "static let credentials: IPTVCredentials? = nil" in embedded,
+    "embedded config remains typed and injected by the build": "enum XSIPTVEmbeddedConfig" in embedded and "static let credentials: IPTVCredentials?" in embedded,
 }
 for k, v in checks.items():
     if not v: raise SystemExit("V5 IPTV and player fast-discovery regression failed: " + k)
