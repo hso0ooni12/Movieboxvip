@@ -74,7 +74,7 @@ struct XSGlobalSearchView: View {
                 .font(.system(size: 35, weight: .black, design: .rounded))
                 .tracking(-1.0)
                 .foregroundStyle(.white)
-            Text("Explore new favourites across cinema and series.")
+            Text("Movies and series in one place")
                 .font(.system(size: 14))
                 .foregroundStyle(XSCinemaStyle.secondary)
 
