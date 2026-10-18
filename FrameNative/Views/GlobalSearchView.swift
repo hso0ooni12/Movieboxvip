@@ -1,6 +1,6 @@
 import SwiftUI
 
-private let xsGlobalSearchAccent = Color(red: 1.0, green: 0.12, blue: 0.38)
+private let xsGlobalSearchAccent = XSCinemaStyle.accent
 
 struct XSGlobalSearchView: View {
     @EnvironmentObject private var app: AppState
@@ -16,7 +16,7 @@ struct XSGlobalSearchView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            XSCinemaStyle.background.ignoresSafeArea()
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 22) {
@@ -51,7 +51,7 @@ struct XSGlobalSearchView: View {
         }
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.black.opacity(0.97), for: .navigationBar)
+        .toolbarBackground(XSCinemaStyle.background.opacity(0.96), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .navigationDestination(for: MediaItem.self) { item in
             DetailView(item: item)
@@ -65,26 +65,28 @@ struct XSGlobalSearchView: View {
     }
 
     private var searchHeader: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Search XS TV")
-                    .font(.system(size: 28, weight: .black, design: .rounded))
-                Text("Movies, series and anime in one place")
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.56))
-            }
+        VStack(alignment: .leading, spacing: 16) {
+            Text("THE DISCOVERY ROOM")
+                .font(.system(size: 10, weight: .heavy, design: .rounded))
+                .tracking(2.6)
+                .foregroundStyle(XSCinemaStyle.accent)
+            Text("What moves you?")
+                .font(.system(size: 35, weight: .black, design: .rounded))
+                .tracking(-1.0)
+                .foregroundStyle(.white)
+            Text("Explore new favourites across cinema and series.")
+                .font(.system(size: 14))
+                .foregroundStyle(XSCinemaStyle.secondary)
 
-            HStack(spacing: 10) {
+            HStack(spacing: 11) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.48))
-
-                TextField("Type a title…", text: $query)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.55))
+                TextField("Search a title, story or genre…", text: $query)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .submitLabel(.search)
                     .onSubmit { scheduleSearch(query, immediate: true) }
-
                 if !query.isEmpty {
                     Button {
                         query = ""
@@ -93,20 +95,21 @@ struct XSGlobalSearchView: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.46))
                             .frame(width: 36, height: 36)
+                            .foregroundStyle(.white.opacity(0.55))
                     }
                     .buttonStyle(.plain)
-                    .contentShape(Rectangle())
+                    .accessibilityLabel("Clear search")
                 }
             }
-            .padding(.horizontal, 14)
-            .frame(height: 50)
-            .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.white.opacity(0.11)))
+            .padding(.horizontal, 16)
+            .frame(height: 58)
+            .background(XSCinemaStyle.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.13)))
+            .padding(.top, 8)
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 12)
+        .padding(.horizontal, 22)
+        .padding(.top, 19)
     }
 
     private var discover: some View {
@@ -130,53 +133,19 @@ struct XSGlobalSearchView: View {
     }
 
     private func searchRail(title: String, subtitle: String, items: [MediaItem]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.title3.bold())
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.52))
-            }
-            .padding(.horizontal, 18)
-
+        VStack(alignment: .leading, spacing: 16) {
+            XSCinemaHeadline(eyebrow: subtitle.uppercased(), title: title)
             ScrollView(.horizontal) {
-                LazyHStack(spacing: 12) {
+                LazyHStack(alignment: .top, spacing: 13) {
                     ForEach(items) { item in
                         NavigationLink(value: item) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                ZStack(alignment: .topTrailing) {
-                                    RemotePoster(item: item, backdrop: false, cornerRadius: 13)
-                                        .frame(width: 126, height: 186)
-                                        .clipped()
-
-                                    if item.voteAverage > 0 {
-                                        Label(item.ratingText, systemImage: "star.fill")
-                                            .font(.system(size: 9, weight: .black, design: .monospaced))
-                                            .foregroundStyle(.yellow)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 4)
-                                            .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 5))
-                                            .padding(7)
-                                    }
-                                }
-
-                                Text(item.title)
-                                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                                    .foregroundStyle(.white)
-                                    .lineLimit(1)
-                                    .frame(width: 126, alignment: .leading)
-
-                                Text("\(item.year) · \(kindText(item.kind))")
-                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(.white.opacity(0.48))
-                            }
+                            XSCinemaPosterTile(item: item)
                         }
                         .buttonStyle(.plain)
-                        .contentShape(Rectangle())
                     }
                 }
-                .padding(.horizontal, 18)
+                .padding(.horizontal, 22)
+                .padding(.bottom, 5)
             }
             .scrollIndicators(.hidden)
         }
@@ -247,14 +216,14 @@ struct XSGlobalSearchView: View {
                             Spacer(minLength: 0)
                         }
                         .padding(10)
-                        .background(Color.white.opacity(0.038), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .background(XSCinemaStyle.surface, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.white.opacity(0.08)))
                     }
                     .buttonStyle(.plain)
                     .contentShape(Rectangle())
                 }
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, 22)
         }
     }
 
