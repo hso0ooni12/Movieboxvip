@@ -1,6 +1,6 @@
 from pathlib import Path
 
-# V30 reference UI regression suite.
+# Reference UI regression suite (V39 adaptive layout updates the old V30 fixed-grid check).
 player = Path('FrameNative/FrameXTVPlayerV6.swift').read_text()
 root = Path('FrameNative/Views/EnhancedRootView.swift').read_text()
 reference = Path('FrameNative/Views/ReferenceBrowseViews.swift').read_text()
@@ -22,7 +22,7 @@ required_reference = {
     'featured film': 'FEATURED FILM',
     'continue watching': 'Continue Watching',
     'filters': 'Filters & Discovery',
-    'three column grid': 'GridItem(.flexible(), spacing: 12)',
+    'adaptive poster grid': 'GridItem(.adaptive(minimum: 128, maximum: 185)',
     'hit style': 'XSReferenceHitButtonStyle',
     'home tab routed': 'XSReferenceHomeView(showSettings:',
     'movies routed': 'XSReferenceCatalogView(kind: .movie',
