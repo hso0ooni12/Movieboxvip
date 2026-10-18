@@ -57,6 +57,14 @@ jobs:
           print('Sports IPTV configuration generated from GitHub Secrets.')
           PY
 
+      - name: Diagnose configured IPTV account (safe status only)
+        continue-on-error: true
+        env:
+          XS_IPTV_HOST: ${{ secrets.XS_IPTV_HOST }}
+          XS_IPTV_USERNAME: ${{ secrets.XS_IPTV_USERNAME }}
+          XS_IPTV_PASSWORD: ${{ secrets.XS_IPTV_PASSWORD }}
+        run: python3 scripts/diagnose_v5_iptv_secrets.py
+
       - name: Generate XS TV brand assets
         shell: bash
         run: |
