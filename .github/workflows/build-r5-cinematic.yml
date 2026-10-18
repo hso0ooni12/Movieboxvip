@@ -161,6 +161,7 @@ jobs:
           python3 scripts/app_v39_r4_root_fixes.py
           python3 scripts/test_v39_r4_root_fixes.py
           python3 scripts/app_v39_r5_stability_restore.py
+          python3 scripts/app_r5_caption_layout.py
           python3 scripts/test_v39_r5_stability_restore.py
           python3 scripts/test_r5_cinema_ui.py
 
