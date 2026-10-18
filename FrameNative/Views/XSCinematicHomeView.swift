@@ -40,6 +40,8 @@ struct XSCinematicHomeView: View {
                         }
                         exploreStrip
                             .padding(.top, 27)
+                        liveArenaFeature
+                            .padding(.top, 27)
                         continueWatching
                             .padding(.top, 34)
                         cinemaRail("Trending this week", overline: "THE SPOTLIGHT", items: app.trendingMovies)
@@ -257,6 +259,57 @@ struct XSCinematicHomeView: View {
         .buttonStyle(.plain)
     }
 
+    private var liveArenaFeature: some View {
+        NavigationLink {
+            XSSportsLiveViewV33()
+        } label: {
+            ZStack(alignment: .trailing) {
+                RoundedRectangle(cornerRadius: 21, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(red: 0.16, green: 0.13, blue: 0.20), Color(red: 0.09, green: 0.18, blue: 0.20)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                Image(systemName: "sportscourt.fill")
+                    .font(.system(size: 90, weight: .ultraLight))
+                    .foregroundStyle(.white.opacity(0.09))
+                    .padding(.trailing, -5)
+                    .clipped()
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack(spacing: 7) {
+                            Circle().fill(.red).frame(width: 6, height: 6)
+                            Text("THE LIVE ARENA")
+                                .font(.system(size: 10, weight: .heavy))
+                                .tracking(2)
+                                .foregroundStyle(XSCinemaStyle.warm)
+                        }
+                        Text("Your front row to sport.")
+                            .font(.system(size: 19, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                        Text("Explore live sports channels")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.63))
+                    }
+                    Spacer(minLength: 10)
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(width: 42, height: 42)
+                        .foregroundStyle(.white)
+                        .background(.white.opacity(0.12), in: Circle())
+                }
+                .padding(19)
+            }
+            .frame(height: 131)
+            .overlay(RoundedRectangle(cornerRadius: 21).stroke(.white.opacity(0.12)))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 22)
+    }
+
     @ViewBuilder
     private var continueWatching: some View {
         if !library.continueWatching.isEmpty {
@@ -280,14 +333,25 @@ struct XSCinematicHomeView: View {
                                     ZStack(alignment: .bottomLeading) {
                                         RemotePoster(item: entry.item, backdrop: true, cornerRadius: 17)
                                             .frame(width: 248, height: 141)
-                                        Rectangle().fill(.black.opacity(0.48))
-                                            .frame(height: 24)
-                                        Image(systemName: "play.fill")
-                                            .font(.system(size: 11, weight: .bold))
-                                            .frame(width: 29, height: 29)
-                                            .foregroundStyle(.black)
-                                            .background(.white, in: Circle())
-                                            .padding(11)
+                                        LinearGradient(colors: [.clear, .black.opacity(0.84)], startPoint: .center, endPoint: .bottom)
+                                        VStack(alignment: .leading, spacing: 9) {
+                                            HStack(spacing: 7) {
+                                                Image(systemName: "play.circle.fill")
+                                                    .font(.system(size: 29))
+                                                if let label = entry.episodeLabel {
+                                                    Text(label)
+                                                        .font(.system(size: 12, weight: .bold))
+                                                }
+                                                Spacer()
+                                                Text("\(Int(entry.fraction * 100))%")
+                                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                            }
+                                            .foregroundStyle(.white)
+                                            ProgressView(value: entry.fraction)
+                                                .tint(XSCinemaStyle.accent)
+                                                .progressViewStyle(.linear)
+                                        }
+                                        .padding(12)
                                     }
                                     .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
                                     Text(entry.item.title)
