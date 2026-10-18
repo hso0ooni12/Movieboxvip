@@ -709,7 +709,7 @@ struct FrameXTVPlayerScreen: View {
                     .onTapGesture { revealControls() }
 
                 if !player.captionText.isEmpty {
-                    captionOverlay(width: proxy.size.width)
+                    captionOverlay(width: proxy.size.width, height: proxy.size.height)
                 }
 
                 if controlsVisible {
@@ -1209,8 +1209,18 @@ struct FrameXTVPlayerScreen: View {
         .buttonStyle(.plain)
     }
 
-    private func captionOverlay(width: CGFloat) -> some View {
-        VStack {
+    private func captionOverlay(width: CGFloat, height: CGFloat) -> some View {
+        // In portrait an aspect-fit movie occupies only the middle of the screen.
+        // Anchoring captions to the device bottom puts them inside the black bar.
+        // Keep landscape and aspect-fill positioning unchanged.
+        let isLetterboxedPortrait = height > width * 1.12 && aspectMode == "adapt"
+        let visibleVideoHeight = min(height, width * (9.0 / 16.0))
+        let lowerBlackBar = max(0, (height - visibleVideoHeight) / 2)
+        let visibleVideoBottomPadding = isLetterboxedPortrait
+            ? lowerBlackBar + min(CGFloat(subtitleBottom), 30)
+            : CGFloat(subtitleBottom)
+
+        return VStack {
             Spacer()
             Text(player.captionText)
                 .font(.system(size: max(18, min(width * 0.028, 34)) * subtitleScale, weight: .bold))
@@ -1221,7 +1231,7 @@ struct FrameXTVPlayerScreen: View {
                 .background(subtitleBackground ? Color.black.opacity(0.68) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
                 .shadow(color: .black.opacity(0.9), radius: 2)
                 .padding(.horizontal, width * 0.12)
-                .padding(.bottom, subtitleBottom)
+                .padding(.bottom, visibleVideoBottomPadding)
         }
         .allowsHitTesting(false)
     }
