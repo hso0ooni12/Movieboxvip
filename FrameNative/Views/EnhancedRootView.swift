@@ -25,7 +25,7 @@ struct EnhancedRootView: View {
         }
         .task { await app.loadHome() }
         .task {
-            try? await Task.sleep(nanoseconds: 1_250_000_000)
+            try? await Task.sleep(nanoseconds: 650_000_000)
             await MainActor.run {
                 withAnimation(.easeOut(duration: 0.24)) { showSplash = false }
             }
@@ -35,7 +35,7 @@ struct EnhancedRootView: View {
     private var mainTabs: some View {
         TabView {
             NavigationStack {
-                XSReferenceHomeView(showSettings: $showSettings)
+                XSCinematicHomeView(showSettings: $showSettings)
                     .xsGlobalSearchToolbar()
             }
             .tabItem { Label("Home", systemImage: "house.fill") }
@@ -64,8 +64,8 @@ struct EnhancedRootView: View {
             }
             .tabItem { Label("Sports", systemImage: "sportscourt.fill") }
         }
-        .tint(Color(red: 1.0, green: 0.12, blue: 0.38))
-        .toolbarBackground(Color.black.opacity(0.97), for: .tabBar)
+        .tint(XSCinemaStyle.accent)
+        .toolbarBackground(XSCinemaStyle.background.opacity(0.98), for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
     }
 }
@@ -116,7 +116,7 @@ private struct EnhancedXSTVSplashView: View {
                     .opacity(animate ? 1 : 0)
                 VStack(spacing: 5) {
                     XSWordmark()
-                    Text("ENTERTAINMENT · REIMAGINED")
+                    Text("YOUR CINEMA. YOUR WORLD.")
                         .font(.caption2.bold())
                         .tracking(2.5)
                         .foregroundStyle(.white.opacity(0.46))
