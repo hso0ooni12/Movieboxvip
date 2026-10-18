@@ -9,6 +9,31 @@ struct XSGlobalSearchView: View {
     @State private var isSearching = false
     @State private var errorMessage: String?
     @State private var searchTask: Task<Void, Never>?
+    @FocusState private var searchHasFocus: Bool
+    @State private var selectedScope: SearchScope = .all
+
+    private enum SearchScope: String, CaseIterable {
+        case all = "All"
+        case movies = "Movies"
+        case series = "Series"
+
+        var icon: String {
+            switch self {
+            case .all: return "square.grid.2x2.fill"
+            case .movies: return "film"
+            case .series: return "play.tv"
+            }
+        }
+    }
+
+    private var scopedResults: [MediaItem] {
+        switch selectedScope {
+        case .all: return results
+        case .movies: return results.filter { $0.kind == .movie }
+        case .series: return results.filter { $0.kind == .tv }
+        }
+    }
+
 
     private var trimmedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -83,6 +108,7 @@ struct XSGlobalSearchView: View {
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.55))
                 TextField("Search a title, story or genre…", text: $query)
+                    .focused($searchHasFocus)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .submitLabel(.search)
@@ -190,11 +216,60 @@ struct XSGlobalSearchView: View {
             XSV3SectionTitle(
                 eyebrow: "YOUR DISCOVERIES",
                 title: "Search results",
-                count: "\(results.count) found"
+                count: "\(scopedResults.count) of \(results.count)"
             )
+
+            ScrollView(.horizontal) {
+                HStack(spacing: 9) {
+                    ForEach(SearchScope.allCases, id: \.self) { scope in
+                        let selected = selectedScope == scope
+                        Button {
+                            searchHasFocus = false
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                selectedScope = scope
+                            }
+                        } label: {
+                            Label(scope.rawValue, systemImage: scope.icon)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(selected ? .black : .white.opacity(0.82))
+                                .padding(.horizontal, 14)
+                                .frame(height: 40)
+                                .background(selected ? Color.white : XSV3.lifted, in: Capsule())
+                                .overlay(Capsule().stroke(selected ? Color.clear : .white.opacity(0.1)))
+                        }
+                        .buttonStyle(XSV3PressStyle())
+                        .accessibilityAddTraits(selected ? .isSelected : [])
+                    }
+                }
+                .padding(.horizontal, 22)
+            }
+            .scrollIndicators(.hidden)
+
+            if scopedResults.isEmpty {
+                VStack(spacing: 13) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 25))
+                        .foregroundStyle(XSV3.amber)
+                    Text("No \(selectedScope.rawValue.lowercased()) results")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                    Text("Try All or search for another title.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(XSV3.muted)
+                    Button("Show all results") {
+                        selectedScope = .all
+                    }
+                    .font(.system(size: 13, weight: .semibold))
+                    .padding(.horizontal, 18)
+                    .frame(height: 42)
+                    .foregroundStyle(.black)
+                    .background(.white, in: Capsule())
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 32)
+            } else {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 140, maximum: 200), spacing: 14)],
                       alignment: .center, spacing: 23) {
-                ForEach(results) { item in
+                ForEach(scopedResults) { item in
                     NavigationLink {
                             DetailView(item: item)
                         } label: {
@@ -207,6 +282,7 @@ struct XSGlobalSearchView: View {
             }
             .padding(.horizontal, 22)
             .padding(.bottom, 20)
+            }
 
             if isSearching {
                 HStack(spacing: 8) {
