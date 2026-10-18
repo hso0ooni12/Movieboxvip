@@ -14,7 +14,6 @@ struct XSSportsLiveViewV33: View {
     @State private var favoritesOnly = false
     @AppStorage("xs.iptv.favoriteStreamIDs") private var favoriteIDsRaw = ""
     @AppStorage(xsSportsServerOverrideKey) private var serverOverride = ""
-    @AppStorage("xs.iptv.embeddedAccountFingerprint.v5") private var embeddedAccountFingerprint = ""
 
     private var favoriteIDs: Set<Int> {
         Set(favoriteIDsRaw.split(separator: ",").compactMap { Int($0) })
@@ -417,16 +416,6 @@ struct XSSportsLiveViewV33: View {
 
     private func applyConfiguredServer() {
         guard let embedded = XSIPTVEmbeddedConfig.credentials else { return }
-
-        // Prior installs may retain a manual override pointing to the old
-        // provider. A new GitHub account/host should start from its new URL.
-        // The fingerprint contains no cleartext credentials.
-        let signature = embedded.fingerprint
-        if embeddedAccountFingerprint != signature {
-            serverOverride = ""
-            embeddedAccountFingerprint = signature
-        }
-
         let trimmed = serverOverride.trimmingCharacters(in: .whitespacesAndNewlines)
         let host = trimmed.isEmpty ? embedded.host : trimmed
         let next = IPTVCredentials(host: host, username: embedded.username, password: embedded.password)
