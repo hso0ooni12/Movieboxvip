@@ -238,7 +238,8 @@ function createXSSourceSubtitles(env) {
       selectedTrack.mode = 'hidden';
     }
     if (selectedTrack && selectedTrack.cues) {
-      const at = Number(v.currentTime || 0) + delay;
+      // Positive offset delays subtitles; negative offset advances them.
+      const at = Number(v.currentTime || 0) - delay;
       const cues = selectedTrack.cues;
       let low=0, high=cues.length-1, match=-1;
       while (low<=high) {
