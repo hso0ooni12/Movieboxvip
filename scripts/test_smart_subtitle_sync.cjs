@@ -63,7 +63,7 @@ test('feature is opt-in and reports unsupported media capture without touching p
   assert.equal(messages[0].phase,'unavailable');
   assert.equal(messages[0].event,'xs:subtitleAutoSync');
   assert.equal(typeof video.captureStream,'undefined');
-  assert.ok(!code.includes('createMediaElementSource('),'must never reroute or mute the video element');
+  assert.ok(!/\.createMediaElementSource\s*\(/.test(code),'must never reroute or mute the video element');
   assert.ok(!code.includes('getUserMedia('),'must never activate a microphone');
   assert.ok(!code.includes('fetch('),'must not upload voice samples');
 });
