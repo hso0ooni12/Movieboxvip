@@ -55,11 +55,20 @@ struct MediaItem: Identifiable, Hashable, Codable {
         let path = backdrop ? backdropPath : posterPath
         guard let path, !path.isEmpty else { return nil }
         let size: String
-        switch width {
-        case ..<300: size = "w342"
-        case ..<600: size = "w500"
-        case ..<1000: size = "w780"
-        default: size = backdrop ? "w1280" : "original"
+        if backdrop {
+            // TMDB backdrops: use actual supported widths, never originals.
+            switch width {
+            case ..<420: size = "w300"
+            case ..<1000: size = "w780"
+            default: size = "w1280"
+            }
+        } else {
+            switch width {
+            case ..<300: size = "w342"
+            case ..<600: size = "w500"
+            case ..<1000: size = "w780"
+            default: size = "original"
+            }
         }
         return URL(string: "https://image.tmdb.org/t/p/\(size)\(path)")
     }
