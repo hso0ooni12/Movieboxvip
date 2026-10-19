@@ -249,6 +249,21 @@ panel=r'''    // V16_SOURCE_CUE_SYNC: no AI. Real TextTrack start/end times comp
 
 '''
 s=s[:a]+panel+s[b:]
+# Dispose of added media time listeners when the source iframe closes.
+# V25 installs its own caption observer; preserve that cleanup unchanged.
+once(
+    "function dispose() { disposed = true; pending = null; if (captionObserver) captionObserver.disconnect();",
+    """function dispose() {
+        if (timingVideo && timingHandler) {
+          timingVideo.removeEventListener('timeupdate',timingHandler);
+          timingVideo.removeEventListener('seeked',timingHandler);
+        }
+        timingVideo = null;
+        disposed = true; pending = null;
+        if (captionObserver) captionObserver.disconnect();""",
+    "detach source media clock listener on player close"
+)
+
 # Maintain original R5/V12 playback engine protections.
 assert "sourceSubtitles.select(payload);" in s
 assert "const finishDispatchedSelection = () =>" in s
