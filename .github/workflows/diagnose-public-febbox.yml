@@ -56,7 +56,7 @@ jobs:
 
           # Inspect ONLY publicly linked folder HTML and exposed listing metadata.
           # Do not download media, subtitles, protected streams or user data.
-          links = sorted(set(re.findall(r'href=[\\x22\\x27]/share/([A-Za-z0-9_-]+)',body,re.I)))
+          links = sorted(set(re.findall(r'/share/([A-Za-z0-9_-]{8})',body,re.I)))
           print('PUBLIC_SHARE_HREF_LINKS',len(links))
           for idx,key in enumerate(links[:6],start=1):
             u='https://www.febbox.com/share/'+key
