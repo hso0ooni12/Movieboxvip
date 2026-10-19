@@ -60,7 +60,10 @@ checks={
     'Label("Series", systemImage: "play.tv")' in root and
     ('Label("Sports", systemImage: "sportscourt.fill")' in root or
      'Label("الرياضة", systemImage: "sportscourt.fill")' in root) and
-    'Label("Febbox", systemImage: "externaldrive.fill")' in root,
+    'XSFebboxPremiumHomeView(showSettings: $showSettings)' in root and
+    'XSFebboxPremiumCatalogView(shelf: .movies)' in root and
+    'XSFebboxPremiumCatalogView(shelf: .series)' in root and
+    'Label("Febbox", systemImage: "externaldrive.fill")' not in root,
  "no changes to R5 primary/Backup source engine":
     "const finishDispatchedSelection = () =>" in player and
     "sourceSubtitles.select(payload);" in player and
