@@ -34,7 +34,7 @@ checks = {
         and 'genres.map' in model,
     "all discover requests paged": 'let safePage = max(1, min(page, 500))' in client and
         'totalPages = "total_pages"' in client,
-    "scroll drives real pages": 'await loadNextPage()' in browse and
+    "scroll drives real pages": 'autoLoadNextPages()' in browse and
         'nextPage += 1' in browse and 'response.hasMore' in browse,
     "network response not stale after tab change": 'requestGeneration == generation' in browse and
         'categoryID == selectedCollection.id' in browse,
