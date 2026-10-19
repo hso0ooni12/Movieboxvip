@@ -8,14 +8,13 @@ function createXSSourceSubtitles(env) {
   let generation = 0, catalog = [], pending = null, active = null, opening = null;
   let lastVideo = null, lastSource = '', lastCaption = '', delay = 0, disposed = false;
   let timingTrack = null;
-  // V12: FrameXTV can render React DOM captions without TextTrack cues.
-  // Record real caption events at video media-time for positive delays.
+  let style = {size: 1, color: '#ffffff', background: true, bottom: 76};
+  // V12: preserve V25 initializer and record source-rendered caption events.
   let sourceCaptionHistory = [];
   let sourceCaptionLast = null;
   let sourceCaptionLastTime = -1;
   let lastTimingMode = "";
   let lastTimingOffset = 0;
-  let style = {size: 1, color: '#ffffff', background: true, bottom: 76};
   const timers = new Set();
   const text = el => String(el && el.textContent || '').replace(/\s+/g, ' ').trim();
   const normal = s => String(s || '').replace(/\s+/g, ' ').trim();
