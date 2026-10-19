@@ -73,32 +73,6 @@ struct EnhancedRootView: View {
 
 }
 
-private struct XSGlobalSearchToolbarModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink {
-                        XSGlobalSearchView()
-                    } label: {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Search XS TV")
-                }
-            }
-    }
-}
-
-private extension View {
-    func xsGlobalSearchToolbar() -> some View {
-        modifier(XSGlobalSearchToolbarModifier())
-    }
-}
-
 private struct EnhancedXSTVSplashView: View {
     @State private var animate = false
 
