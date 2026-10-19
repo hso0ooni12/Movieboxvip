@@ -286,8 +286,20 @@ struct XSReferenceCatalogView: View {
                     searchAndSort
                     resultsHeading
 
+                    if let catalogNotice {
+                        Label(catalogNotice, systemImage: "info.circle")
+                            .font(.system(size: 11))
+                            .foregroundStyle(XSV3.muted)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(XSV3.lifted.opacity(0.65), in: RoundedRectangle(cornerRadius: 13))
+                            .padding(.horizontal, 22)
+                    }
+
                     if loaded.isEmpty && isLoading {
                         posterSkeleton
+                    } else if loaded.isEmpty && selectedCollection.isProvider && catalogNotice != nil {
+                        providerUnavailable
                     } else if loaded.isEmpty && loadError != nil {
                         loadingFailure
                     } else if loaded.isEmpty {
@@ -301,30 +313,19 @@ struct XSReferenceCatalogView: View {
                         posterCollection
                     }
 
-                    if hasMore && loadError == nil && !loaded.isEmpty {
+                    if hasMore && !loaded.isEmpty {
                         HStack(spacing: 11) {
                             ProgressView().tint(XSV3.coral)
-                            Text("تحميل المزيد من \(kind == .movie ? "الأفلام" : "المسلسلات")…")
+                            Text(loadError == nil ? "جارٍ تحميل المزيد تلقائياً…" :
+                                 "اتصال ضعيف، نحاول مرة ثانية تلقائياً…")
                                 .font(.system(size: 12))
                                 .foregroundStyle(XSV3.muted)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 22)
-                        .task(id: "\(selectedCollection.id)-\(loaded.count)-\(query)") {
-                            await loadNextPage()
+                        .task(id: "\(selectedCollection.id)-\(nextPage)-\(query)") {
+                            await autoLoadNextPages()
                         }
-                    } else if loadError != nil && !loaded.isEmpty {
-                        Button("إعادة محاولة تحميل المزيد") {
-                            loadError = nil
-                            Task { await loadNextPage() }
-                        }
-                        .font(.system(size: 13, weight: .bold))
-                        .padding(.horizontal, 22)
-                        .frame(height: 46)
-                        .foregroundStyle(.white)
-                        .background(XSV3.lifted, in: Capsule())
-                        .frame(maxWidth: .infinity)
-                        .padding(.bottom, 10)
                     }
                 }
                 .padding(.top, 10)
@@ -562,6 +563,33 @@ struct XSReferenceCatalogView: View {
         .accessibilityLabel("جارٍ تحميل المحتوى")
     }
 
+    private var providerUnavailable: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "play.rectangle.on.rectangle")
+                .font(.system(size: 28))
+                .foregroundStyle(XSV3.amber)
+            Text("بيانات المنصة غير متاحة حالياً")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(.white)
+            Text("خدمة المحتوى لا تسمح بعرض أعمال هذه المنصة حالياً، لذلك ما راح نعرض قوائم غير مؤكدة.")
+                .font(.system(size: 12))
+                .foregroundStyle(XSV3.muted)
+                .multilineTextAlignment(.center)
+            Button("عرض كل الأعمال") {
+                activeGroup = .explore
+                selectedCollection = collections[0]
+            }
+            .font(.system(size: 13, weight: .bold))
+            .foregroundStyle(.black)
+            .padding(.horizontal, 20)
+            .frame(height: 44)
+            .background(.white, in: Capsule())
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 22)
+        .padding(.vertical, 30)
+    }
+
     private var loadingFailure: some View {
         VStack(spacing: 13) {
             Image(systemName: "wifi.exclamationmark")
@@ -571,12 +599,10 @@ struct XSReferenceCatalogView: View {
                 .font(.system(size: 13))
                 .foregroundStyle(.white.opacity(0.74))
                 .multilineTextAlignment(.center)
-            Button("إعادة المحاولة") { Task { await reload() } }
-                .font(.system(size: 14, weight: .semibold))
-                .frame(height: 46)
-                .padding(.horizontal, 23)
-                .foregroundStyle(.black)
-                .background(.white, in: Capsule())
+            Text("يحاول التطبيق إعادة الاتصال تلقائياً. يمكنك السحب لتحديث الصفحة.")
+                .font(.system(size: 12))
+                .foregroundStyle(XSV3.muted)
+                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 30)
