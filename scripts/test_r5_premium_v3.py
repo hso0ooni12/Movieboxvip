@@ -28,7 +28,7 @@ checks = {
         "struct XSV3ProgressCard", "struct XSV3PressStyle", "struct XSV3ScreenBackdrop"
     ]),
     "reduced motion respected": "accessibilityReduceMotion" in kit,
-    "movie and series collections still reachable": "XSReferenceCatalogView(kind: .movie" in root and "XSReferenceCatalogView(kind: .tv" in root,
+    "movie and series collections still reachable": "XSFebboxPremiumCatalogView(shelf: .movies)" in root and "XSFebboxPremiumCatalogView(shelf: .series)" in root,
     "no root overlay on player": "tabControl(" not in root and ".toolbar(.hidden, for: .tabBar)" in player,
     "V8 catalog replaces oversized hero with posters": "catalogSpotlight(" not in catalog and "posterCollection" in catalog,
     "catalog has real provider/genre navigation": "selectedCollection" in catalog and "collectionNavigation" in catalog and "discoverCollection" in catalog,
