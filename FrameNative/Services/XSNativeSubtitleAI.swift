@@ -245,10 +245,16 @@ final class XSNativeSubtitleAI {
             let offset = Double(step)*0.25
             return (offset,correlation(offset))
         }
+        // V15_CONFIDENCE_GATE: repeated speech/music rhythms can create
+        // multiple similarly strong alignments. Require a unique peak, not
+        // merely a positive correlation — otherwise leave timing unchanged.
         guard let best=candidates.max(by: { $0.1 < $1.1 }),
               best.1 >= 0.69,
               best.1 - previous >= 0.19,
               abs(best.0 - originalOffset) >= 0.35 else { return nil }
+        let otherPeaks = candidates.filter { abs($0.0 - best.0) >= 1.0 }
+        let runnerUp = otherPeaks.map { $0.1 }.max() ?? -1
+        guard best.1 - runnerUp >= 0.07 else { return nil }
         let confidence=min(0.99,max(0.0,(best.1-0.45)/0.5))
         return (best.0,confidence)
     }
