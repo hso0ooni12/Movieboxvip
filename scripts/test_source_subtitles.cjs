@@ -18,13 +18,22 @@ function fixture(options = {}) {
   const {window} = dom, doc = window.document;
   const clock = FakeTimers.withGlobal(window).install();
   const video = doc.querySelector('video'), textTracks = [];
+  const cue = doc.querySelector('#cue');
+  if (options.domOnly) cue.textContent = '';
   Object.defineProperty(video, 'textTracks', {value: textTracks});
   let selected = -1, clickCount = 0, openClicks = 0;
   const labels = options.labels || ['English', 'Arabic', 'Arabic (SDH)', 'Español'];
   const emitted = [];
   function load(index) {
     for (const t of textTracks) { t.mode='disabled'; t.cues=[]; }
-    if (index < 0) return;
+    if (index < 0) {
+      if (options.domOnly) cue.textContent = '';
+      return;
+    }
+    if (options.domOnly) {
+      cue.textContent = labels[index] + ' message';
+      return;
+    }
     textTracks.push({kind:'subtitles', label:options.genericTrackLabel?'Subtitles':labels[index], language:index===1?'ar':'en', mode:'hidden',
       cues:[{startTime:0,endTime:5,text:index===1?'مرحبا':'Hello'},{startTime:5,endTime:9,text:'Next'}]});
   }
@@ -58,7 +67,7 @@ function fixture(options = {}) {
   function last(event) { return emitted.filter(e=>e.event===event).at(-1); }
   function select(item, requestID='r1') { return adapter.select({id:item.id, frameID:adapter.frameID,requestID}); }
   function cleanup() { adapter.dispose(); clock.uninstall(); window.close(); }
-  return {doc,video,textTracks,clock,adapter,emitted,scan,last,select,cleanup,load,
+  return {doc,video,cue,textTracks,clock,adapter,emitted,scan,last,select,cleanup,load,
     clicks:()=>clickCount,opens:()=>openClicks,labels};
 }
 
@@ -162,9 +171,50 @@ test('source cue layer stays visible while chrome and menu are hidden',async()=>
 });
 test('custom timing reads the exact source-loaded cues; zero delay restores source rendering',async()=>{
   const f=fixture();const items=await f.scan();await f.select(items[1]);await f.clock.tickAsync(1000);
-  f.video.currentTime=4.5;f.adapter.setDelay(1);assert.equal(f.last('xs:caption').text,'Next');
+  f.video.currentTime=4.5;f.adapter.setDelay(-1);assert.equal(f.last('xs:caption').text,'Next'); // − means ahead
+  assert.equal(f.last('xs:subtitleTimingStatus').mode,'cues');
   assert.equal(f.doc.querySelector('#cue').style.opacity,'0');
+  f.adapter.setDelay(1);assert.equal(f.last('xs:caption').text,'مرحبا'); // + means delayed
   f.adapter.setDelay(0);assert.equal(f.doc.querySelector('#cue').style.opacity,'');assert.equal(f.last('xs:caption').text,'');f.cleanup();
+});
+test('DOM-only source subtitle selection confirms only after source renderer actually changes',async()=>{
+  const f=fixture({domOnly:true});
+  const items=await f.scan();
+  await f.select(items[1]);
+  await f.clock.tickAsync(1100);
+  assert.equal(f.last('xs:subtitleSelected').id,items[1].id);
+  assert.equal(f.textTracks.length,0);
+  f.cleanup();
+});
+test('DOM-only source: positive subtitle delay changes visible cue timing, not just slider number',async()=>{
+  const f=fixture({domOnly:true});
+  const items=await f.scan();
+  await f.select(items[1]);await f.clock.tickAsync(1100);
+  f.video.currentTime=0;
+  f.adapter.setDelay(2);
+  assert.equal(f.last('xs:subtitleTimingStatus').mode,'buffered');
+  assert.equal(f.cue.style.opacity,'0');
+  f.video.currentTime=1;f.adapter.tick();
+  assert.equal(f.last('xs:caption')?.text ?? '','');
+  f.video.currentTime=2.1;f.adapter.tick();
+  assert.equal(f.last('xs:caption').text,'Arabic message');
+  f.video.currentTime=3;f.cue.textContent='Second dialogue';f.adapter.tick();
+  assert.equal(f.last('xs:caption').text,'Arabic message');
+  f.video.currentTime=5.1;f.adapter.tick();
+  assert.equal(f.last('xs:caption').text,'Second dialogue');
+  f.adapter.setDelay(0);
+  assert.equal(f.cue.style.opacity,'');
+  f.cleanup();
+});
+test('DOM-only source: impossible negative lookahead must NOT silently pretend to change captions',async()=>{
+  const f=fixture({domOnly:true});
+  const items=await f.scan();
+  await f.select(items[1]);await f.clock.tickAsync(1100);
+  f.adapter.setDelay(-1.5);
+  assert.equal(f.last('xs:subtitleTimingStatus').mode,'unsupported');
+  assert.equal(f.cue.style.opacity,'');
+  assert.equal(f.last('xs:caption')?.text ?? '','');
+  f.cleanup();
 });
 test('empty wrapper frames cannot erase the source frame subtitle list',async()=>{
   const f=fixture();f.doc.querySelector('#cc').remove();await f.scan().catch(()=>{});
