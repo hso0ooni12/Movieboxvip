@@ -10,6 +10,10 @@ view=Path("FrameNative/Views/XSFebboxLibraryView.swift").read_text()
 root=Path("FrameNative/Views/EnhancedRootView.swift").read_text()
 sports=Path("FrameNative/Views/SportsLiveViewV33.swift").read_text()
 player=Path("FrameNative/FrameXTVPlayerV6.swift").read_text()
+# Only executable Swift code is inspected for embedded browser usage.
+# Comments may legitimately refer to WebView while explicitly rejecting it.
+view_code = "\n".join(line for line in view.splitlines()
+                      if not line.lstrip().startswith("//"))
 
 checks={
  "known public Movies and TVshow source share links":
@@ -48,8 +52,8 @@ checks={
     "struct XSFebboxLibraryView: View" in view and
     "NavigationLink" in view and
     "AsyncImage" in view and
-    "WebView" not in view and
-    "WKWebView" not in view,
+    "WebView" not in view_code and
+    "WKWebView" not in view_code,
  "tab preserves the user's four original destinations":
     'Label("Home", systemImage: "house.fill")' in root and
     'Label("Movies", systemImage: "film.stack")' in root and
