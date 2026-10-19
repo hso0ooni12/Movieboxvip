@@ -10,6 +10,8 @@ private enum XSVODStyle {
 struct XSVODPlaybackSelection: Identifiable {
     let url: URL
     let title: String
+    // Original Xtream URL remains the fallback when direct CDN playback fails.
+    let fallbackURL: URL?
     var id: String { url.absoluteString }
 }
 
@@ -584,7 +586,10 @@ struct XSVODDetailView: View {
             errorMessage = "لا يمكن إنشاء رابط تشغيل للفيلم."
             return
         }
-        selectedPlayback = XSVODPlaybackSelection(url: url, title: item.title)
+        let resolved = await XSVODRedirectResolver.shared.resolve(url)
+        selectedPlayback = XSVODPlaybackSelection(
+            url: resolved, title: item.title,
+            fallbackURL: resolved == url ? nil : url)
     }
 
     private func startEpisode(_ episode: XSVODEpisode) async {
@@ -592,7 +597,10 @@ struct XSVODDetailView: View {
             errorMessage = "لا يمكن إنشاء رابط تشغيل للحلقة."
             return
         }
-        selectedPlayback = XSVODPlaybackSelection(url: url, title: episode.name)
+        let resolved = await XSVODRedirectResolver.shared.resolve(url)
+        selectedPlayback = XSVODPlaybackSelection(
+            url: resolved, title: episode.name,
+            fallbackURL: resolved == url ? nil : url)
     }
 }
 
