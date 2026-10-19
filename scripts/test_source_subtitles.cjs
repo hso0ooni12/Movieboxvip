@@ -272,6 +272,17 @@ test('drift correction remains active even if the constant offset is zero',async
   assert.equal(f.last('xs:subtitleTimingStatus').mode,'cues');
   f.cleanup();
 });
+test('center reset clears BOTH caption offset and two-point speed drift',async()=>{
+  const f=fixture({cues:[{startTime:0,endTime:5,text:'first'},{startTime:130,endTime:136,text:'end'}]});
+  const items=await f.scan();await f.select(items[1]);await f.clock.tickAsync(1000);
+  f.video.currentTime=0;f.adapter.syncPoint();
+  f.video.currentTime=134;f.adapter.syncPoint();
+  assert.equal(f.last('xs:subtitlePointResult').points,2);
+  assert.equal(f.doc.querySelector('#cue').style.opacity,'0');
+  f.adapter.clearSync();
+  assert.equal(f.doc.querySelector('#cue').style.opacity,'');
+  f.cleanup();
+});
 test('DOM-only subtitles refuse timing point matching without source timestamps',async()=>{
   const f=fixture({domOnly:true});const items=await f.scan();await f.select(items[1]);await f.clock.tickAsync(1100);
   f.video.currentTime=4;f.adapter.syncPoint();
