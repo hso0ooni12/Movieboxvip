@@ -305,6 +305,10 @@ function createXSSourceSubtitles(env) {
     }
     const choice = (rows() || []).find(it => wanted.id === 'off' ? it.label === 'Off' : it.id === wanted.id);
     if (!choice) { finishFailure(request, 'This subtitle is no longer available on this server.'); return; }
+    // FrameXTV also has a React-rendered cue mode without TextTrack.
+    // Never claim it loaded merely because a menu row has a checkmark.
+    const previousDomCue = sourceCaptionNodes().map(el => normal(el.textContent)).filter(Boolean).join('\n');
+    const alreadySelected = !!choice.checked;
     choice.row.click();
     let tries = 0;
     const verify = async () => {
@@ -316,11 +320,16 @@ function createXSSourceSubtitles(env) {
       const selected = current.find(it => it.checked);
       const match = selected && (wanted.id === 'off' ? selected.label === 'Off' : selected.id === wanted.id);
       const loaded = wanted.id === 'off' ? tracks().length === 0 : !!trackFor(choice);
-      if (match && loaded) {
+      const domTextNow = sourceCaptionNodes().map(el => normal(el.textContent)).filter(Boolean).join('\n');
+      const sourceDomReady = wanted.id !== 'off' && !!domTextNow &&
+        (alreadySelected || domTextNow !== previousDomCue);
+      const finishConfirmed = () => {
         pending = null; active = wanted.id === 'off' ? null : choice;
         send({event: 'xs:subtitleSelected', requestID: request.requestID, id: wanted.id});
-        reportCaption(); return;
-      }
+        reportCaption();
+      };
+      if (match && loaded) { finishConfirmed(); return; }
+      if (match && sourceDomReady) { finishConfirmed(); return; }
       if (++tries >= 60) { finishFailure(request, 'The source could not load this subtitle. Try another subtitle or server.'); return; }
       // Confirm fast-loading tracks quickly, but keep the original long tail
       // so a slower source response is never mistaken for a failed selection.
