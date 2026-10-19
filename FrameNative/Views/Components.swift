@@ -74,7 +74,7 @@ struct RemotePoster: View {
                 // and only full-width heroes request w1280 (never ORIGINAL).
                 let deliveredWidth = max(120, Int((proxy.size.width * displayScale).rounded(.up)))
                 if let url = item.imageURL(backdrop: backdrop, width: deliveredWidth) {
-                    AsyncImage(url: url, transaction: Transaction(animation: reduceMotion ? nil : .easeInOut(duration: 0.16))) { phase in
+                    AsyncImage(url: url, transaction: Transaction(animation: nil)) { phase in
                         switch phase {
                         case .success(let image):
                             image.resizable().scaledToFill()
