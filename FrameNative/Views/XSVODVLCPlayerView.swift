@@ -406,7 +406,10 @@ final class XSVODVLCPlayerModel: NSObject, ObservableObject, VLCMediaPlayerDeleg
         player.stop()
         player.delegate = self
 
-        let media = VLCMedia(url: urls[requested])
+        guard let media = VLCMedia(url: urls[requested]) else {
+            nextCandidate()
+            return
+        }
         media.addOption(":http-reconnect")
         media.addOption(":network-caching=850")
         player.media = media
@@ -448,7 +451,7 @@ final class XSVODVLCPlayerModel: NSObject, ObservableObject, VLCMediaPlayerDeleg
     func seek(to seconds: Double) {
         guard durationSeconds > 0 else { return }
         let clamped = min(max(seconds, 0), durationSeconds)
-        player.position = Float(clamped / durationSeconds)
+        player.position = clamped / durationSeconds
         positionSeconds = clamped
     }
 
