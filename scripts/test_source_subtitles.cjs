@@ -18,6 +18,7 @@ function fixture(options = {}) {
   const {window} = dom, doc = window.document;
   const clock = FakeTimers.withGlobal(window).install();
   const video = doc.querySelector('video'), textTracks = [];
+  if (Number.isFinite(options.videoDuration)) Object.defineProperty(video,'duration',{value:options.videoDuration});
   const cue = doc.querySelector('#cue');
   if (options.domOnly) cue.textContent = '';
   Object.defineProperty(video, 'textTracks', {value: textTracks});
@@ -295,6 +296,25 @@ test('different subtitle or server resets point anchors without leaking offsets'
   f.video.currentTime=1;f.adapter.syncPoint();assert.equal(f.last('xs:subtitlePointResult').offset,1);
   f.adapter.reset();f.adapter.tick();
   assert.equal(f.doc.querySelector('#cue').style.opacity,'');
+  f.cleanup();
+});
+test('selected source track warns only when subtitle cues extend >60s AFTER the video',async()=>{
+  const f=fixture({videoDuration:100,cues:[
+    {startTime:0,endTime:3,text:'First line'},
+    {startTime:159,endTime:170,text:'Wrong release tail'}
+  ]});
+  const items=await f.scan();await f.select(items[1]);await f.clock.tickAsync(1000);
+  assert.equal(f.last('xs:subtitleReleaseFit').status,'late-ending');
+  assert.equal(f.last('xs:subtitleReleaseFit').delta,70);
+  f.cleanup();
+});
+test('normal credits gap is NOT presented as a mismatched release',async()=>{
+  const f=fixture({videoDuration:6600,cues:[
+    {startTime:0,endTime:3,text:'Hello'},
+    {startTime:6300,endTime:6320,text:'Final line'}
+  ]});
+  const items=await f.scan();await f.select(items[1]);await f.clock.tickAsync(1000);
+  assert.equal(f.last('xs:subtitleReleaseFit').status,'ok');
   f.cleanup();
 });
 test('generated production bridge parses and safely starts before documentElement exists',()=>{

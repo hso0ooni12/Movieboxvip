@@ -365,6 +365,20 @@ function createXSSourceSubtitles(env) {
     delay=0;
     reportCaption();
   }
+  // V17_SOURCE_RELEASE_CHECK: check only a clear, impossible tail.
+  // TextTrack's final cue being >60s AFTER video's full duration is strong
+  // evidence that the subtitle release cannot match this video file.
+  // Do not treat ordinary film credits or unavailable duration as a failure.
+  function reportReleaseFit() {
+    const v=findVideo(),t=active&&trackFor(active);
+    if(!v||!t||!t.cues||!t.cues.length) return;
+    const length=Number(v.duration);
+    const end=Number(t.cues[t.cues.length-1].endTime);
+    if(!Number.isFinite(length)||length<60||!Number.isFinite(end)) return;
+    send({event:'xs:subtitleReleaseFit',
+      status:end>length+60?'late-ending':'ok',
+      duration:length,subtitleEnd:end,delta:end-length});
+  }
   function reset() {
     // Switching a provider must restore any text track hidden by our
     // non-zero delay renderer. Keep the chosen delay within this movie/episode;
@@ -377,6 +391,7 @@ function createXSSourceSubtitles(env) {
     generation++; pending = null; active = null; catalog = []; caption('');
     sourceCaptionHistory = []; sourceCaptionLast = null; sourceCaptionLastTime = -1;
     lastTimingMode = '';
+    send({event:'xs:subtitleReleaseFit',status:'ok'});
     if (ccButton()) send({event: 'xs:subtitles', final: false, items: []});
   }
   function observeSource() {
@@ -430,6 +445,7 @@ function createXSSourceSubtitles(env) {
       const finishConfirmed = () => {
         pending = null; active = wanted.id === 'off' ? null : choice;
         send({event: 'xs:subtitleSelected', requestID: request.requestID, id: wanted.id});
+        reportReleaseFit();
         reportCaption();
       };
       if (match && loaded) { finishConfirmed(); return; }
