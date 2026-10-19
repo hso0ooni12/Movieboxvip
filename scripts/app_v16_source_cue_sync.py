@@ -46,6 +46,14 @@ else:
     raise SystemExit("V16: R5 final caption geometry is not recognized")
 once("bottom: 76","bottom: 1","source DOM default position")
 
+# Display native timed captions if either constant offset or subtitle
+# speed differs; rate-only correction with offset 0 must also be visible.
+once(
+    "const customTiming = delay !== 0 && active &&",
+    "const customTiming = (delay !== 0 || subtitleRate !== 1) && active &&",
+    "rate-only shift activates custom source cue layer"
+)
+
 # Wire the original source adapter's point-synchronization handler through
 # the existing source iframe. No fetching new or alternate subtitle files.
 once(
@@ -114,6 +122,10 @@ once(
 once(
     '''        .onChange(of: subtitleDelay) { value in player.setSubtitleDelay(value) }''',
     '''        .onChange(of: subtitleDelay) { value in player.setSubtitleDelay(value) }
+        .onChange(of: player.selectedSubtitleID) { _ in
+            // Another subtitle release might have a different time basis.
+            subtitleDelay = 0
+        }
         .onChange(of: player.subtitlePointResult) { aligned in
             if let aligned { subtitleDelay = aligned }
         }''',
