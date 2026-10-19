@@ -81,7 +81,7 @@ checks = {
     "R5 live VLC drawable retained":
         "V39_R5_STABILITY_RESTORE" in sports
         and "XSVLCStableSurfaceView" in sports
-        and "player.drawable = host.videoView" in sports,
+        and "player.drawable = drawable" in sports,
     "global movie navigation intact":
         ".navigationDestination(for: MediaItem.self)" in browse
         and "DetailView(item:" in browse,
