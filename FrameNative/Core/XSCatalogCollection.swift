@@ -6,6 +6,13 @@ import Foundation
 struct XSCatalogPage {
     let items: [MediaItem]
     let hasMore: Bool
+    let notice: String?
+
+    init(items: [MediaItem], hasMore: Bool, notice: String? = nil) {
+        self.items = items
+        self.hasMore = hasMore
+        self.notice = notice
+    }
 }
 
 struct XSCatalogCollection: Identifiable, Hashable {

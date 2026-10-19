@@ -88,10 +88,10 @@ struct TMDBClient {
         return response.results.compactMap { $0.mediaItem(forcedKind: .tv) }
     }
 
-    // V8: real paged discovery from the same metadata backend used by
-    // FrameXTV playback, not a handful of locally recycled trending posters.
-    // Provider metadata reflects TMDB watch-provider catalogs for US region;
-    // it does NOT guarantee that the source site's player has every title.
+    // V9: route-aware catalog discovery with a safe, truthful fallback.
+    // The existing Railway proxy successfully handles popular/trending routes,
+    // but may reject additional /discover and watch-provider endpoints with 403.
+    // Avoid stranding the user on an empty screen.
     func discoverCollection(
         kind: MediaKind,
         collection: XSCatalogCollection,
@@ -106,32 +106,99 @@ struct TMDBClient {
             .init(name: "include_adult", value: "false"),
             .init(name: "sort_by", value: "popularity.desc")
         ]
+        var fallbackGenre: Int?
+        var providerCategory = false
 
         switch collection.category {
         case .discover: break
-        case .trending:
-            path = "/trending/\(mediaType)/week"
-        case .popular:
-            path = kind == .movie ? "/movie/popular" : "/tv/popular"
-        case .topRated:
-            path = kind == .movie ? "/movie/top_rated" : "/tv/top_rated"
-        case .new:
-            path = kind == .movie ? "/movie/now_playing" : "/tv/on_the_air"
+        case .trending: path = "/trending/\(mediaType)/week"
+        case .popular: path = kind == .movie ? "/movie/popular" : "/tv/popular"
+        case .topRated: path = kind == .movie ? "/movie/top_rated" : "/tv/top_rated"
+        case .new: path = kind == .movie ? "/movie/now_playing" : "/tv/on_the_air"
         case .genre(let id):
+            fallbackGenre = id
             query.append(.init(name: "with_genres", value: String(id)))
         case .provider(let id):
+            providerCategory = true
             query.append(.init(name: "with_watch_providers", value: String(id)))
             query.append(.init(name: "watch_region", value: "US"))
             query.append(.init(name: "with_watch_monetization_types", value: "flatrate"))
         }
 
-        let response = try await request(path: path, query: query, as: ListResponse.self)
-        let mediaKind: MediaKind = kind == .movie ? .movie : .tv
-        let items = response.results.compactMap { $0.mediaItem(forcedKind: mediaKind) }
-        let total = response.totalPages ?? (items.isEmpty ? safePage : safePage + 1)
+        let scope = providerCategory ? "provider" : (fallbackGenre != nil ? "genre" : "default")
+        let capabilityKey = "\(path)|\(scope)"
+        let blocked = await XSCatalogEndpointSupport.shared.isUnsupported(capabilityKey)
+
+        if !blocked {
+            do {
+                let response = try await request(path: path, query: query, as: ListResponse.self)
+                let mediaKind: MediaKind = kind == .movie ? .movie : .tv
+                let items = response.results.compactMap { $0.mediaItem(forcedKind: mediaKind) }
+                let total = response.totalPages ?? (items.isEmpty ? safePage : safePage + 1)
+                return XSCatalogPage(
+                    items: items,
+                    hasMore: !items.isEmpty && safePage < min(total, 500)
+                )
+            } catch APIError.http(let status, _) where status == 403 || status == 404 {
+                // 403/404 here is the metadata proxy rejecting an unsupported
+                // catalog route. Retry with routes already used by the app.
+                await XSCatalogEndpointSupport.shared.markUnsupported(capabilityKey)
+            }
+        }
+
+        if providerCategory {
+            // A popular movie is NOT proof it belongs to Netflix / Apple TV+.
+            // Never fabricate platform memberships when the backend forbids
+            // watch-provider discovery. The UI offers reliable sections instead.
+            return XSCatalogPage(
+                items: [],
+                hasMore: false,
+                notice: "تصنيف هذه المنصة غير متاح حالياً من خدمة البيانات. يمكنك تصفح الأفلام والمسلسلات حسب النوع أو الأكثر شعبية."
+            )
+        }
+
+        return try await fallbackCatalogPage(
+            kind: kind, page: safePage, genre: fallbackGenre
+        )
+    }
+
+    private func fallbackCatalogPage(
+        kind: MediaKind,
+        page: Int,
+        genre: Int?
+    ) async throws -> XSCatalogPage {
+        let mediaType = kind == .movie ? "movie" : "tv"
+        let kindForItem: MediaKind = kind == .movie ? .movie : .tv
+        let popular = kind == .movie ? "/movie/popular" : "/tv/popular"
+        var combined: [MediaItem] = []
+        var hasMore = false
+        // Genre filters need a slightly wider sample because a single page
+        // of popular titles might have no items from a niche genre.
+        let pageCount = genre == nil ? 1 : 3
+        for offset in 0..<pageCount {
+            let pageNumber = (page - 1) * pageCount + offset + 1
+            if pageNumber > 500 { break }
+            let response = try await request(
+                path: popular,
+                query: [
+                    .init(name: "language", value: language),
+                    .init(name: "page", value: String(pageNumber))
+                ],
+                as: ListResponse.self
+            )
+            combined += response.results.compactMap {
+                $0.mediaItem(forcedKind: kindForItem)
+            }
+            hasMore = pageNumber < min(response.totalPages ?? 500, 500)
+            if !hasMore { break }
+        }
+        let filtered = genre.map { id in combined.filter { $0.genreIDs.contains(id) } } ?? combined
         return XSCatalogPage(
-            items: items,
-            hasMore: !items.isEmpty && safePage < min(total, 500)
+            items: filtered,
+            hasMore: hasMore,
+            notice: genre == nil
+                ? "نعرض القائمة الأكثر شعبية مؤقتاً إلى أن تتاح الخدمة الكاملة."
+                : "نعرض أعمالاً مطابقة لهذا النوع من قوائم المحتوى المتاحة حالياً."
         )
     }
 
@@ -359,5 +426,20 @@ private struct EpisodeResponse: Decodable {
         case episodeNumber = "episode_number"
         case airDate = "air_date"
         case stillPath = "still_path"
+    }
+}
+
+
+// Route-capability cache prevents repeated 403 calls every time a user scrolls.
+private actor XSCatalogEndpointSupport {
+    static let shared = XSCatalogEndpointSupport()
+    private var unsupported = Set<String>()
+
+    func isUnsupported(_ path: String) -> Bool {
+        unsupported.contains(path)
+    }
+
+    func markUnsupported(_ path: String) {
+        unsupported.insert(path)
     }
 }
