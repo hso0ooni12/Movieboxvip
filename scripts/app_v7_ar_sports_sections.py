@@ -16,7 +16,7 @@ sports=path.read_text(encoding="utf-8")
 sports=replace_one(sports,
     '    @State private var compactList = true',
     '''    @AppStorage("xs.iptv.arSportsCompactList.v7") private var compactList = true
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // Only rebuild the category/stream index on a provider/cache update, NOT
     // on every keystroke, favorite toggle or SwiftUI view re-render.
     @State private var sportsStreams: [IPTVLiveStream] = []
