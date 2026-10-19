@@ -53,4 +53,24 @@ jobs:
               area=re.sub(r'(Authorization|Bearer|access_token|session|password)[^<>]{0,160}',r'[private metadata]',area,flags=re.I)
               area=re.sub(r'/share/[A-Za-z0-9_-]+','/share/[public-id]',area)
               print('CONTEXT',token,re.sub(r'\\s+',' ',area)[:500])
+
+          # Inspect ONLY publicly linked folder HTML and exposed listing metadata.
+          # Do not download media, subtitles, protected streams or user data.
+          links = sorted(set(re.findall(r'href=[\\x22\\x27]/share/([A-Za-z0-9_-]+)',body,re.I)))
+          print('PUBLIC_SHARE_HREF_LINKS',len(links))
+          for idx,key in enumerate(links[:6],start=1):
+            u='https://www.febbox.com/share/'+key
+            try:
+              req=urllib.request.Request(u,headers=headers)
+              with urllib.request.urlopen(req,timeout=18) as rr:
+                folder=rr.read(550_000).decode('utf-8','replace')
+                title=re.search(r'<title[^>]*>(.*?)</title>',folder,re.I|re.S)
+                words=lambda pattern: len(re.findall(pattern,folder,re.I))
+                print('FOLDER',idx,'STATUS',rr.status,'TITLE',html.unescape(title.group(1).strip())[:130] if title else 'unknown',
+                  'HTML_BYTES',len(folder),
+                  'SUBTITLE_EXT_MATCHES',words(r'\\.(?:srt|vtt|ass|ssa)\\b'),
+                  'FOLDER_LABEL_MATCHES',words('class=[\\x22\\x27][^\\x22\\x27]*folder'),
+                  'LOGIN_REQUIRED_MARKERS',words(r'(?:sign in to continue|login to|please log in)'))
+            except Exception as e:
+              print('FOLDER',idx,'ERROR',type(e).__name__,str(e)[:120])
           PY
