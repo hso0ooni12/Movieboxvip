@@ -185,228 +185,238 @@ struct XSReferenceHomeView: View {
     }
 }
 
+// V8: The catalog opens directly with posters and real discovery sections.
+// No large duplicate hero, no fixed 18/30-poster limit, no local-only genres.
 struct XSReferenceCatalogView: View {
     @EnvironmentObject private var app: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let kind: MediaKind
     let title: String
 
+    @State private var selectedCollection: XSCatalogCollection
+    @State private var loaded: [MediaItem] = []
+    @State private var nextPage = 1
+    @State private var hasMore = true
+    @State private var isLoading = false
+    @State private var loadError: String?
+    @State private var requestGeneration = UUID()
     @State private var query = ""
-    @State private var filtersExpanded = false
-    @State private var viewMode: ViewMode = .grid
-    @State private var selectedGenre: Int? = nil
-    @State private var selectedYear: String = "All Years"
-    @State private var minimumRating: Double = 0
-    @State private var sort: SortMode = .defaultOrder
+    @State private var queryTask: Task<Void, Never>?
+    @State private var listMode = false
+    @State private var sortMode: SortMode = .suggested
 
-    private enum ViewMode { case grid, list }
+    private struct CachedCollection {
+        let items: [MediaItem]
+        let nextPage: Int
+        let hasMore: Bool
+    }
+    @State private var collectionCache: [String: CachedCollection] = [:]
+    @State private var cacheOrder: [String] = []
+
+    private var currentCacheKey: String {
+        "\(kind.rawValue):\(selectedCollection.id)"
+    }
+
     private enum SortMode: String, CaseIterable, Identifiable {
-        case defaultOrder = "Default Sort"
-        case rating = "Top Rated"
-        case newest = "Newest"
-        case title = "A–Z"
+        case suggested = "مقترحة"
+        case rating = "الأعلى تقييماً"
+        case newest = "الأحدث"
+        case alphabetic = "أبجدي"
         var id: String { rawValue }
     }
 
-    private var source: [MediaItem] { app.list(for: kind) }
-
-    private var genreOptions: [(Int, String)] {
-        var seen = Set<Int>()
-        var values: [(Int, String)] = []
-        for item in source {
-            for id in item.genreIDs where seen.insert(id).inserted {
-                if let name = TMDBGenres.name(for: id) { values.append((id, name)) }
-            }
-        }
-        return values.sorted { $0.1 < $1.1 }
+    init(kind: MediaKind, title: String) {
+        self.kind = kind
+        self.title = title
+        _selectedCollection = State(initialValue: XSCatalogCollection.all(for: kind)[0])
     }
 
-    private var yearOptions: [String] {
-        let years = Set(source.map(\.year).filter { $0 != "—" })
-        return ["All Years"] + years.sorted(by: >)
+    private var collections: [XSCatalogCollection] {
+        XSCatalogCollection.all(for: kind)
     }
 
-    private var filtered: [MediaItem] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        var items = source.filter { item in
-            let matchesQuery = trimmed.isEmpty || item.title.localizedCaseInsensitiveContains(trimmed) || item.subtitle.localizedCaseInsensitiveContains(trimmed)
-            let matchesGenre = selectedGenre == nil || item.genreIDs.contains(selectedGenre!)
-            let matchesYear = selectedYear == "All Years" || item.year == selectedYear
-            let matchesRating = minimumRating == 0 || item.voteAverage >= minimumRating
-            return matchesQuery && matchesGenre && matchesYear && matchesRating
+    private var visibleItems: [MediaItem] {
+        var output = loaded
+        switch sortMode {
+        case .suggested: break
+        case .rating: output.sort { $0.voteAverage > $1.voteAverage }
+        case .newest: output.sort { $0.year > $1.year }
+        case .alphabetic:
+            output.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
         }
-        switch sort {
-        case .defaultOrder: break
-        case .rating: items.sort { $0.voteAverage > $1.voteAverage }
-        case .newest: items.sort { $0.year > $1.year }
-        case .title: items.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-        }
-        return items
-    }
-
-    private var isFiltering: Bool {
-        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedGenre != nil || selectedYear != "All Years" || minimumRating > 0 || sort != .defaultOrder
-    }
-
-    private var trending: [MediaItem] {
-        let ids = Set(filtered.map(\.id))
-        let base: [MediaItem]
-        switch kind {
-        case .movie: base = app.trendingMovies
-        case .tv: base = app.trendingTV
-        case .anime: base = app.anime
-        }
-        return base.filter { ids.contains($0.id) }
-    }
-
-    private var popular: [MediaItem] {
-        let ids = Set(filtered.map(\.id))
-        let base: [MediaItem]
-        switch kind {
-        case .movie: base = app.popularMovies
-        case .tv: base = app.popularTV
-        case .anime: base = Array(app.anime.dropFirst(min(6, app.anime.count)))
-        }
-        return base.filter { ids.contains($0.id) }
+        return output
     }
 
     var body: some View {
         ZStack {
             XSV3ScreenBackdrop()
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 27) {
-                    if !isFiltering, let spotlight = trending.first ?? popular.first {
-                        catalogSpotlight(spotlight)
-                    }
-                    header
-                    searchAndFilters
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    pageHeading
+                    collectionNavigation
+                    searchAndSort
+                    resultsHeading
 
-                    if filtered.isEmpty {
-                        EmptyStateView(title: "No Matches", message: "Try different filters or another title.", systemImage: kind.symbol)
-                    } else if isFiltering {
-                        XSReferenceCatalogSection(title: "Results", subtitle: "\(filtered.count) matching titles", items: filtered, viewModeGrid: viewMode == .grid)
+                    if loaded.isEmpty && isLoading {
+                        posterSkeleton
+                    } else if loaded.isEmpty && loadError != nil {
+                        loadingFailure
+                    } else if loaded.isEmpty {
+                        EmptyStateView(
+                            title: "ما فيه نتائج",
+                            message: "جرّب قسم آخر أو غيّر البحث.",
+                            systemImage: "film"
+                        )
+                        .padding(.horizontal, 22)
                     } else {
-                        XSReferenceCatalogSection(title: trendingTitle, subtitle: trendingSubtitle, items: trending, viewModeGrid: viewMode == .grid)
-                        XSReferenceCatalogSection(title: popularTitle, subtitle: popularSubtitle, items: popular, viewModeGrid: viewMode == .grid)
-                        XSReferenceCatalogSection(title: thirdTitle, subtitle: thirdSubtitle, items: filtered, viewModeGrid: viewMode == .grid)
+                        posterCollection
+                    }
+
+                    if hasMore && loadError == nil && !loaded.isEmpty {
+                        HStack(spacing: 11) {
+                            ProgressView().tint(XSV3.coral)
+                            Text("تحميل المزيد من \(kind == .movie ? "الأفلام" : "المسلسلات")…")
+                                .font(.system(size: 12))
+                                .foregroundStyle(XSV3.muted)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 22)
+                        .task(id: "\(selectedCollection.id)-\(loaded.count)-\(query)") {
+                            await loadNextPage()
+                        }
+                    } else if loadError != nil && !loaded.isEmpty {
+                        Button("إعادة محاولة تحميل المزيد") {
+                            loadError = nil
+                            Task { await loadNextPage() }
+                        }
+                        .font(.system(size: 13, weight: .bold))
+                        .padding(.horizontal, 22)
+                        .frame(height: 46)
+                        .foregroundStyle(.white)
+                        .background(XSV3.lifted, in: Capsule())
+                        .frame(maxWidth: .infinity)
+                        .padding(.bottom, 10)
                     }
                 }
-                .padding(.bottom, 36)
+                .padding(.top, 10)
+                .padding(.bottom, 48)
             }
             .scrollIndicators(.hidden)
-            .refreshable { await app.loadHome(force: true) }
+            .refreshable { await reload(force: true) }
         }
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(XSV3.ink.opacity(0.96), for: .navigationBar)
+        .toolbarBackground(XSV3.ink.opacity(0.97), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .navigationDestination(for: MediaItem.self) { DetailView(item: $0) }
-    }
-
-    private func catalogSpotlight(_ item: MediaItem) -> some View {
-        NavigationLink(value: item) {
-            ZStack(alignment: .bottomLeading) {
-                RemotePoster(item: item, backdrop: true, cornerRadius: 0)
-                    .frame(height: 360)
-                    .clipped()
-                LinearGradient(
-                    stops: [
-                        .init(color: .black.opacity(0.10), location: 0),
-                        .init(color: .black.opacity(0.24), location: 0.30),
-                        .init(color: XSV3.ink.opacity(0.82), location: 0.78),
-                        .init(color: XSV3.ink, location: 1)
-                    ],
-                    startPoint: .top, endPoint: .bottom
-                )
-
-                HStack(alignment: .bottom, spacing: 14) {
-                    RemotePoster(item: item, cornerRadius: 14)
-                        .frame(width: 112, height: 168)
-                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.20)))
-                        .shadow(color: .black.opacity(0.42), radius: 16, y: 8)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("THE FEATURED COLLECTION")
-                            .font(.system(size: 9, weight: .heavy, design: .rounded))
-                            .tracking(2.1)
-                            .foregroundStyle(XSV3.amber)
-                        Text(item.title)
-                            .font(.system(size: 23, weight: .black, design: .rounded))
-                            .lineLimit(3)
-                            .minimumScaleFactor(0.78)
-                            .foregroundStyle(.white)
-                        HStack(spacing: 8) {
-                            Text(item.year)
-                            if item.voteAverage > 0 {
-                                Image(systemName: "star.fill")
-                                    .foregroundStyle(XSV3.amber)
-                                Text(item.ratingText)
-                            }
-                        }
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.76))
-                        Label("Discover", systemImage: "arrow.up.right")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(.white)
-                            .padding(.top, 6)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.horizontal, 22)
-                .padding(.bottom, 23)
-            }
-            .frame(height: 360)
+        .task(id: "\(kind.rawValue)-\(selectedCollection.id)") {
+            await reload()
         }
-        .buttonStyle(XSV3PressStyle())
+        .onChange(of: query) { _ in
+            queryTask?.cancel()
+            queryTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                guard !Task.isCancelled else { return }
+                await reload()
+            }
+        }
+        .onDisappear {
+            queryTask?.cancel()
+            requestGeneration = UUID()
+        }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 13) {
-            HStack {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("THE COLLECTION")
-                        .font(.system(size: 10, weight: .heavy, design: .rounded))
-                        .tracking(2.4)
-                        .foregroundStyle(XSCinemaStyle.accent)
-                    Text(title)
-                        .font(.system(size: 34, weight: .black, design: .rounded))
-                        .tracking(-0.8)
-                        .foregroundStyle(.white)
-                }
-                Spacer()
-                HStack(spacing: 0) {
-                    modeButton(.grid, image: "square.grid.2x2.fill")
-                    modeButton(.list, image: "list.bullet")
-                }
-                .padding(4)
-                .background(XSCinemaStyle.surface, in: RoundedRectangle(cornerRadius: 13))
-                .frame(width: 116)
+    private var pageHeading: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(kind == .movie ? "THE MOVIE COLLECTION" : "YOUR SERIES UNIVERSE")
+                    .font(.system(size: 10, weight: .heavy, design: .rounded))
+                    .tracking(2.1)
+                    .foregroundStyle(XSV3.coral)
+                Text(kind == .movie ? "الأفلام" : "المسلسلات")
+                    .font(.system(size: 31, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
             }
-            Text(descriptionText)
-                .font(.system(size: 13))
-                .foregroundStyle(XSCinemaStyle.secondary)
-                .lineSpacing(3)
+            Spacer()
+            Button {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                    listMode.toggle()
+                }
+            } label: {
+                Image(systemName: listMode ? "square.grid.2x2.fill" : "list.bullet")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 46, height: 46)
+                    .background(XSV3.lifted,
+                                in: RoundedRectangle(cornerRadius: 14))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(listMode ? "عرض البوسترات" : "عرض كقائمة")
         }
         .padding(.horizontal, 22)
     }
 
-    private func modeButton(_ mode: ViewMode, image: String) -> some View {
-        Button {
-            viewMode = mode
-        } label: {
-            Image(systemName: image)
-                .font(.system(size: 15, weight: .semibold))
-                .frame(maxWidth: .infinity)
-                .frame(height: 38)
-                .background(viewMode == mode ? Color.white.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 7))
+    private var collectionNavigation: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            chipRail(title: "تصفّح", items: Array(collections.prefix(5)))
+            chipRail(title: "المنصات", items: collections.filter(\.isProvider))
+            chipRail(title: "التصنيفات", items: collections.filter {
+                if case .genre = $0.category { return true }
+                return false
+            })
+            if selectedCollection.isProvider {
+                Text("هذه تصنيفات بحسب بيانات منصات العرض في TMDB (منطقة الولايات المتحدة)، وليست تأكيداً لتوفر التشغيل.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(XSV3.muted)
+                    .padding(.horizontal, 22)
+            }
         }
-        .buttonStyle(XSReferenceHitButtonStyle())
     }
 
-    private var searchAndFilters: some View {
-        VStack(alignment: .leading, spacing: 13) {
-            HStack(spacing: 11) {
+    private func chipRail(title: String, items: [XSCatalogCollection]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.74))
+                .padding(.horizontal, 22)
+            ScrollView(.horizontal) {
+                LazyHStack(spacing: 8) {
+                    ForEach(items) { section in
+                        let selected = selectedCollection.id == section.id
+                        Button {
+                            guard selectedCollection.id != section.id else { return }
+                            queryTask?.cancel()
+                            query = ""
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                                selectedCollection = section
+                            }
+                        } label: {
+                            Label(section.title, systemImage: section.symbol)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(selected ? .black : .white.opacity(0.87))
+                                .padding(.horizontal, 14)
+                                .frame(height: 43)
+                                .background(selected ? Color.white : XSV3.lifted, in: Capsule())
+                                .overlay(Capsule().stroke(selected ? .clear : .white.opacity(0.09)))
+                        }
+                        .buttonStyle(XSV3PressStyle())
+                        .accessibilityAddTraits(selected ? .isSelected : [])
+                    }
+                }
+                .padding(.horizontal, 22)
+                .padding(.vertical, 2)
+            }
+            .scrollIndicators(.hidden)
+        }
+    }
+
+    private var searchAndSort: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 9) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.57))
-                TextField("Search \(title.lowercased())…", text: $query)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(XSV3.muted)
+                TextField(kind == .movie ? "ابحث عن فيلم..." : "ابحث عن مسلسل...", text: $query)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .submitLabel(.search)
@@ -416,135 +426,187 @@ struct XSReferenceCatalogView: View {
                         query = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 17))
-                            .foregroundStyle(.white.opacity(0.60))
-                            .frame(width: 36, height: 36)
+                            .font(.system(size: 16))
+                            .foregroundStyle(XSV3.muted)
+                            .frame(width: 39, height: 44)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Clear search")
+                    .accessibilityLabel("مسح البحث")
                 }
             }
-            .padding(.horizontal, 16)
-            .frame(height: 55)
-            .background(XSV3.lifted, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 17).stroke(.white.opacity(0.12)))
+            .padding(.horizontal, 13)
+            .frame(height: 52)
+            .background(XSV3.lifted, in: RoundedRectangle(cornerRadius: 15))
+            .overlay(RoundedRectangle(cornerRadius: 15).stroke(.white.opacity(0.10)))
 
-            HStack(spacing: 9) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.22)) {
-                        filtersExpanded.toggle()
-                    }
-                } label: {
-                    Label(filtersExpanded ? "Hide filters" : "Refine results", systemImage: "slider.horizontal.3")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(filtersExpanded ? .black : .white)
-                        .padding(.horizontal, 14)
-                        .frame(height: 43)
-                        .background(filtersExpanded ? Color.white : XSV3.lifted, in: Capsule())
-                }
-                .buttonStyle(XSV3PressStyle())
-                .accessibilityValue(filtersExpanded ? "Expanded" : "Collapsed")
-
-                if isFiltering {
+            Menu {
+                ForEach(SortMode.allCases) { option in
                     Button {
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            query = ""
-                            selectedGenre = nil
-                            selectedYear = "All Years"
-                            minimumRating = 0
-                            sort = .defaultOrder
-                        }
+                        sortMode = option
                     } label: {
-                        Label("Clear all", systemImage: "xmark")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(XSV3.coral)
-                            .padding(.horizontal, 12)
-                            .frame(height: 43)
+                        Label(option.rawValue, systemImage: option == sortMode ? "checkmark" : "arrow.up.arrow.down")
                     }
-                    .buttonStyle(.plain)
                 }
-                Spacer(minLength: 0)
-                Text("\(filtered.count) TITLES")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.59))
+            } label: {
+                Image(systemName: "arrow.up.arrow.down")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 52, height: 52)
+                    .background(XSV3.lifted,
+                                in: RoundedRectangle(cornerRadius: 15))
             }
+            .accessibilityLabel("ترتيب النتائج")
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, 1)
+    }
 
-            if filtersExpanded {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("MAKE IT YOURS")
-                        .font(.system(size: 10, weight: .heavy))
-                        .tracking(2.0)
-                        .foregroundStyle(XSV3.amber)
-                    HStack(spacing: 9) {
-                        filterMenu(title: selectedGenreName, options: ["All Genres"] + genreOptions.map(\.1)) { value in
-                            selectedGenre = genreOptions.first(where: { $0.1 == value })?.0
-                        }
-                        filterMenu(title: selectedYear, options: yearOptions) { selectedYear = $0 }
-                    }
-                    HStack(spacing: 9) {
-                        filterMenu(title: ratingTitle, options: ["Any Rating", "6.0+", "7.0+", "8.0+"]) { value in
-                            minimumRating = Double(value.replacingOccurrences(of: "+", with: "")) ?? 0
-                        }
-                        filterMenu(title: sort.rawValue, options: SortMode.allCases.map(\.rawValue)) { value in
-                            sort = SortMode(rawValue: value) ?? .defaultOrder
-                        }
-                    }
-                }
-                .padding(15)
-                .background(XSV3.lifted.opacity(0.70), in: RoundedRectangle(cornerRadius: 19))
-                .overlay(RoundedRectangle(cornerRadius: 19).stroke(.white.opacity(0.08)))
-                .transition(.opacity.combined(with: .move(edge: .top)))
+    private var resultsHeading: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("NOW BROWSING")
+                    .font(.system(size: 10, weight: .heavy))
+                    .tracking(2.0)
+                    .foregroundStyle(XSV3.amber)
+                Text(query.isEmpty ? selectedCollection.title : "نتائج البحث")
+                    .font(.system(size: 23, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
             }
+            Spacer()
+            Text("\(loaded.count) \(kind == .movie ? "فيلم" : "مسلسل")")
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(XSV3.muted)
         }
         .padding(.horizontal, 22)
     }
 
-    private func filterMenu(title: String, options: [String], select: @escaping (String) -> Void) -> some View {
-        Menu {
-            ForEach(options, id: \.self) { value in
-                Button(value) { select(value) }
+    @ViewBuilder
+    private var posterCollection: some View {
+        if listMode {
+            LazyVStack(spacing: 12) {
+                ForEach(visibleItems) { item in
+                    XSReferenceListCard(item: item)
+                }
             }
-        } label: {
-            HStack {
-                Text(title).lineLimit(1)
-                Spacer(minLength: 5)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.white.opacity(0.38))
+            .padding(.horizontal, 22)
+        } else {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 112, maximum: 185), spacing: 12)],
+                spacing: 19
+            ) {
+                ForEach(visibleItems) { item in
+                    XSReferencePosterCard(item: item)
+                }
             }
-            .font(.subheadline.weight(.semibold))
-            .padding(.horizontal, 13)
-            .frame(maxWidth: .infinity)
-            .frame(height: 44)
-            .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.08)))
-        }
-        .buttonStyle(XSReferenceHitButtonStyle())
-    }
-
-    private var selectedGenreName: String {
-        guard let selectedGenre else { return "All Genres" }
-        return genreOptions.first(where: { $0.0 == selectedGenre })?.1 ?? "All Genres"
-    }
-
-    private var ratingTitle: String {
-        minimumRating == 0 ? "Any Rating" : String(format: "%.1f+", minimumRating)
-    }
-
-    private var descriptionText: String {
-        switch kind {
-        case .movie: return "Browse trending cinema, award-winning blockbusters, and curated genre collections."
-        case .tv: return "Discover trending television, binge-worthy series, and curated genre collections."
-        case .anime: return "Explore popular anime, new discoveries, and animation favorites in one catalog."
+            .padding(.horizontal, 22)
         }
     }
 
-    private var trendingTitle: String { kind == .movie ? "Trending Movies" : (kind == .tv ? "Trending Series" : "Trending Anime") }
-    private var trendingSubtitle: String { "Most watched titles across the network today" }
-    private var popularTitle: String { kind == .movie ? "Popular Movies" : (kind == .tv ? "Popular Series" : "Popular Anime") }
-    private var popularSubtitle: String { "Global crowd favorites and standout titles" }
-    private var thirdTitle: String { kind == .movie ? "In Theaters / Now Playing" : (kind == .tv ? "More Series to Explore" : "More Anime to Explore") }
-    private var thirdSubtitle: String { kind == .movie ? "Current theatrical releases and recent premieres" : "More titles from the XS TV catalog" }
+    private var posterSkeleton: some View {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 112, maximum: 185), spacing: 12)],
+            spacing: 19
+        ) {
+            ForEach(0..<12, id: \.self) { _ in
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(XSV3.lifted)
+                    .aspectRatio(0.65, contentMode: .fit)
+                    .overlay {
+                        ProgressView().tint(.white.opacity(0.25))
+                    }
+            }
+        }
+        .padding(.horizontal, 22)
+        .accessibilityLabel("جارٍ تحميل المحتوى")
+    }
+
+    private var loadingFailure: some View {
+        VStack(spacing: 13) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 28))
+                .foregroundStyle(XSV3.amber)
+            Text(loadError ?? "تعذّر تحميل القائمة")
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.74))
+                .multilineTextAlignment(.center)
+            Button("إعادة المحاولة") { Task { await reload() } }
+                .font(.system(size: 14, weight: .semibold))
+                .frame(height: 46)
+                .padding(.horizontal, 23)
+                .foregroundStyle(.black)
+                .background(.white, in: Capsule())
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 30)
+        .padding(.vertical, 45)
+    }
+
+    @MainActor
+    private func reload(force: Bool = false) async {
+        let generation = UUID()
+        requestGeneration = generation
+        isLoading = false
+        loadError = nil
+        if !force, query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let cached = collectionCache[currentCacheKey] {
+            loaded = cached.items
+            nextPage = cached.nextPage
+            hasMore = cached.hasMore
+            return
+        }
+        loaded = []
+        nextPage = 1
+        hasMore = true
+        await loadNextPage(generation: generation)
+    }
+
+    @MainActor
+    private func loadNextPage(generation expected: UUID? = nil) async {
+        guard hasMore, !isLoading, loadError == nil else { return }
+        let generation = expected ?? requestGeneration
+        let categoryID = selectedCollection.id
+        let selected = selectedCollection
+        let searchText = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let page = nextPage
+        isLoading = true
+
+        do {
+            let response: XSCatalogPage
+            if !searchText.isEmpty {
+                let source = try await app.client.search(searchText, page: page)
+                let matches = source.filter { kind == .movie ? $0.kind == .movie : $0.kind != .movie }
+                response = XSCatalogPage(items: matches, hasMore: !source.isEmpty && page < 50)
+            } else {
+                response = try await app.client.discoverCollection(
+                    kind: kind, collection: selected, page: page
+                )
+            }
+            guard requestGeneration == generation,
+                  categoryID == selectedCollection.id,
+                  query.trimmingCharacters(in: .whitespacesAndNewlines) == searchText else { return }
+
+            var known = Set(loaded.map(\.id))
+            loaded += response.items.filter { known.insert($0.id).inserted }
+            nextPage += 1
+            hasMore = response.hasMore
+            loadError = nil
+            if searchText.isEmpty {
+                let key = currentCacheKey
+                collectionCache[key] = CachedCollection(items: loaded, nextPage: nextPage, hasMore: hasMore)
+                cacheOrder.removeAll { $0 == key }
+                cacheOrder.append(key)
+                while cacheOrder.count > 8 {
+                    let oldest = cacheOrder.removeFirst()
+                    collectionCache[oldest] = nil
+                }
+            }
+        } catch {
+            guard requestGeneration == generation else { return }
+            loadError = error.localizedDescription
+        }
+
+        if requestGeneration == generation { isLoading = false }
+    }
 }
 
 private struct XSReferenceCatalogSection: View {
@@ -578,14 +640,14 @@ private struct XSReferenceCatalogSection: View {
 
                 if viewModeGrid {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 110, maximum: 190), spacing: 12)], spacing: 22) {
-                        ForEach(Array(items.prefix(18))) { item in
+                        ForEach(items) { item in
                             XSReferencePosterCard(item: item)
                         }
                     }
                     .padding(.horizontal, 20)
                 } else {
                     LazyVStack(spacing: 12) {
-                        ForEach(Array(items.prefix(30))) { item in
+                        ForEach(items) { item in
                             XSReferenceListCard(item: item)
                         }
                     }
