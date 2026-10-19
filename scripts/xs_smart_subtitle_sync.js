@@ -52,10 +52,10 @@ function xsSmartSyncEstimate(samples, intervals, currentOffset) {
           correlation:best.quality, improvement, sampleCount:usable.length};
 }
 
-function xsSmartCueWindows(video, activeTrack, history) {
+function xsSmartCueWindows(video, activeTrack, history, futureSeconds=5) {
   const v=video; if(!v) return [];
   const now=Number(v.currentTime||0);
-  const from=now-55,to=now+5;
+  const from=now-55,to=now+futureSeconds;
   if (activeTrack && activeTrack.cues && activeTrack.cues.length) {
     const out=[];
     for (const c of Array.from(activeTrack.cues)) {
