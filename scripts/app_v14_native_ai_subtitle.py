@@ -82,7 +82,9 @@ one(
             Task { [weak self] in
                 guard let self else { return }
                 let result = await XSNativeSubtitleAI.shared.align(
-                    cues: cues, mediaTime: mediaAtStart, currentOffset: timing
+                    cues: cues,
+                    mediaTime: { [weak self] in self?.currentTime ?? mediaAtStart },
+                    currentOffset: timing
                 )
                 // Source, episode or server may have changed during analysis.
                 guard self.subtitleFrameID == currentFrame,
