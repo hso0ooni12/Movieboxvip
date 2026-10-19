@@ -263,8 +263,8 @@ struct XSVODVLCPlayerView: View {
                 }
                 .padding(24)
             }
-            .frame(width: min(max(proxy.size.width * 0.62, 230), 410),
-                   maxHeight: .infinity)
+            .frame(width: min(max(proxy.size.width * 0.62, 230), 410))
+            .frame(maxHeight: .infinity)
             .background(.ultraThinMaterial)
         }
     }
