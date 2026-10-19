@@ -1,0 +1,56 @@
+name: Diagnose Public Febbox Article Metadata
+on:
+  push:
+    branches: ["diagnostics-febbox-public-20261019"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  febbox-public:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Inspect publicly accessible article without downloading media
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request, urllib.parse, urllib.error, re, json, html
+          from html.parser import HTMLParser
+          uri='https://www.febbox.com/channel/article/bAodyOQ7'
+          headers={'User-Agent':'Mozilla/5.0 (compatible; PublicMetadataAudit/1.0)','Accept':'text/html'}
+          try:
+            req=urllib.request.Request(uri,headers=headers)
+            with urllib.request.urlopen(req, timeout=18) as resp:
+              body=resp.read(600_000).decode('utf-8','replace')
+              print('ARTICLE_STATUS',resp.status,'BYTES',len(body),'URL',resp.geturl())
+          except Exception as e:
+            print('ARTICLE_ACCESS_ERROR',type(e).__name__,str(e)[:250])
+            raise SystemExit(0)
+          print('ARTICLE_TITLE',re.findall(r'<title[^>]*>(.*?)</title>',body,re.I|re.S)[:1])
+          print('ARTICLE_HAS_MOVIES_LABEL','Movies' in body)
+          print('ARTICLE_HAS_TVSHOW_LABEL','TVshow' in body)
+          patterns=[
+            r'https?://(?:www\\.)?febbox\\.com/share/[A-Za-z0-9_-]+',
+            r'(?:(?:href|data-url|data-link|url|share_link)[\\s\\x22\\x27:=]+)([^\\x22\\x27\\s<>]+/share/[A-Za-z0-9_-]+)',
+            r'\\/share\\/[A-Za-z0-9_-]+',
+          ]
+          keys=set()
+          for pattern in patterns:
+            try:
+              for v in re.findall(pattern,body,re.I):
+                value=html.unescape(v).replace('\\/','/')
+                if '/share/' in value: keys.add(value.split('/share/')[-1].split('?')[0][:40])
+            except re.error as e: print('BAD_REGEX',str(e)[:100])
+          print('PUBLIC_SHARE_LINK_COUNT',len(keys))
+          print('PUBLIC_SHARE_KEY_SUFFIXES',[k[-4:] for k in sorted(keys)][:30])
+          print('HTML_REFERENCE_SHARE_LINK',body.count('share_link'))
+          print('HTML_HAS_REQUIRED_LOGIN', ('Sign In' in body or 'SIGN IN' in body))
+          # Static HTML preview around any public share widget / folder label.
+          for token in ('Movies','TVshow','share_link','shared_folder','data-share'):
+            start=body.find(token)
+            if start>=0:
+              area=body[max(0,start-160):start+420]
+              area=re.sub(r'(Authorization|Bearer|access_token|session|password)[^<>]{0,160}',r'[private metadata]',area,flags=re.I)
+              area=re.sub(r'/share/[A-Za-z0-9_-]+','/share/[public-id]',area)
+              print('CONTEXT',token,re.sub(r'\\s+',' ',area)[:500])
+          PY
