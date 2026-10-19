@@ -437,7 +437,13 @@ function createXSSourceSubtitles(env) {
   }
   function tick() { observeSource(); bindVideoTiming(); reportCaption(); }
   function dispose() { disposed = true; pending = null; for (const id of timers) win.clearTimeout(id); timers.clear(); }
-  return {frameID, scan, publish, select, reset, tick, hidePanels, dispose, syncPoint,
+  function clearSync() {
+    subtitleRate=1;
+    syncPoints=[];
+    delay=0;
+    reportCaption();
+  }
+  return {frameID, scan, publish, select, reset, tick, hidePanels, dispose, syncPoint, clearSync,
     setDelay(value) {
       const next=Number(value);
       if(!Number.isFinite(next)) return;
