@@ -126,6 +126,9 @@ async function xsSmartAutoSync() {
         const t=Number(video.currentTime);
         if (lastTime>=0&&(t<lastTime-.7||t>lastTime+2.5)) {seeked=true;resolve();return;}
         lastTime=t;
+        // Capture real rendered cue onset/offset for DOM-only players too.
+        // This observation never touches the source's audio or caption nodes.
+        if (!trackFor(active)) captureSourceCaption(video);
         analyser.getByteTimeDomainData(chunk);
         let power=0;
         for(let i=0;i<chunk.length;i++){const centered=(chunk[i]-128)/128;power+=centered*centered;}
