@@ -206,6 +206,18 @@ struct XSReferenceCatalogView: View {
     @State private var listMode = false
     @State private var sortMode: SortMode = .suggested
 
+    private struct CachedCollection {
+        let items: [MediaItem]
+        let nextPage: Int
+        let hasMore: Bool
+    }
+    @State private var collectionCache: [String: CachedCollection] = [:]
+    @State private var cacheOrder: [String] = []
+
+    private var currentCacheKey: String {
+        "\(kind.rawValue):\(selectedCollection.id)"
+    }
+
     private enum SortMode: String, CaseIterable, Identifiable {
         case suggested = "مقترحة"
         case rating = "الأعلى تقييماً"
@@ -291,7 +303,7 @@ struct XSReferenceCatalogView: View {
                 .padding(.bottom, 48)
             }
             .scrollIndicators(.hidden)
-            .refreshable { await reload() }
+            .refreshable { await reload(force: true) }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(XSV3.ink.opacity(0.97), for: .navigationBar)
@@ -530,14 +542,21 @@ struct XSReferenceCatalogView: View {
     }
 
     @MainActor
-    private func reload() async {
+    private func reload(force: Bool = false) async {
         let generation = UUID()
         requestGeneration = generation
+        isLoading = false
+        loadError = nil
+        if !force, query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let cached = collectionCache[currentCacheKey] {
+            loaded = cached.items
+            nextPage = cached.nextPage
+            hasMore = cached.hasMore
+            return
+        }
         loaded = []
         nextPage = 1
         hasMore = true
-        isLoading = false
-        loadError = nil
         await loadNextPage(generation: generation)
     }
 
@@ -571,6 +590,16 @@ struct XSReferenceCatalogView: View {
             nextPage += 1
             hasMore = response.hasMore
             loadError = nil
+            if searchText.isEmpty {
+                let key = currentCacheKey
+                collectionCache[key] = CachedCollection(items: loaded, nextPage: nextPage, hasMore: hasMore)
+                cacheOrder.removeAll { $0 == key }
+                cacheOrder.append(key)
+                while cacheOrder.count > 8 {
+                    let oldest = cacheOrder.removeFirst()
+                    collectionCache[oldest] = nil
+                }
+            }
         } catch {
             guard requestGeneration == generation else { return }
             loadError = error.localizedDescription
