@@ -1,0 +1,61 @@
+name: Febbox Public Media Metadata Capability
+on:
+  push:
+    branches: ["diagnostics-febbox-public-20261019"]
+    paths: [".github/workflows/probe-febbox-media.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  media:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Verify authorized public share exposes one media item's playback variants
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request,urllib.parse,urllib.error,html,re
+          key='C2jBoH52'
+          headers={'User-Agent':'Mozilla/5.0','X-Requested-With':'XMLHttpRequest','Accept':'application/json','Referer':'https://www.febbox.com/share/'+key}
+          def browse(parent):
+            uri='https://www.febbox.com/file/file_share_list?'+urllib.parse.urlencode({'share_key':key,'pwd':'','parent_id':parent,'is_html':0,'page':1})
+            req=urllib.request.Request(uri,headers=headers)
+            with urllib.request.urlopen(req,timeout=20) as resp:
+              data=json.loads(resp.read(800000))
+            return (data.get('data') or {}).get('file_list') or []
+          nodes=[(0,0)]
+          seen=set()
+          file=None
+          while nodes and len(seen)<40:
+            parent,depth=nodes.pop(0)
+            if parent in seen:continue
+            seen.add(parent)
+            if depth>5:continue
+            try: items=browse(parent)
+            except Exception as e: print('BROWSE_ERROR',type(e).__name__);continue
+            for row in items[:80]:
+              if str(row.get('is_dir'))=='1':
+                if row.get('fid'):nodes.append((row['fid'],depth+1))
+              elif str(row.get('ext','')).lower() in ['mp4','mkv','m4v','mov','avi','ts','webm']:
+                file=row
+                break
+            if file:break
+          print('FOLDERS_SCANNED',len(seen),'FOUND_VIDEO',bool(file))
+          if not file:raise SystemExit(0)
+          fid=file.get('fid')
+          print('MEDIA_FILE_FIELDS_PRESENT',bool(fid),bool(file.get('runtime')),bool(file.get('has_video_quality')),'EXT',file.get('ext'))
+          uri='https://www.febbox.com/console/video_quality_list?'+urllib.parse.urlencode({'fid':fid})
+          try:
+            req=urllib.request.Request(uri,headers=headers)
+            with urllib.request.urlopen(req,timeout=15) as resp:
+              raw=resp.read(160000)
+              doc=json.loads(raw)
+              fragment=doc.get('html','')
+              print('ANON_QUALITY_STATUS',resp.status,'JSON_KEYS',list(doc.keys()),
+                'HTML_PRESENT',bool(fragment),'QUALITY_OPTIONS',len(re.findall('file_quality',fragment)),
+                'DATA_URL_ATTRS',len(re.findall('data-url=',fragment)))
+          except urllib.error.HTTPError as e:
+            print('ANON_QUALITY_HTTP_ERROR',e.code)
+          except Exception as e:
+            print('ANON_QUALITY_ERROR',type(e).__name__,str(e)[:90])
+          PY
