@@ -4,7 +4,7 @@ import VLCKitSPM
 // Source-synchronized native tracks: no subtitle scraping, external SRT
 // matching, or synthetic offsets. The same underlying VLC engine powers sports.
 struct XSVODSubtitleTrack: Identifiable, Hashable {
-    let id: Int32
+    let id: Int
     let name: String
 }
 
@@ -75,6 +75,7 @@ struct XSVODVLCPlayerView: View {
                         }
                         Menu {
                             Button("تحديث مسارات الترجمة") { model.refreshSubtitles() }
+                            Button("إيقاف الترجمة") { model.selectSubtitle(-1) }
                             if model.subtitles.isEmpty {
                                 Text("لا توجد مسارات ترجمة مدمجة في هذا الفيديو")
                             } else {
@@ -129,7 +130,7 @@ final class XSVODVLCPlayerModel: NSObject, ObservableObject, VLCMediaPlayerDeleg
     @Published var playing = false
     @Published var status: Status = .connecting
     @Published var subtitles: [XSVODSubtitleTrack] = []
-    @Published var selectedSubtitle: Int32 = -1
+    @Published var selectedSubtitle: Int = -1
     private var generation = 0
     private var refreshTask: Task<Void, Never>?
 
@@ -169,30 +170,34 @@ final class XSVODVLCPlayerModel: NSObject, ObservableObject, VLCMediaPlayerDeleg
         playing = false
     }
 
-    // The player exposes native MKV / MP4 track IDs. Those timings are
-    // carried by the media timestamps, so manually adding delay is unnecessary.
+    // VLC 4 exposes native per-media track objects. Those subtitle tracks
+    // carry the same source timestamps as the video, avoiding SRT time offsets.
     func refreshSubtitles() {
-        let names = player.videoSubTitlesNames as? [String] ?? []
-        let ids = player.videoSubTitlesIndexes as? [NSNumber] ?? []
-        let tracks = zip(names, ids).map { name, id in
-            XSVODSubtitleTrack(id: id.int32Value, name: name)
+        let tracks = Array(player.textTracks)
+        subtitles = tracks.enumerated().map { index, track in
+            XSVODSubtitleTrack(id: index, name: track.trackName)
         }
-        subtitles = tracks
-        if let selected = tracks.first(where: {
-            let s = $0.name.lowercased()
+        if let arabicIndex = tracks.firstIndex(where: {
+            let s = $0.trackName.lowercased()
             return s.contains("arabic") || s.contains("عربي")
                 || s.contains("العربية") || s.contains("ara") || s.contains(" ar ")
         }) {
-            player.currentVideoSubTitleIndex = selected.id
-            selectedSubtitle = selected.id
+            tracks[arabicIndex].isSelectedExclusively = true
+            selectedSubtitle = arabicIndex
         } else {
-            selectedSubtitle = player.currentVideoSubTitleIndex
+            selectedSubtitle = tracks.firstIndex(where: { $0.isSelected }) ?? -1
         }
     }
 
-    func selectSubtitle(_ id: Int32) {
-        player.currentVideoSubTitleIndex = id
-        selectedSubtitle = id
+    func selectSubtitle(_ index: Int) {
+        let tracks = Array(player.textTracks)
+        if index < 0 {
+            for track in tracks where track.isSelected { track.isSelected = false }
+            selectedSubtitle = -1
+        } else if tracks.indices.contains(index) {
+            tracks[index].isSelectedExclusively = true
+            selectedSubtitle = index
+        }
     }
 
     nonisolated func mediaPlayerStateChanged(_ newState: VLCMediaPlayerState) {
