@@ -1,0 +1,52 @@
+name: Febbox Gentle Deep Folder Test
+on:
+  push:
+    branches: ["diagnostics-febbox-public-20261019"]
+    paths: [".github/workflows/probe-febbox-depth.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  depth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Probe bounded child depth without excess requests or media downloads
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.parse,urllib.error,json,time
+          key='C2jBoH52'
+          headers={'User-Agent':'Mozilla/5.0','X-Requested-With':'XMLHttpRequest','Accept':'application/json','Referer':'https://www.febbox.com/share/'+key}
+          parent=0
+          for depth in range(7):
+            uri='https://www.febbox.com/file/file_share_list?'+urllib.parse.urlencode({'share_key':key,'pwd':'','parent_id':parent,'is_html':0,'page':1})
+            try:
+              with urllib.request.urlopen(urllib.request.Request(uri,headers=headers),timeout=15) as response:
+                data=json.loads(response.read(500000))
+              files=(data.get('data') or {}).get('file_list') or []
+              types=[str(x.get('is_dir')) for x in files]
+              exts=[str(x.get('ext','')).lower() for x in files if str(x.get('is_dir'))!='1']
+              print('DEPTH',depth,'CODE',data.get('code'),'COUNT',len(files),'DIRS',types.count('1'),'SAMPLE_EXTS',sorted(set(exts))[:8])
+              media=next((x for x in files if str(x.get('is_dir'))!='1' and str(x.get('ext','')).lower() in ('mkv','mp4','m4v','mov')),None)
+              if media:
+                fid=media.get('fid')
+                uri='https://www.febbox.com/console/video_quality_list?'+urllib.parse.urlencode({'fid':fid})
+                try:
+                  with urllib.request.urlopen(urllib.request.Request(uri,headers=headers),timeout=15) as res:
+                    j=json.loads(res.read(200000))
+                    frag=j.get('html','')
+                    print('QUALITY_STATUS',res.status,'RESPONSE_KEYS',list(j.keys()),'QUALITY_ROWS',frag.count('file_quality'),'LINK_ATTRS',frag.count('data-url'))
+                except urllib.error.HTTPError as e:
+                  print('QUALITY_HTTP_CODE',e.code)
+                except Exception as e:
+                  print('QUALITY_ERROR',type(e).__name__)
+                break
+              folder=next((x for x in files if str(x.get('is_dir'))=='1' and x.get('fid')),None)
+              if not folder:break
+              parent=folder['fid']
+              time.sleep(1.4)
+            except urllib.error.HTTPError as e:
+              print('DEPTH',depth,'HTTP_CODE',e.code);break
+            except Exception as e:
+              print('DEPTH',depth,'ERROR',type(e).__name__,str(e)[:80]);break
+          PY
