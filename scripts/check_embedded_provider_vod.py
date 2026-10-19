@@ -47,3 +47,49 @@ for action, label in [
     except Exception as e:
         print(f"{label}: request failed ({type(e).__name__})")
 print("VOD diagnostic finished; no account data printed")
+
+
+# Lightweight stream probe. Read only 256 bytes and close; never download media,
+# reveal a playback URL, or print account credentials.
+def probe(kind, identifier, ext):
+    extension = str(ext).lower()
+    if extension not in ("mkv", "mp4", "ts", "m3u8", "avi"):
+        extension = "mp4"
+    safe = lambda value: urllib.parse.quote(value, safe="")
+    stream_url = host + "/" + kind + "/" + safe(user) + "/" + safe(pw)
+    stream_url += "/" + str(identifier) + "." + extension
+    req = urllib.request.Request(stream_url,
+         headers={"User-Agent":"XS-TV-iOS/1.0", "Range":"bytes=0-1023"})
+    try:
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = resp.read(256)
+            status = resp.status
+            mime = resp.headers.get("Content-Type","")
+        valid = status in (200,206) and len(data) > 0
+        print(kind + " sample stream:", "data received" if valid else "empty response",
+              "(HTTP " + str(status) + ")")
+        return valid
+    except Exception as e:
+        print(kind + " sample stream: failed (" + type(e).__name__ + ")")
+        return False
+
+try:
+    vod = request("get_vod_streams")
+    movies = [m for m in vod if isinstance(m,dict) and
+              str(m.get("container_extension","")).lower() in ("mkv","mp4")]
+    if movies:
+        probe("movie", movies[0]["stream_id"], movies[0]["container_extension"])
+except Exception as e:
+    print("Movie playback probe: " + type(e).__name__)
+
+try:
+    series = request("get_series")
+    info = next((r for r in series if isinstance(r,dict) and r.get("series_id")), None)
+    if info:
+        episodes = request("get_series_info", series_id=str(info["series_id"])).get("episodes", {})
+        first = next((e for rows in episodes.values()
+                      for e in rows if isinstance(e,dict) and e.get("id")), None)
+        if first:
+            probe("series", first["id"], first.get("container_extension","mp4"))
+except Exception as e:
+    print("Series playback probe: " + type(e).__name__)
