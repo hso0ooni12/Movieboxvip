@@ -57,6 +57,8 @@ struct EmptyStateView: View {
 }
 
 struct RemotePoster: View {
+    @Environment(\.displayScale) private var displayScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let item: MediaItem
     var backdrop = false
     var cornerRadius: CGFloat = 18
@@ -67,8 +69,12 @@ struct RemotePoster: View {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(Color.white.opacity(0.055))
 
-                if let url = item.imageURL(backdrop: backdrop, width: backdrop ? 1280 : 500) {
-                    AsyncImage(url: url, transaction: Transaction(animation: .easeInOut(duration: 0.28))) { phase in
+                // V7_IMAGE_DELIVERY: match network image size to visible points.
+                // Poster rails fetch w342/w500, landscape cards w780,
+                // and only full-width heroes request w1280 (never ORIGINAL).
+                let deliveredWidth = max(120, Int((proxy.size.width * displayScale).rounded(.up)))
+                if let url = item.imageURL(backdrop: backdrop, width: deliveredWidth) {
+                    AsyncImage(url: url, transaction: Transaction(animation: nil)) { phase in
                         switch phase {
                         case .success(let image):
                             image.resizable().scaledToFill()
