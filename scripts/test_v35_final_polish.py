@@ -177,7 +177,7 @@ assert 'XSFebboxPremiumHomeView(showSettings: $showSettings)' in root
 assert 'XSFebboxPremiumCatalogView(shelf: .movies)' in root
 assert 'XSFebboxPremiumCatalogView(shelf: .series)' in root
 assert "XSFebboxGlobalLibrarySearch" in premium
-assert 'XSGlobalSearchView()' not in root
+assert root.count(".xsGlobalSearchToolbar()") == 0
 assert 'title: "Anime Spotlight"' not in reference
 assert "Movies, series and anime in one place" not in global_search
 assert "Movies and series in one place" in global_search
