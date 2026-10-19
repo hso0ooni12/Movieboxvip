@@ -78,24 +78,11 @@ function createXSSourceSubtitles(env) {
     }).filter(it => it.label && it.label !== '✕');
   }
 
-  // Keep the source menu as the authority for loading and selecting tracks,
-  // but keep the native list focused on the two languages this app exposes.
-  // `catalog` intentionally retains every source row so no source-owned ID or
-  // click behaviour is rewritten; these rows are only filtered for display.
-  function preferredLanguage(item) {
-    const value = normal(item && item.label).toLowerCase();
-    if (/(^|[^a-z])(arabic|ar|ara)([^a-z]|$)/.test(value) || /العرب|عربي|عربية/.test(value)) return 'arabic';
-    if (/(^|[^a-z])(english|en|eng)([^a-z]|$)/.test(value) || /إنجلي|انجلي/.test(value)) return 'english';
-    return '';
-  }
+  // V11_ALL_SOURCE_SUBTITLES: every source-owned row remains selectable,
+  // including alternate tracks, SDH/CC, Arabic variants and other languages.
+  // Keep occurrences and ordering; only Off is rendered separately in Swift.
   function visibleCatalog() {
-    const seen = new Set();
-    return catalog.filter(item => {
-      const language = preferredLanguage(item);
-      if (!language || seen.has(language)) return false;
-      seen.add(language);
-      return true;
-    });
+    return catalog.filter(item => item.label && item.label !== 'Off');
   }
   function publish(final) {
     const current = rows();
@@ -142,9 +129,13 @@ function createXSSourceSubtitles(env) {
     return Array.from(v && v.textTracks || []).filter(t => /^(subtitles|captions)$/.test(t.kind) && t.mode !== 'disabled' && t.cues && t.cues.length);
   }
   function trackFor(item) {
-    const name = item.label.replace(/ \((In-Stream|Uploaded)\)$/, '');
-    return tracks().find(t => normal(t.label || t.language) === name ||
-      ((!t.label || t.label === 'Subtitles') && normal(t.language) === name)) || null;
+    // The site sometimes appends (SDH) / (Uploaded) to a menu choice while
+    // the loaded TextTrack exposes the base language. The checked source row
+    // remains mandatory before we report a successful track load.
+    const clean = value => normal(value).replace(/ \((?:In-Stream|Uploaded|SDH|CC|Forced|Hearing Impaired)\)$/i, '').toLowerCase();
+    const wanted = clean(item.label);
+    return tracks().find(t => clean(t.label || t.language) === wanted ||
+      ((!t.label || t.label === 'Subtitles') && clean(t.language) === wanted)) || null;
   }
   function caption(value) {
     if (value === lastCaption) return;
@@ -161,6 +152,10 @@ function createXSSourceSubtitles(env) {
     const customTiming = delay !== 0 && active && trackFor(active);
     for (const el of sourceCaptionNodes()) {
       el.style.setProperty('font-size', Math.round(22 * style.size) + 'px', 'important');
+      // Keep rendered cues legible on 4K/SD sources and within video width.
+      el.style.setProperty('max-width', '92%', 'important');
+      el.style.setProperty('line-height', '1.32', 'important');
+      el.style.setProperty('text-shadow', '0 1px 3px rgba(0,0,0,.90),0 2px 6px rgba(0,0,0,.55)', 'important');
       el.style.setProperty('color', style.color, 'important');
       el.style.setProperty('bottom', style.bottom + 'px', 'important');
       el.style.setProperty('background-color', style.background ? 'rgba(0,0,0,.68)' : 'transparent', 'important');
@@ -171,7 +166,8 @@ function createXSSourceSubtitles(env) {
   function reportCaption() {
     const selectedTrack = delay && active ? trackFor(active) : null;
     if (timingTrack && timingTrack !== selectedTrack) {
-      if (timingTrack.mode === 'hidden' && timingTrack.cues && timingTrack.cues.length) timingTrack.mode = 'showing';
+      if (timingTrack.mode === 'hidden' && timingTrack.cues && timingTrack.cues.length)
+        timingTrack.mode = 'showing';
       timingTrack = null;
     }
     if (selectedTrack && selectedTrack.mode === 'showing') {
@@ -181,12 +177,34 @@ function createXSSourceSubtitles(env) {
     applyStyle();
     if (!delay || !active) { caption(''); return; }
     const track = selectedTrack, v = findVideo();
-    if (!track || !v) { caption(''); return; }
+    if (!track || !v || !track.cues) { caption(''); return; }
     const at = Number(v.currentTime || 0) + delay;
-    const lines = Array.from(track.cues).filter(c => c.startTime <= at && at < c.endTime).map(c => c.text || '');
+    const cues = track.cues;
+    // V11_BINARY_CUE_SYNC: long subtitles may contain thousands of cues;
+    // avoid a full array copy/filter on every video tick. The browser's
+    // sorted TextTrackCueList allows binary search near the playback time.
+    let low = 0, high = cues.length - 1, last = -1;
+    while (low <= high) {
+      const mid = (low + high) >>> 1;
+      if (cues[mid].startTime <= at) { last = mid; low = mid + 1; }
+      else high = mid - 1;
+    }
+    const lines = [];
+    // Include a few earlier overlapping cues without scanning the whole list.
+    for (let i = Math.max(0, last - 4); i <= last && i < cues.length; i++) {
+      const cue = cues[i];
+      if (cue.startTime <= at && at < cue.endTime) lines.push(cue.text || '');
+    }
     caption(lines.join('\n'));
   }
   function reset() {
+    // Switching a provider must restore any text track hidden by our
+    // non-zero delay renderer. Keep the chosen delay within this movie/episode;
+    // Swift resets it to zero when a NEW content item starts.
+    if (timingTrack && timingTrack.mode === 'hidden') {
+      try { timingTrack.mode = 'showing'; } catch (_) {}
+    }
+    timingTrack = null;
     generation++; pending = null; active = null; catalog = []; caption('');
     if (ccButton()) send({event: 'xs:subtitles', final: false, items: []});
   }

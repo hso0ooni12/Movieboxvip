@@ -62,9 +62,9 @@ function fixture(options = {}) {
     clicks:()=>clickCount,opens:()=>openClicks,labels};
 }
 
-test('list exposes only the Arabic and English source rows, with no inferred indexes', async()=>{
+test('list exposes ALL source subtitles, without invented indexes or duplicates', async()=>{
   const f=fixture(); const items=await f.scan();
-  assert.deepEqual(items.map(x=>x.label),['English','Arabic']);
+  assert.deepEqual(items.map(x=>x.label),['English','Arabic','Arabic (SDH)','Español']);
   assert(items.every(x=>x.source==='source-menu' && x.index===null && x.frameID==='frame-A'));
   const p1=f.adapter.scan(),p2=f.adapter.scan(); await f.clock.tickAsync(100);await Promise.all([p1,p2]);
   assert.equal(f.opens(),1); f.cleanup();
@@ -72,7 +72,7 @@ test('list exposes only the Arabic and English source rows, with no inferred ind
 test('synchronously mounted source popup publishes without an artificial scan delay', async()=>{
   const f=fixture();
   await f.adapter.scan();
-  assert.deepEqual(f.last('xs:subtitles').items.map(x=>x.label),['English','Arabic']);
+  assert.deepEqual(f.last('xs:subtitles').items.map(x=>x.label),['English','Arabic','Arabic (SDH)','Español']);
   assert.equal(f.opens(),1);
   f.cleanup();
 });
@@ -90,12 +90,40 @@ test('reselecting the checked language ignores ✓ and does not toggle the popup
   await f.select(items[1],'r2');await f.clock.tickAsync(1000);
   assert.equal(f.last('xs:subtitleSelected').requestID,'r2');f.cleanup();
 });
-test('subtitle variants and unrelated source languages stay hidden without changing source selection',async()=>{
+test('subtitle variants and every source language remain available with exact selection',async()=>{
   const f=fixture({labels:['Arabic','Arabic (SDH)','English','Español']});const items=await f.scan();
-  assert.deepEqual(items.map(x=>x.label),['Arabic','English']);
+  assert.deepEqual(items.map(x=>x.label),['Arabic','Arabic (SDH)','English','Español']);
   await f.select(items[0]);await f.clock.tickAsync(1000);
   assert.equal(f.last('xs:subtitleSelected').id,items[0].id);
   assert.equal(f.textTracks.at(-1).label,'Arabic');f.cleanup();
+});
+test('SDH variant stays selectable and uses the exact source-owned menu row',async()=>{
+  const f=fixture({labels:['Arabic','Arabic (SDH)','English','Español']});
+  const items=await f.scan();
+  await f.select(items[1],'sdh-request');
+  await f.clock.tickAsync(1100);
+  assert.equal(f.last('xs:subtitleSelected').requestID,'sdh-request');
+  assert.equal(f.textTracks.at(-1).label,'Arabic (SDH)');
+  assert.equal(f.clicks(),1);
+  f.cleanup();
+});
+test('duplicate language rows preserve distinct source occurrences',async()=>{
+  const f=fixture({labels:['English','English','Español']});
+  const items=await f.scan();
+  assert.deepEqual(items.map(it=>it.label),['English','English','Español']);
+  assert.notEqual(items[0].id,items[1].id);
+  f.cleanup();
+});
+test('server reset restores a hidden timing track before a new provider loads',async()=>{
+  const f=fixture();const items=await f.scan();await f.select(items[1]);
+  await f.clock.tickAsync(1000);
+  const track=f.textTracks.at(-1);
+  track.mode='showing';
+  f.adapter.setDelay(1);
+  assert.equal(track.mode,'hidden');
+  f.adapter.reset();
+  assert.equal(track.mode,'showing');
+  f.cleanup();
 });
 test('Off goes through the source handler and only confirms after cues are cleared',async()=>{
   const f=fixture();const items=await f.scan();await f.select(items[1]);await f.clock.tickAsync(1000);
