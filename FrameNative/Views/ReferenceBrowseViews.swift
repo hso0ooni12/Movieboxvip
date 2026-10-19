@@ -275,6 +275,7 @@ struct XSReferenceCatalogView: View {
                         }
                     } else if loadError != nil && !loaded.isEmpty {
                         Button("إعادة محاولة تحميل المزيد") {
+                            loadError = nil
                             Task { await loadNextPage() }
                         }
                         .font(.system(size: 13, weight: .bold))
