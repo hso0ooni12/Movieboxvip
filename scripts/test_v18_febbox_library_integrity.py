@@ -10,6 +10,7 @@ view=Path("FrameNative/Views/XSFebboxLibraryView.swift").read_text()
 root=Path("FrameNative/Views/EnhancedRootView.swift").read_text()
 sports=Path("FrameNative/Views/SportsLiveViewV33.swift").read_text()
 player=Path("FrameNative/FrameXTVPlayerV6.swift").read_text()
+premium=Path("FrameNative/Views/XSFebboxPremiumCatalog.swift").read_text()
 # Only executable Swift code is inspected for embedded browser usage.
 # Comments may legitimately refer to WebView while explicitly rejecting it.
 view_code = "\n".join(line for line in view.splitlines()
@@ -54,7 +55,7 @@ checks={
     "AsyncImage" in view and
     "WebView" not in view_code and
     "WKWebView" not in view_code,
- "tab preserves the user's four original destinations":
+ "movies and series use Febbox only, keeping four main destinations":
     'Label("Home", systemImage: "house.fill")' in root and
     'Label("Movies", systemImage: "film.stack")' in root and
     'Label("Series", systemImage: "play.tv")' in root and
@@ -64,6 +65,13 @@ checks={
     'XSFebboxPremiumCatalogView(shelf: .movies)' in root and
     'XSFebboxPremiumCatalogView(shelf: .series)' in root and
     'Label("Febbox", systemImage: "externaldrive.fill")' not in root,
+ "new native catalog has real source-only navigation":
+    "XSFebboxLibraryService.shared.page(" in premium and
+    "XSFebboxTitleDestination(entry: " in premium and
+    "XSFebboxFileDetailsView(file:" in premium and
+    "TMDBClient" not in premium and
+    "FrameXTVPlayerScreen" not in premium and
+    "XSGlobalSearchView" not in premium,
  "no changes to R5 primary/Backup source engine":
     "const finishDispatchedSelection = () =>" in player and
     "sourceSubtitles.select(payload);" in player and
