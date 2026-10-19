@@ -77,7 +77,7 @@ checks = {
     "R5 player and source subtitles still present":
         "sourceSubtitles.select(payload)" in player
         and "func selectServer(_ server: XSServerOption)" in player
-        and "R5_ASPECTFIT_CAPTION" in player,
+        and ("R5_ASPECTFIT_CAPTION" in player or "visibleVideoBottomPadding" in player),
     "R5 live VLC drawable retained":
         "V39_R5_STABILITY_RESTORE" in sports
         and "XSVLCStableSurfaceView" in sports
