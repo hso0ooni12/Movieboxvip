@@ -436,16 +436,7 @@ function createXSSourceSubtitles(env) {
     later(verify, 70);
   }
   function tick() { observeSource(); bindVideoTiming(); reportCaption(); }
-  function dispose() {
-    disposed = true; pending = null;
-    if(timingVideo && timingHandler){
-      timingVideo.removeEventListener('timeupdate',timingHandler);
-      timingVideo.removeEventListener('seeked',timingHandler);
-    }
-    timingVideo=null;
-    for (const id of timers) win.clearTimeout(id);
-    timers.clear();
-  }
+  function dispose() { disposed = true; pending = null; for (const id of timers) win.clearTimeout(id); timers.clear(); }
   return {frameID, scan, publish, select, reset, tick, hidePanels, dispose, syncPoint,
     setDelay(value) {
       const next=Number(value);
