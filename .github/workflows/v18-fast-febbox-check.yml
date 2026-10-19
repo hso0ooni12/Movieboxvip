@@ -28,7 +28,7 @@ jobs:
           v=Path('FrameNative/Views/XSFebboxLibraryView.swift').read_text()
           r=Path('FrameNative/Views/EnhancedRootView.swift').read_text()
           checks={
-            'native navigation wired': 'XSFebboxLibraryView()' in r,
+            'native navigation wired': 'XSFebboxPremiumHomeView(showSettings: $showSettings)' in r and 'XSFebboxPremiumCatalogView(shelf: .movies)' in r and 'XSFebboxPremiumCatalogView(shelf: .series)' in r,
             'both public share keys': all(x in s for x in ('C2jBoH52','eHH8d0S1')),
             'nested file list paged': all(x in s for x in ('file_share_list','file_list','parent_id','page')),
             'no login tokens': all(x not in s+v for x in ('PHPSESSID','client_secret','auth_token','access_token')),
