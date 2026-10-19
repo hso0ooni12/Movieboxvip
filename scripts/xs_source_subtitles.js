@@ -8,6 +8,13 @@ function createXSSourceSubtitles(env) {
   let generation = 0, catalog = [], pending = null, active = null, opening = null;
   let lastVideo = null, lastSource = '', lastCaption = '', delay = 0, disposed = false;
   let timingTrack = null;
+  // V12: FrameXTV can render React DOM captions without TextTrack cues.
+  // Record real caption events at video media-time for positive delays.
+  let sourceCaptionHistory = [];
+  let sourceCaptionLast = null;
+  let sourceCaptionLastTime = -1;
+  let lastTimingMode = "";
+  let lastTimingOffset = 0;
   let style = {size: 1, color: '#ffffff', background: true, bottom: 76};
   const timers = new Set();
   const text = el => String(el && el.textContent || '').replace(/\s+/g, ' ').trim();
@@ -147,9 +154,50 @@ function createXSSourceSubtitles(env) {
     return Array.from(doc.querySelectorAll('div.pointer-events-none.text-center[style]')).filter(el =>
       !!el.style.textShadow && !el.querySelector('button,video,iframe'));
   }
+  function timingStatus(mode) {
+    if (mode === lastTimingMode && delay === lastTimingOffset) return;
+    lastTimingMode = mode;
+    lastTimingOffset = delay;
+    send({event:'xs:subtitleTimingStatus', mode, offset:delay});
+  }
+  function captureSourceCaption(video) {
+    if (!video || !active) return false;
+    const time = Number(video.currentTime || 0);
+    if (!Number.isFinite(time)) return false;
+    if (sourceCaptionLastTime >= 0 && time < sourceCaptionLastTime - 1.5) {
+      sourceCaptionHistory = [];
+      sourceCaptionLast = null;
+    }
+    sourceCaptionLastTime = time;
+    const names = [];
+    for (const node of sourceCaptionNodes()) {
+      const value = normal(node.textContent);
+      if (value && !names.includes(value)) names.push(value);
+    }
+    const cue = names.join('\n');
+    if (cue !== sourceCaptionLast) {
+      sourceCaptionLast = cue;
+      sourceCaptionHistory.push({at:time, text:cue});
+    }
+    while (sourceCaptionHistory.length > 300 || (sourceCaptionHistory.length &&
+      sourceCaptionHistory[0].at < time - 90)) {
+      sourceCaptionHistory.shift();
+    }
+    return names.length > 0 || sourceCaptionHistory.length > 0;
+  }
+  function delayedSourceCaption(at) {
+    let low=0, high=sourceCaptionHistory.length-1, match=-1;
+    while (low<=high) {
+      const mid=(low+high)>>>1;
+      if (sourceCaptionHistory[mid].at<=at) { match=mid;low=mid+1; }
+      else high=mid-1;
+    }
+    return match<0 ? '' : sourceCaptionHistory[match].text;
+  }
   function applyStyle() {
     hidePanels();
-    const customTiming = delay !== 0 && active && trackFor(active);
+    const customTiming = delay !== 0 && active &&
+      (trackFor(active) || (delay > 0 && sourceCaptionNodes().length > 0));
     for (const el of sourceCaptionNodes()) {
       el.style.setProperty('font-size', Math.round(22 * style.size) + 'px', 'important');
       // Keep rendered cues legible on 4K/SD sources and within video width.
@@ -164,38 +212,55 @@ function createXSSourceSubtitles(env) {
     }
   }
   function reportCaption() {
-    const selectedTrack = delay && active ? trackFor(active) : null;
+    const v = findVideo();
+    if (!active || !v || !delay) {
+      if (timingTrack && timingTrack.mode === 'hidden') {
+        try { timingTrack.mode = 'showing'; } catch (_) {}
+      }
+      timingTrack = null;
+      caption('');
+      timingStatus(!delay ? 'idle' : 'waiting');
+      applyStyle();
+      return;
+    }
+    // Capture original source DOM text before suppressing it; native Swift
+    // draws only the delayed line, without touching the video/audio pipeline.
+    const hasSourceDom = captureSourceCaption(v);
+    const selectedTrack = trackFor(active);
     if (timingTrack && timingTrack !== selectedTrack) {
-      if (timingTrack.mode === 'hidden' && timingTrack.cues && timingTrack.cues.length)
-        timingTrack.mode = 'showing';
+      if (timingTrack.mode === 'hidden') {
+        try { timingTrack.mode = 'showing'; } catch (_) {}
+      }
       timingTrack = null;
     }
     if (selectedTrack && selectedTrack.mode === 'showing') {
       timingTrack = selectedTrack;
       selectedTrack.mode = 'hidden';
     }
+    if (selectedTrack && selectedTrack.cues) {
+      const at = Number(v.currentTime || 0) + delay;
+      const cues = selectedTrack.cues;
+      let low=0, high=cues.length-1, match=-1;
+      while (low<=high) {
+        const mid=(low+high)>>>1;
+        if (cues[mid].startTime<=at) { match=mid; low=mid+1; }
+        else high=mid-1;
+      }
+      const lines=[];
+      for (let i=Math.max(0,match-4);i<=match;i++) {
+        const cue=cues[i];
+        if (cue.startTime<=at && at<cue.endTime) lines.push(cue.text||'');
+      }
+      caption(lines.join('\n'));
+      timingStatus('cues');
+    } else if (delay > 0 && hasSourceDom) {
+      caption(delayedSourceCaption(Number(v.currentTime || 0)-delay));
+      timingStatus('buffered');
+    } else {
+      caption('');
+      timingStatus('unsupported');
+    }
     applyStyle();
-    if (!delay || !active) { caption(''); return; }
-    const track = selectedTrack, v = findVideo();
-    if (!track || !v || !track.cues) { caption(''); return; }
-    const at = Number(v.currentTime || 0) + delay;
-    const cues = track.cues;
-    // V11_BINARY_CUE_SYNC: long subtitles may contain thousands of cues;
-    // avoid a full array copy/filter on every video tick. The browser's
-    // sorted TextTrackCueList allows binary search near the playback time.
-    let low = 0, high = cues.length - 1, last = -1;
-    while (low <= high) {
-      const mid = (low + high) >>> 1;
-      if (cues[mid].startTime <= at) { last = mid; low = mid + 1; }
-      else high = mid - 1;
-    }
-    const lines = [];
-    // Include a few earlier overlapping cues without scanning the whole list.
-    for (let i = Math.max(0, last - 4); i <= last && i < cues.length; i++) {
-      const cue = cues[i];
-      if (cue.startTime <= at && at < cue.endTime) lines.push(cue.text || '');
-    }
-    caption(lines.join('\n'));
   }
   function reset() {
     // Switching a provider must restore any text track hidden by our
@@ -206,6 +271,8 @@ function createXSSourceSubtitles(env) {
     }
     timingTrack = null;
     generation++; pending = null; active = null; catalog = []; caption('');
+    sourceCaptionHistory = []; sourceCaptionLast = null; sourceCaptionLastTime = -1;
+    lastTimingMode = '';
     if (ccButton()) send({event: 'xs:subtitles', final: false, items: []});
   }
   function observeSource() {
@@ -229,6 +296,8 @@ function createXSSourceSubtitles(env) {
     const wanted = payload.id === 'off' ? {id: 'off', label: 'Off'} : catalog.find(it => it.id === payload.id);
     const request = {requestID: payload.requestID, id: payload.id, epoch: generation};
     pending = request; active = null; caption('');
+    sourceCaptionHistory = []; sourceCaptionLast = null; sourceCaptionLastTime = -1;
+    lastTimingMode = '';
     if (!wanted) { finishFailure(request, 'This subtitle list changed. Open Subtitles again.'); return; }
     if (!await ensureMenu() || pending !== request || request.epoch !== generation) {
       finishFailure(request, 'Could not open the source subtitle menu. Try again.'); return;
