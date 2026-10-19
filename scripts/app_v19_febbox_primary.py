@@ -10,7 +10,6 @@ original = root.read_text(encoding="utf-8")
 assert ('XSFebboxPremiumHomeView(showSettings: $showSettings)' in original or
         'XSCinematicHomeView(showSettings: $showSettings)' in original)
 assert 'XSSportsLiveViewV33()' in original
-assert 'XSFebboxLibraryView()' in original
 
 root.write_text(r'''import SwiftUI
 
