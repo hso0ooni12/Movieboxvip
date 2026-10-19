@@ -199,23 +199,6 @@ function createXSSourceSubtitles(env) {
     }
     return match<0 ? '' : sourceCaptionHistory[match].text;
   }
-  function applyStyle() {
-    hidePanels();
-    const customTiming = (delay !== 0 || subtitleRate !== 1) && active &&
-      (trackFor(active) || (delay > 0 && sourceCaptionNodes().length > 0));
-    for (const el of sourceCaptionNodes()) {
-      el.style.setProperty('font-size', Math.round(22 * style.size) + 'px', 'important');
-      // Keep rendered cues legible on 4K/SD sources and within video width.
-      el.style.setProperty('max-width', '92%', 'important');
-      el.style.setProperty('line-height', '1.32', 'important');
-      el.style.setProperty('text-shadow', '0 1px 3px rgba(0,0,0,.90),0 2px 6px rgba(0,0,0,.55)', 'important');
-      el.style.setProperty('color', style.color, 'important');
-      el.style.setProperty('bottom', style.bottom + 'px', 'important');
-      el.style.setProperty('background-color', style.background ? 'rgba(0,0,0,.68)' : 'transparent', 'important');
-      if (customTiming) el.style.setProperty('opacity', '0', 'important');
-      else el.style.removeProperty('opacity');
-    }
-  }
   function findCueAt(track, time) {
     if (!track || !track.cues || !track.cues.length || !Number.isFinite(time)) return null;
     const cues=track.cues;
@@ -302,6 +285,23 @@ function createXSSourceSubtitles(env) {
       timingHandler=()=>{if(!disposed)reportCaption()};
       video.addEventListener('timeupdate',timingHandler);
       video.addEventListener('seeked',timingHandler);
+    }
+  }
+  function applyStyle() {
+    hidePanels();
+    const customTiming = (delay !== 0 || subtitleRate !== 1) && active &&
+      (trackFor(active) || (delay > 0 && sourceCaptionNodes().length > 0));
+    for (const el of sourceCaptionNodes()) {
+      el.style.setProperty('font-size', Math.round(22 * style.size) + 'px', 'important');
+      // Keep rendered cues legible on 4K/SD sources and within video width.
+      el.style.setProperty('max-width', '92%', 'important');
+      el.style.setProperty('line-height', '1.32', 'important');
+      el.style.setProperty('text-shadow', '0 1px 3px rgba(0,0,0,.90),0 2px 6px rgba(0,0,0,.55)', 'important');
+      el.style.setProperty('color', style.color, 'important');
+      el.style.setProperty('bottom', style.bottom + 'px', 'important');
+      el.style.setProperty('background-color', style.background ? 'rgba(0,0,0,.68)' : 'transparent', 'important');
+      if (customTiming) el.style.setProperty('opacity', '0', 'important');
+      else el.style.removeProperty('opacity');
     }
   }
   function reportCaption() {
