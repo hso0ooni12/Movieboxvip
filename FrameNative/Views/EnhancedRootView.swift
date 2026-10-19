@@ -27,7 +27,7 @@ struct EnhancedRootView: View {
             .preferredColorScheme(.dark)
         }
         .task {
-            try? await Task.sleep(nanoseconds: 250_000_000)
+            try? await Task.sleep(nanoseconds: 650_000_000)
             await MainActor.run {
                 withAnimation(.easeOut(duration: 0.24)) { showSplash = false }
             }
