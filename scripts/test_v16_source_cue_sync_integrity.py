@@ -56,7 +56,8 @@ checks={
     "return catalog.filter(item => item.label && item.label !== 'Off')" in source,
   "cue updates follow seeked/timeupdate and clean up listeners":
     "video.addEventListener('timeupdate',timingHandler)" in source and
-    "video.removeEventListener('seeked',timingHandler)" in source,
+    "timingVideo.removeEventListener('seeked',timingHandler)" in source and
+    "timingVideo.removeEventListener('seeked',timingHandler)" in p,
   "new subtitle/source does not inherit old point calibration":
     "subtitleRate=1;syncPoints=[];delay=0;" in source and
     ".onChange(of: player.selectedSubtitleID)" in p,
