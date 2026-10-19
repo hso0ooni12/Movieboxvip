@@ -263,7 +263,7 @@ test('two actual cue sync points correct progressive subtitle speed mismatch',as
 test('drift correction remains active even if the constant offset is zero',async()=>{
   const f=fixture({cues:[{startTime:0,endTime:5,text:'first'},{startTime:130,endTime:136,text:'end'}]});
   const items=await f.scan();await f.select(items[1]);await f.clock.tickAsync(1000);
-  f.video.currentTime=0.5;f.adapter.syncPoint();
+  f.video.currentTime=0;f.adapter.syncPoint();
   f.video.currentTime=134;f.adapter.syncPoint();
   const e=f.last('xs:subtitlePointResult');
   assert.equal(e.points,2);assert.ok(e.rate>1.02);
