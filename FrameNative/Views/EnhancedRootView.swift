@@ -65,6 +65,14 @@ struct EnhancedRootView: View {
             }
             .tabItem { Label("Sports", systemImage: "sportscourt.fill") }
             .tag(3)
+
+            // V18: native library browsing of the two publicly shared Febbox
+            // collections. Existing TMDB/player/AR sports tabs unchanged.
+            NavigationStack {
+                XSFebboxLibraryView()
+            }
+            .tabItem { Label("Febbox", systemImage: "externaldrive.fill") }
+            .tag(4)
         }
         .tint(XSCinemaStyle.accent)
         .toolbarBackground(XSCinemaStyle.background.opacity(0.96), for: .tabBar)
