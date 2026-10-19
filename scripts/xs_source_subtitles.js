@@ -152,6 +152,10 @@ function createXSSourceSubtitles(env) {
     const customTiming = delay !== 0 && active && trackFor(active);
     for (const el of sourceCaptionNodes()) {
       el.style.setProperty('font-size', Math.round(22 * style.size) + 'px', 'important');
+      // Keep rendered cues legible on 4K/SD sources and within video width.
+      el.style.setProperty('max-width', '92%', 'important');
+      el.style.setProperty('line-height', '1.32', 'important');
+      el.style.setProperty('text-shadow', '0 1px 3px rgba(0,0,0,.90),0 2px 6px rgba(0,0,0,.55)', 'important');
       el.style.setProperty('color', style.color, 'important');
       el.style.setProperty('bottom', style.bottom + 'px', 'important');
       el.style.setProperty('background-color', style.background ? 'rgba(0,0,0,.68)' : 'transparent', 'important');
@@ -162,7 +166,8 @@ function createXSSourceSubtitles(env) {
   function reportCaption() {
     const selectedTrack = delay && active ? trackFor(active) : null;
     if (timingTrack && timingTrack !== selectedTrack) {
-      if (timingTrack.mode === 'hidden' && timingTrack.cues && timingTrack.cues.length) timingTrack.mode = 'showing';
+      if (timingTrack.mode === 'hidden' && timingTrack.cues && timingTrack.cues.length)
+        timingTrack.mode = 'showing';
       timingTrack = null;
     }
     if (selectedTrack && selectedTrack.mode === 'showing') {
@@ -172,9 +177,24 @@ function createXSSourceSubtitles(env) {
     applyStyle();
     if (!delay || !active) { caption(''); return; }
     const track = selectedTrack, v = findVideo();
-    if (!track || !v) { caption(''); return; }
+    if (!track || !v || !track.cues) { caption(''); return; }
     const at = Number(v.currentTime || 0) + delay;
-    const lines = Array.from(track.cues).filter(c => c.startTime <= at && at < c.endTime).map(c => c.text || '');
+    const cues = track.cues;
+    // V11_BINARY_CUE_SYNC: long subtitles may contain thousands of cues;
+    // avoid a full array copy/filter on every video tick. The browser's
+    // sorted TextTrackCueList allows binary search near the playback time.
+    let low = 0, high = cues.length - 1, last = -1;
+    while (low <= high) {
+      const mid = (low + high) >>> 1;
+      if (cues[mid].startTime <= at) { last = mid; low = mid + 1; }
+      else high = mid - 1;
+    }
+    const lines = [];
+    // Include a few earlier overlapping cues without scanning the whole list.
+    for (let i = Math.max(0, last - 4); i <= last && i < cues.length; i++) {
+      const cue = cues[i];
+      if (cue.startTime <= at && at < cue.endTime) lines.push(cue.text || '');
+    }
     caption(lines.join('\n'));
   }
   function reset() {
