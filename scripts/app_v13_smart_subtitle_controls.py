@@ -35,19 +35,21 @@ for original,replacement in [
 ]:
     # Appearance reset and position controls differ slightly among R5 versions.
     p=p.replace(original,replacement)
-once(
-    "lowerBlackBar + min(CGFloat(subtitleBottom), 30)",
-    "lowerBlackBar + max(6, CGFloat(subtitleBottom))",
-    "portrait near-visible-video baseline"
-)
-# Landscape bottom gets same minimum safe inset.
-once(
-    ''': CGFloat(subtitleBottom)
-''',
-    ''': max(6, CGFloat(subtitleBottom))
-''',
-    "landscape lower caption bound"
-)
+# R5 has two proven geometry implementations. Support both *without*
+# rewriting captionOverlay or changing the actual video transform.
+if "lowerBlackBar + min(CGFloat(subtitleBottom), 30)" in p:
+    p=p.replace("lowerBlackBar + min(CGFloat(subtitleBottom), 30)",
+                "lowerBlackBar + max(6, CGFloat(subtitleBottom))",1)
+    p=p.replace(": CGFloat(subtitleBottom)",": max(6, CGFloat(subtitleBottom))",1)
+elif "R5_ASPECTFIT_CAPTION" in p:
+    # Existing .padding(.bottom, subtitleBottom) already supplies the
+    # selected inset, so offset only for the bottom letterbox bar.
+    original="return -blackBarBottom + max(0, CGFloat(subtitleBottom) - 30)"
+    if original not in p:
+        raise SystemExit("V13 R5 portrait geometry formula changed")
+    p=p.replace(original,"return -blackBarBottom",1)
+else:
+    raise SystemExit("V13: neither known R5 caption geometry available")
 
 # The source site has its own HTML cue overlay; align it to the low baseline
 # too. Native UI style command continues to override it on video launch.
