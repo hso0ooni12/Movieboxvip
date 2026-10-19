@@ -240,9 +240,11 @@ function createXSSourceSubtitles(env) {
     if (selectedTrack && selectedTrack.cues) {
       // Positive offset delays subtitles; negative offset advances them.
       const at = Number(v.currentTime || 0) - delay;
-      const cues = selectedTrack.cues;
+      // V11_BINARY_CUE_SYNC: O(log n) cue lookup for large subtitle files.
+      const track = selectedTrack;
+      const cues = track.cues;
       let low=0, high=cues.length-1, match=-1;
-      while (low<=high) {
+      while (low <= high) {
         const mid=(low+high)>>>1;
         if (cues[mid].startTime<=at) { match=mid; low=mid+1; }
         else high=mid-1;
