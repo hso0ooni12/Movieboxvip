@@ -75,6 +75,10 @@ function xsSmartCueWindows(video, activeTrack, history) {
 }
 
 let xsSmartSyncBusy=false, xsSmartSyncCancel=null;
+function xsSmartCancel() {
+  if (xsSmartSyncCancel) xsSmartSyncCancel();
+}
+
 async function xsSmartAutoSync() {
   if (xsSmartSyncBusy) return;
   const video=findVideo();
