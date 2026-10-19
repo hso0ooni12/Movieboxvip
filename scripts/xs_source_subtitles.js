@@ -15,6 +15,12 @@ function createXSSourceSubtitles(env) {
   let sourceCaptionLastTime = -1;
   let lastTimingMode = "";
   let lastTimingOffset = 0;
+  // V16_CUE_CLOCK_SYNC: align subtitles to the video's actual media time,
+  // with one sync point for constant offsets and two for gradual speed drift.
+  let subtitleRate = 1;
+  let syncPoints = [];
+  let timingVideo = null;
+  let timingHandler = null;
   const timers = new Set();
   const text = el => String(el && el.textContent || '').replace(/\s+/g, ' ').trim();
   const normal = s => String(s || '').replace(/\s+/g, ' ').trim();
@@ -193,9 +199,97 @@ function createXSSourceSubtitles(env) {
     }
     return match<0 ? '' : sourceCaptionHistory[match].text;
   }
+  function findCueAt(track, time) {
+    if (!track || !track.cues || !track.cues.length || !Number.isFinite(time)) return null;
+    const cues=track.cues;
+    let low=0,high=cues.length-1,last=-1;
+    while(low<=high){
+      const mid=(low+high)>>>1;
+      if(cues[mid].startTime<=time){last=mid;low=mid+1;}
+      else high=mid-1;
+    }
+    if(last<0) return null;
+    // Only accept cues which are actually on screen, not an assumed line.
+    for(let i=last;i>=Math.max(0,last-4);i--){
+      const cue=cues[i];
+      if(cue.startTime<=time && time<cue.endTime && normal(cue.text)) return cue;
+    }
+    return null;
+  }
+
+  function syncPoint() {
+    const v=findVideo(),track=active&&trackFor(active);
+    if(!v || !active || !track || !track.cues || !track.cues.length){
+      send({event:'xs:subtitlePointResult',ok:false,
+        message:'هذه الترجمة لا توفر توقيت الجمل الأصلي. استخدم + و− أو جرّب ترجمة أخرى.'});
+      return;
+    }
+    const now=Number(v.currentTime);
+    const sourceTime=(now-delay)/subtitleRate;
+    const cue=findCueAt(track,sourceTime);
+    if(!cue){
+      send({event:'xs:subtitlePointResult',ok:false,
+        message:'أظهر الجملة المطلوبة واضغط «مطابقة الجملة» عند سماع بدايتها.'});
+      return;
+    }
+    const chosen={source:Number(cue.startTime),video:now};
+    if (!Number.isFinite(chosen.source) || !Number.isFinite(now)) return;
+    const oldIndex=syncPoints.findIndex(p=>Math.abs(p.source-chosen.source)<.35);
+    if(oldIndex>=0) syncPoints.splice(oldIndex,1);
+    if(syncPoints.length===2) syncPoints.shift();
+    syncPoints.push(chosen);
+    syncPoints.sort((a,b)=>a.source-b.source);
+    if(syncPoints.length===1){
+      subtitleRate=1;
+      delay=chosen.video-chosen.source;
+      send({event:'xs:subtitlePointResult',ok:true,points:1,
+        offset:delay,rate:subtitleRate,
+        message:'تمت مطابقة الجملة. طابق جملة ثانية لاحقاً إذا زاد اختلاف التوقيت.'});
+    } else {
+      const [first,second]=syncPoints;
+      const distance=second.source-first.source;
+      if(distance<60){
+        syncPoints=[second];
+        subtitleRate=1;
+        delay=second.video-second.source;
+        send({event:'xs:subtitlePointResult',ok:true,points:1,
+          offset:delay,rate:subtitleRate,
+          message:'تم تحديث المطابقة. انتقل دقيقة أو أكثر لإضافة نقطة ثانية.'});
+      } else {
+        const candidateRate=(second.video-first.video)/distance;
+        if(!Number.isFinite(candidateRate) || candidateRate<.94 || candidateRate>1.06){
+          syncPoints=[first];
+          send({event:'xs:subtitlePointResult',ok:false,
+            message:'النقطتان لا تتوافقان مع نسخة الفيديو. لم نغيّر التوقيت.'});
+          return;
+        }
+        subtitleRate=candidateRate;
+        delay=first.video-subtitleRate*first.source;
+        send({event:'xs:subtitlePointResult',ok:true,points:2,
+          offset:delay,rate:subtitleRate,
+          message:'تمت مطابقة نقطتين وتصحيح اختلاف سرعة الترجمة.'});
+      }
+    }
+    reportCaption();
+  }
+
+  function bindVideoTiming() {
+    const video=findVideo();
+    if(timingVideo===video) return;
+    if(timingVideo && timingHandler){
+      timingVideo.removeEventListener('timeupdate',timingHandler);
+      timingVideo.removeEventListener('seeked',timingHandler);
+    }
+    timingVideo=video;
+    if(video){
+      timingHandler=()=>{if(!disposed)reportCaption()};
+      video.addEventListener('timeupdate',timingHandler);
+      video.addEventListener('seeked',timingHandler);
+    }
+  }
   function applyStyle() {
     hidePanels();
-    const customTiming = delay !== 0 && active &&
+    const customTiming = (delay !== 0 || subtitleRate !== 1) && active &&
       (trackFor(active) || (delay > 0 && sourceCaptionNodes().length > 0));
     for (const el of sourceCaptionNodes()) {
       el.style.setProperty('font-size', Math.round(22 * style.size) + 'px', 'important');
@@ -212,7 +306,7 @@ function createXSSourceSubtitles(env) {
   }
   function reportCaption() {
     const v = findVideo();
-    if (!active || !v || !delay) {
+    if (!active || !v || (delay === 0 && subtitleRate === 1)) {
       if (timingTrack && timingTrack.mode === 'hidden') {
         try { timingTrack.mode = 'showing'; } catch (_) {}
       }
@@ -238,7 +332,8 @@ function createXSSourceSubtitles(env) {
     }
     if (selectedTrack && selectedTrack.cues) {
       // Positive offset delays subtitles; negative offset advances them.
-      const at = Number(v.currentTime || 0) - delay;
+      // Map the video clock into the original caption clock for offset/drift.
+      const at = (Number(v.currentTime || 0) - delay) / subtitleRate;
       // V11_BINARY_CUE_SYNC: O(log n) cue lookup for large subtitle files.
       const track = selectedTrack;
       const cues = track.cues;
@@ -264,6 +359,12 @@ function createXSSourceSubtitles(env) {
     }
     applyStyle();
   }
+  function clearSync() {
+    subtitleRate=1;
+    syncPoints=[];
+    delay=0;
+    reportCaption();
+  }
   function reset() {
     // Switching a provider must restore any text track hidden by our
     // non-zero delay renderer. Keep the chosen delay within this movie/episode;
@@ -272,6 +373,7 @@ function createXSSourceSubtitles(env) {
       try { timingTrack.mode = 'showing'; } catch (_) {}
     }
     timingTrack = null;
+    subtitleRate=1;syncPoints=[];delay=0;
     generation++; pending = null; active = null; catalog = []; caption('');
     sourceCaptionHistory = []; sourceCaptionLast = null; sourceCaptionLastTime = -1;
     lastTimingMode = '';
@@ -298,6 +400,7 @@ function createXSSourceSubtitles(env) {
     const wanted = payload.id === 'off' ? {id: 'off', label: 'Off'} : catalog.find(it => it.id === payload.id);
     const request = {requestID: payload.requestID, id: payload.id, epoch: generation};
     pending = request; active = null; caption('');
+    subtitleRate=1;syncPoints=[];delay=0;
     sourceCaptionHistory = []; sourceCaptionLast = null; sourceCaptionLastTime = -1;
     lastTimingMode = '';
     if (!wanted) { finishFailure(request, 'This subtitle list changed. Open Subtitles again.'); return; }
@@ -338,10 +441,15 @@ function createXSSourceSubtitles(env) {
     };
     later(verify, 70);
   }
-  function tick() { observeSource(); reportCaption(); }
+  function tick() { observeSource(); bindVideoTiming(); reportCaption(); }
   function dispose() { disposed = true; pending = null; for (const id of timers) win.clearTimeout(id); timers.clear(); }
-  return {frameID, scan, publish, select, reset, tick, hidePanels, dispose,
-    setDelay(value) { delay = Number(value) || 0; reportCaption(); },
+  return {frameID, scan, publish, select, reset, tick, hidePanels, dispose, syncPoint, clearSync,
+    setDelay(value) {
+      const next=Number(value);
+      if(!Number.isFinite(next)) return;
+      if(Math.abs(next-delay)>.001) syncPoints=[];
+      delay=next;reportCaption();
+    },
     setStyle(value) { style = {...style, ...value}; applyStyle(); }};
 }
 if (typeof module !== 'undefined' && module.exports) module.exports = {createXSSourceSubtitles};

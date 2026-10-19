@@ -11,7 +11,7 @@ checks={
  "source command delivers actual UI offset": 'send(["action": "subtitleDelay", "seconds": seconds])' in player and
        "sourceSubtitles.setDelay(" in player,
  "real TextTrack caption uses video media time with correct sign":
-       "const at = Number(v.currentTime || 0) - delay;" in source and
+       "const at = (Number(v.currentTime || 0) - delay) / subtitleRate;" in source and
        "V11_BINARY_CUE_SYNC" in source,
  "source-only React subtitles buffered rather than ignored":
        "sourceCaptionHistory" in source and

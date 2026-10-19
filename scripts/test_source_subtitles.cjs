@@ -35,7 +35,7 @@ function fixture(options = {}) {
       return;
     }
     textTracks.push({kind:'subtitles', label:options.genericTrackLabel?'Subtitles':labels[index], language:index===1?'ar':'en', mode:'hidden',
-      cues:[{startTime:0,endTime:5,text:index===1?'مرحبا':'Hello'},{startTime:5,endTime:9,text:'Next'}]});
+      cues:options.cues || [{startTime:0,endTime:5,text:index===1?'مرحبا':'Hello'},{startTime:5,endTime:9,text:'Next'}]});
   }
   function open() {
     if (doc.querySelector('#menu')) return;
@@ -230,6 +230,72 @@ test('timing adjustment suppresses and then restores native in-stream cues',asyn
   f.textTracks.at(-1).mode='showing';f.adapter.setDelay(1);
   assert.equal(f.textTracks.at(-1).mode,'hidden');f.adapter.setDelay(0);
   assert.equal(f.textTracks.at(-1).mode,'showing');f.cleanup();
+});
+test('source-aligned sync point uses true selected cue start, not arbitrary guessed track',async()=>{
+  const f=fixture(); const items=await f.scan();await f.select(items[1]);await f.clock.tickAsync(1000);
+  f.video.currentTime=2;f.adapter.syncPoint();
+  const event=f.last('xs:subtitlePointResult');
+  assert.equal(event.ok,true);assert.equal(event.points,1);
+  assert.equal(event.offset,2);assert.equal(event.rate,1);
+  f.video.currentTime=6;f.adapter.tick();
+  assert.equal(f.last('xs:caption').text,'مرحبا'); // (6-2)=4
+  f.cleanup();
+});
+test('two actual cue sync points correct progressive subtitle speed mismatch',async()=>{
+  const f=fixture({cues:[
+    {startTime:0,endTime:5,text:'first'},
+    {startTime:65,endTime:70,text:'middle'},
+    {startTime:130,endTime:135,text:'last'}
+  ]});
+  const items=await f.scan();await f.select(items[1]);await f.clock.tickAsync(1000);
+  f.video.currentTime=2;f.adapter.syncPoint();
+  assert.equal(f.last('xs:subtitlePointResult').offset,2);
+  f.video.currentTime=136;f.adapter.syncPoint();
+  const e=f.last('xs:subtitlePointResult');
+  assert.equal(e.ok,true);assert.equal(e.points,2);
+  assert.ok(Math.abs(e.rate-(134/130))<1e-8);
+  assert.equal(e.offset,2);
+  f.video.currentTime=136;f.adapter.tick();
+  assert.equal(f.last('xs:caption').text,'last');
+  assert.equal(f.doc.querySelector('#cue').style.opacity,'0');
+  f.cleanup();
+});
+test('drift correction remains active even if the constant offset is zero',async()=>{
+  const f=fixture({cues:[{startTime:0,endTime:5,text:'first'},{startTime:130,endTime:136,text:'end'}]});
+  const items=await f.scan();await f.select(items[1]);await f.clock.tickAsync(1000);
+  f.video.currentTime=0;f.adapter.syncPoint();
+  f.video.currentTime=134;f.adapter.syncPoint();
+  const e=f.last('xs:subtitlePointResult');
+  assert.equal(e.points,2);assert.ok(e.rate>1.02);
+  f.video.currentTime=135;f.adapter.tick();
+  assert.equal(f.doc.querySelector('#cue').style.opacity,'0');
+  assert.equal(f.last('xs:subtitleTimingStatus').mode,'cues');
+  f.cleanup();
+});
+test('center reset clears BOTH caption offset and two-point speed drift',async()=>{
+  const f=fixture({cues:[{startTime:0,endTime:5,text:'first'},{startTime:130,endTime:136,text:'end'}]});
+  const items=await f.scan();await f.select(items[1]);await f.clock.tickAsync(1000);
+  f.video.currentTime=0;f.adapter.syncPoint();
+  f.video.currentTime=134;f.adapter.syncPoint();
+  assert.equal(f.last('xs:subtitlePointResult').points,2);
+  assert.equal(f.doc.querySelector('#cue').style.opacity,'0');
+  f.adapter.clearSync();
+  assert.equal(f.doc.querySelector('#cue').style.opacity,'');
+  f.cleanup();
+});
+test('DOM-only subtitles refuse timing point matching without source timestamps',async()=>{
+  const f=fixture({domOnly:true});const items=await f.scan();await f.select(items[1]);await f.clock.tickAsync(1100);
+  f.video.currentTime=4;f.adapter.syncPoint();
+  assert.equal(f.last('xs:subtitlePointResult').ok,false);
+  assert.match(f.last('xs:subtitlePointResult').message,/لا توفر/);
+  f.cleanup();
+});
+test('different subtitle or server resets point anchors without leaking offsets',async()=>{
+  const f=fixture();const items=await f.scan();await f.select(items[1]);await f.clock.tickAsync(950);
+  f.video.currentTime=1;f.adapter.syncPoint();assert.equal(f.last('xs:subtitlePointResult').offset,1);
+  f.adapter.reset();f.adapter.tick();
+  assert.equal(f.doc.querySelector('#cue').style.opacity,'');
+  f.cleanup();
 });
 test('generated production bridge parses and safely starts before documentElement exists',()=>{
   const swift=fs.readFileSync('FrameNative/FrameXTVPlayerV6.swift','utf8');
