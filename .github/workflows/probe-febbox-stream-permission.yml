@@ -1,0 +1,61 @@
+name: Febbox Limited Stream Permission Audit
+on:
+  push:
+    branches: ["diagnostics-febbox-public-20261019"]
+    paths: [".github/workflows/probe-febbox-stream-permission.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  stream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read-only sample official public share tree and validate one quality endpoint
+        run: |
+          python3 - <<'PY'
+          import json,time,urllib.request,urllib.parse,urllib.error
+          k='C2jBoH52'
+          headers={'User-Agent':'Mozilla/5.0','X-Requested-With':'XMLHttpRequest','Accept':'application/json','Referer':'https://www.febbox.com/share/'+k}
+          def browse(parent=0,page=1):
+            q=urllib.parse.urlencode({'share_key':k,'pwd':'','parent_id':parent,'page':page,'is_html':0})
+            url='https://www.febbox.com/file/file_share_list?'+q
+            with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=18) as r:
+              data=json.loads(r.read(800000))
+            return ((data.get('data') or {}).get('file_list') or []) if data.get('code')==1 else []
+          roots=browse(0,1)+browse(0,2)+browse(0,3)
+          selected=[roots[i] for i in (0,10,25,50,75,100) if i<len(roots)]
+          queue=[(r.get('fid'),1) for r in selected if str(r.get('is_dir'))=='1']
+          seen=set();video=None;errors={}
+          for step in range(19):
+            if not queue or video:break
+            fid,level=queue.pop(0)
+            if not fid or fid in seen or level>5:continue
+            seen.add(fid)
+            time.sleep(.8)
+            try:files=browse(fid)
+            except urllib.error.HTTPError as e:
+              errors[e.code]=errors.get(e.code,0)+1
+              continue
+            except Exception as e:
+              errors[type(e).__name__]=errors.get(type(e).__name__,0)+1
+              continue
+            movies=[x for x in files if str(x.get('is_dir'))!='1' and str(x.get('ext','')).lower() in ('mp4','mkv','mov','m4v')]
+            print('SAMPLED_LEVEL',level,'FILE_COUNT',len(files),'MEDIA_COUNT',len(movies),'FOLDER_COUNT',sum(str(x.get('is_dir'))=='1' for x in files))
+            if movies:
+              video=movies[0]
+              break
+            queue.extend((x.get('fid'),level+1) for x in files[:4] if str(x.get('is_dir'))=='1')
+          print('TOTAL_CHILD_FOLDERS_TESTED',len(seen),'ERROR_COUNTS',errors,'FOUND_PUBLIC_VIDEO',bool(video))
+          if video:
+            fid=video.get('fid')
+            url='https://www.febbox.com/console/video_quality_list?'+urllib.parse.urlencode({'fid':fid})
+            try:
+              with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=18) as res:
+                raw=res.read(120000)
+              body=json.loads(raw)
+              h=str(body.get('html',''))
+              print('QUALITY_HTTP_OK',True,'RESULT_CODE',body.get('code'),'QUALITY_BLOCKS',h.count('file_quality'),'VIDEO_LINK_ATTRIBUTES',h.count('data-url'))
+            except urllib.error.HTTPError as e:print('QUALITY_HTTP_ERROR',e.code)
+            except Exception as e:print('QUALITY_FAILED',type(e).__name__)
+          PY
