@@ -170,7 +170,14 @@ assert "case adult" in tmdb
 assert "V37_ANIME_REMOVED" in root
 assert 'XSReferenceCatalogView(kind: .anime, title: "Anime")' not in root
 assert '.tabItem { Label("Anime"' not in root
-assert root.count(".xsGlobalSearchToolbar()") >= 4
+# The Febbox-only Home and catalog now own native search instead of
+# the removed TMDB global-search toolbar.
+premium = Path("FrameNative/Views/XSFebboxPremiumCatalog.swift").read_text(encoding="utf-8")
+assert 'XSFebboxPremiumHomeView(showSettings: $showSettings)' in root
+assert 'XSFebboxPremiumCatalogView(shelf: .movies)' in root
+assert 'XSFebboxPremiumCatalogView(shelf: .series)' in root
+assert "XSFebboxGlobalLibrarySearch" in premium
+assert 'XSGlobalSearchView()' not in root
 assert 'title: "Anime Spotlight"' not in reference
 assert "Movies, series and anime in one place" not in global_search
 assert "Movies and series in one place" in global_search
