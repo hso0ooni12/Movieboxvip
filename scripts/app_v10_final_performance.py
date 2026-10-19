@@ -97,9 +97,14 @@ path.write_text(text, encoding="utf-8")
 path = Path("FrameNative/Services/TMDBClient.swift")
 text = path.read_text(encoding="utf-8")
 needle = "        let (data, response) = try await URLSession.shared.data(for: request)"
-text = replace_one(text, needle,
+request_start = text.find("    private func request<T: Decodable>(")
+if request_start < 0 or needle not in text[request_start:]:
+    raise SystemExit("V10 metadata request transport not found")
+text = text[:request_start] + replace_one(
+    text[request_start:], needle,
     "        let (data, response) = try await XSMetadataRequestCache.shared.fetch(request)",
-    "metadata transport")
+    "metadata transport"
+)
 path.write_text(text, encoding="utf-8")
 
 # Home was all-or-nothing: one failed popular TV request could blank Movies too.
@@ -206,3 +211,64 @@ text = text[:a] + load + text[b:]
 path.write_text(text, encoding="utf-8")
 
 print("V10: cached/downsampled posters, coalesced TMDB, partial home success and cold-start snapshot installed.")
+
+
+# A many-thousand-channel Xtream cache was JSON-encoded and written into
+# UserDefaults synchronously on MainActor after refresh. Move only metadata
+# persistence off the UI thread, leaving the V5 provider/credential workflow
+# and the actual VLC stream untouched.
+path = Path("FrameNative/Services/IPTVService.swift")
+text = path.read_text(encoding="utf-8")
+start = text.find('    private let cacheKey = "xs.iptv.liveCatalog.v5"')
+end = text.find("    var usesEmbeddedCredentials: Bool {", start)
+if start < 0 or end < start:
+    raise SystemExit("V10 V5 IPTV cache boundaries missing")
+replacement = '''    // V10_IPTV_ASYNC_CACHE: no large JSON work on MainActor.
+    private func restoreCache(for current: IPTVCredentials) async {
+        let result = await XSIPTVCatalogDiskCache.shared.restore(
+            fingerprint: current.fingerprint
+        )
+        guard credentials?.fingerprint == current.fingerprint,
+              streams.isEmpty,
+              let result else { return }
+        categories = result.0
+        streams = result.1
+    }
+
+    private func persistCache(for current: IPTVCredentials) {
+        let signature = current.fingerprint
+        let snapshotCategories = categories
+        let snapshotStreams = streams
+        Task.detached(priority: .utility) {
+            await XSIPTVCatalogDiskCache.shared.persist(
+                fingerprint: signature,
+                categories: snapshotCategories,
+                streams: snapshotStreams
+            )
+        }
+    }
+
+'''
+text = text[:start] + replacement + text[end:]
+text = replace_one(text,
+    '        if let credentials { restoreCache(for: credentials) }\n',
+    '        // Sports screen restores cache asynchronously before refresh.\n',
+    "IPTV main actor init")
+text = replace_one(text,
+    '        UserDefaults.standard.removeObject(forKey: cacheKey)',
+    '        Task { await XSIPTVCatalogDiskCache.shared.clear() }',
+    "IPTV disconnect")
+text = replace_one(text,
+    '            restoreCache(for: credentials)',
+    '            await restoreCache(for: credentials)',
+    "IPTV async restore")
+path.write_text(text, encoding="utf-8")
+
+# Remove unnecessary cold-start waiting after the app's main tab UI mounts.
+# Keep the splash itself and maintain the original navigation stack.
+path = Path("FrameNative/Views/EnhancedRootView.swift")
+text = path.read_text(encoding="utf-8")
+text = replace_one(text, "650_000_000", "250_000_000", "splash duration")
+path.write_text(text, encoding="utf-8")
+
+print("V10: large Xtream cache now uses background actor + atomic file; shorter startup splash.")
