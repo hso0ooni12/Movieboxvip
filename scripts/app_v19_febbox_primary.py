@@ -7,7 +7,8 @@ from pathlib import Path
 root = Path("FrameNative/Views/EnhancedRootView.swift")
 assert root.exists(), "Missing XS TV root view"
 original = root.read_text(encoding="utf-8")
-assert 'XSCinematicHomeView(showSettings: $showSettings)' in original
+assert ('XSFebboxPremiumHomeView(showSettings: $showSettings)' in original or
+        'XSCinematicHomeView(showSettings: $showSettings)' in original)
 assert 'XSSportsLiveViewV33()' in original
 assert 'XSFebboxLibraryView()' in original
 
