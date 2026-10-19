@@ -201,7 +201,7 @@ function createXSSourceSubtitles(env) {
   }
   function applyStyle() {
     hidePanels();
-    const customTiming = delay !== 0 && active &&
+    const customTiming = (delay !== 0 || subtitleRate !== 1) && active &&
       (trackFor(active) || (delay > 0 && sourceCaptionNodes().length > 0));
     for (const el of sourceCaptionNodes()) {
       el.style.setProperty('font-size', Math.round(22 * style.size) + 'px', 'important');
