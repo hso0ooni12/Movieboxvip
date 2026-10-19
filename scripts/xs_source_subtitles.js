@@ -359,6 +359,12 @@ function createXSSourceSubtitles(env) {
     }
     applyStyle();
   }
+  function clearSync() {
+    subtitleRate=1;
+    syncPoints=[];
+    delay=0;
+    reportCaption();
+  }
   function reset() {
     // Switching a provider must restore any text track hidden by our
     // non-zero delay renderer. Keep the chosen delay within this movie/episode;
@@ -437,12 +443,6 @@ function createXSSourceSubtitles(env) {
   }
   function tick() { observeSource(); bindVideoTiming(); reportCaption(); }
   function dispose() { disposed = true; pending = null; for (const id of timers) win.clearTimeout(id); timers.clear(); }
-  function clearSync() {
-    subtitleRate=1;
-    syncPoints=[];
-    delay=0;
-    reportCaption();
-  }
   return {frameID, scan, publish, select, reset, tick, hidePanels, dispose, syncPoint, clearSync,
     setDelay(value) {
       const next=Number(value);
