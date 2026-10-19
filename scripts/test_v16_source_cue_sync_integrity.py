@@ -43,6 +43,10 @@ checks={
   "rate-only drift correction is displayed at zero offset":
     "(delay !== 0 || subtitleRate !== 1) && active" in p and
     "(delay === 0 && subtitleRate === 1)" in source,
+  "reset clears both offset and speed calibration":
+    'subtitleSyncReset' in p and 'sourceSubtitles.clearSync();' in p
+    and 'player.clearSubtitleCalibration()' in p
+    and 'function clearSync()' in source,
   "source cue editor no longer includes audio analysis or made-up timing":
     "function syncPoint()" in source and "return {frameID, scan, publish, select, reset, tick, hidePanels, dispose, syncPoint," in source and
     "captureStream(" not in source and "getUserMedia(" not in source and
