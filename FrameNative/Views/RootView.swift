@@ -196,10 +196,9 @@ struct SettingsView: View {
         }
         .onChange(of: selectedLanguage) { newValue in
             guard newValue != app.language else { return }
+            // Febbox is the only movies/series inventory; a language
+            // preference must never trigger the deprecated TMDB catalog.
             app.language = newValue
-            Task {
-                await app.loadHome(force: true)
-            }
         }
         .confirmationDialog(
             "Clear Continue Watching history?",

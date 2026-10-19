@@ -12,7 +12,7 @@ sports = read("FrameNative/Views/SportsLiveViewV33.swift")
 search = read("FrameNative/Views/GlobalSearchView.swift")
 player = read("FrameNative/FrameXTVPlayerV6.swift")
 checks = {
-    "new cinematic home is routed": "XSCinematicHomeView(showSettings: $showSettings)" in root,
+    "new cinematic home is routed": "XSFebboxPremiumHomeView(showSettings: $showSettings)" in root,
     "tab navigation is owned by TabView": "TabView(selection: $selectedTab)" in root and "tabControl(" not in root,
     "no floating root overlay": "ZStack(alignment: .bottom)" not in root and ".safeAreaInset(edge: .bottom" not in root,
     "native bar respects movie player": ".toolbar(.hidden, for: .tabBar)" in player,

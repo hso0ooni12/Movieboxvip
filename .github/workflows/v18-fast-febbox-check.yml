@@ -1,0 +1,42 @@
+name: V18 Fast Python and Febbox Library Check
+on:
+  push:
+    branches: ["r5-premium-v18-febbox-library-20261019"]
+    paths:
+      - ".github/workflows/v18-fast-febbox-check.yml"
+      - "scripts/test_v18_febbox_library_integrity.py"
+      - "FrameNative/Services/XSFebboxLibraryService.swift"
+      - "FrameNative/Views/XSFebboxLibraryView.swift"
+      - "FrameNative/Views/EnhancedRootView.swift"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fast-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python syntax check that failed in prior V18 build
+        run: python3 -m py_compile scripts/test_v18_febbox_library_integrity.py
+      - name: Verify native library navigation and no embedded Febbox secrets
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('FrameNative/Services/XSFebboxLibraryService.swift').read_text()
+          v=Path('FrameNative/Views/XSFebboxLibraryView.swift').read_text()
+          r=Path('FrameNative/Views/EnhancedRootView.swift').read_text()
+          checks={
+            'native navigation wired': 'XSFebboxPremiumHomeView(showSettings: $showSettings)' in r and 'XSFebboxPremiumCatalogView(shelf: .movies)' in r and 'XSFebboxPremiumCatalogView(shelf: .series)' in r,
+            'both public share keys': all(x in s for x in ('C2jBoH52','eHH8d0S1')),
+            'nested file list paged': all(x in s for x in ('file_share_list','file_list','parent_id','page')),
+            'no login tokens': all(x not in s+v for x in ('PHPSESSID','client_secret','auth_token','access_token')),
+            'R5 original tabs intact': all(x in r for x in ('Label("Home"','Label("Movies"','Label("Series"','Label("Sports"')),
+            'iOS 16 compatibility': 'ContentUnavailableView' not in v,
+            'Python corrected': """'iOS: "16.0"' in""" in Path('scripts/test_v18_febbox_library_integrity.py').read_text()
+          }
+          for name,ok in checks.items():
+            if not ok: raise SystemExit('FAIL '+name)
+          print('V18 fast checks PASS:',len(checks))
+          PY

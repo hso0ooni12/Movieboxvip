@@ -5,6 +5,8 @@ struct EnhancedRootView: View {
     @State private var showSettings = false
     @State private var showSplash = true
     @State private var selectedTab = 0
+    @StateObject private var febboxCatalog = XSFebboxCatalogStore()
+    @StateObject private var febboxSaved = XSFebboxSavedItems()
 
     var body: some View {
         ZStack {
@@ -24,7 +26,6 @@ struct EnhancedRootView: View {
             }
             .preferredColorScheme(.dark)
         }
-        .task { await app.loadHome() }
         .task {
             try? await Task.sleep(nanoseconds: 650_000_000)
             await MainActor.run {
@@ -39,33 +40,32 @@ struct EnhancedRootView: View {
         // and VLC fullScreenCover, obscuring subtitles and scrub controls.
         TabView(selection: $selectedTab) {
             NavigationStack {
-                XSCinematicHomeView(showSettings: $showSettings)
-                    .xsGlobalSearchToolbar()
+                XSFebboxPremiumHomeView(showSettings: $showSettings)
             }
             .tabItem { Label("Home", systemImage: "house.fill") }
             .tag(0)
 
             NavigationStack {
-                XSReferenceCatalogView(kind: .movie, title: "Movies")
-                    .xsGlobalSearchToolbar()
+                XSFebboxPremiumCatalogView(shelf: .movies)
             }
             .tabItem { Label("Movies", systemImage: "film.stack") }
             .tag(1)
 
             NavigationStack {
-                XSReferenceCatalogView(kind: .tv, title: "Series")
-                    .xsGlobalSearchToolbar()
+                XSFebboxPremiumCatalogView(shelf: .series)
             }
             .tabItem { Label("Series", systemImage: "play.tv") }
             .tag(2)
 
             NavigationStack {
                 XSSportsLiveViewV33()
-                    .xsGlobalSearchToolbar()
             }
             .tabItem { Label("Sports", systemImage: "sportscourt.fill") }
             .tag(3)
+
         }
+        .environmentObject(febboxCatalog)
+        .environmentObject(febboxSaved)
         .tint(XSCinemaStyle.accent)
         .toolbarBackground(XSCinemaStyle.background.opacity(0.96), for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
