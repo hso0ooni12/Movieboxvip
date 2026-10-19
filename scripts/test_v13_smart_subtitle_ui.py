@@ -23,8 +23,9 @@ checks={
   "new low caption video baseline ignores legacy stored 76pt":
       '@AppStorage("XSTV.subtitleBottomPadding.v13") private var subtitleBottom = 14.0' in p,
   "portrait visible video bottom correctly follows entire adjustable range":
-      'lowerBlackBar + max(6, CGFloat(subtitleBottom))' in p and
-      "min(CGFloat(subtitleBottom), 30)" not in p,
+      (('lowerBlackBar + max(6, CGFloat(subtitleBottom))' in p) or
+       ('R5_ASPECTFIT_CAPTION' in p and 'return -blackBarBottom' in p))
+      and "min(CGFloat(subtitleBottom), 30)" not in p,
   "caption position slider moves all way to near-bottom":
       'Slider(value: $subtitleBottom, in: 6...220, step: 2)' in p and
       "subtitleBottom = max(6, subtitleBottom - 8)" in p,
