@@ -7,7 +7,7 @@ import WebKit
 // is shipped or saved to the IPA. We query pages lazily instead of downloading
 // the media itself. Playback links may still require Febbox authorization.
 
-enum XSFebboxShelf: String, CaseIterable, Identifiable, Sendable {
+enum XSFebboxShelf: String, CaseIterable, Identifiable, Sendable, Codable {
     case movies = "C2jBoH52"
     case series = "eHH8d0S1"
 
