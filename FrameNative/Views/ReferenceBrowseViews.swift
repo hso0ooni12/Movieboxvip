@@ -205,11 +205,39 @@ struct XSReferenceCatalogView: View {
     @State private var queryTask: Task<Void, Never>?
     @State private var listMode = false
     @State private var sortMode: SortMode = .suggested
+    @State private var activeGroup: CatalogGroup = .explore
+    @State private var catalogNotice: String?
+
+    private enum CatalogGroup: String, CaseIterable {
+        case explore = "تصفّح"
+        case platforms = "المنصات"
+        case genres = "الأنواع"
+
+        var symbol: String {
+            switch self {
+            case .explore: return "square.grid.2x2"
+            case .platforms: return "play.rectangle.on.rectangle"
+            case .genres: return "square.stack"
+            }
+        }
+    }
+
+    private var activeCollections: [XSCatalogCollection] {
+        switch activeGroup {
+        case .explore: return Array(collections.prefix(5))
+        case .platforms: return collections.filter(\.isProvider)
+        case .genres: return collections.filter {
+            if case .genre = $0.category { return true }
+            return false
+        }
+        }
+    }
 
     private struct CachedCollection {
         let items: [MediaItem]
         let nextPage: Int
         let hasMore: Bool
+        let notice: String?
     }
     @State private var collectionCache: [String: CachedCollection] = [:]
     @State private var cacheOrder: [String] = []
@@ -252,7 +280,7 @@ struct XSReferenceCatalogView: View {
         ZStack {
             XSV3ScreenBackdrop()
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18) {
+                LazyVStack(alignment: .leading, spacing: 14) {
                     pageHeading
                     collectionNavigation
                     searchAndSort
@@ -334,7 +362,7 @@ struct XSReferenceCatalogView: View {
                     .tracking(2.1)
                     .foregroundStyle(XSV3.coral)
                 Text(kind == .movie ? "الأفلام" : "المسلسلات")
-                    .font(.system(size: 31, weight: .black, design: .rounded))
+                    .font(.system(size: 27, weight: .black, design: .rounded))
                     .foregroundStyle(.white)
             }
             Spacer()
@@ -356,35 +384,48 @@ struct XSReferenceCatalogView: View {
         .padding(.horizontal, 22)
     }
 
+    // Compact segmented category navigation: one group + one relevant chip
+    // rail rather than three oversized carousels before the first poster.
     private var collectionNavigation: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            chipRail(title: "تصفّح", items: Array(collections.prefix(5)))
-            chipRail(title: "المنصات", items: collections.filter(\.isProvider))
-            chipRail(title: "التصنيفات", items: collections.filter {
-                if case .genre = $0.category { return true }
-                return false
-            })
-            if selectedCollection.isProvider {
-                Text("هذه تصنيفات بحسب بيانات منصات العرض في TMDB (منطقة الولايات المتحدة)، وليست تأكيداً لتوفر التشغيل.")
-                    .font(.system(size: 10))
-                    .foregroundStyle(XSV3.muted)
-                    .padding(.horizontal, 22)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 5) {
+                ForEach(CatalogGroup.allCases, id: \.self) { group in
+                    let selected = activeGroup == group
+                    Button {
+                        guard !selected else { return }
+                        queryTask?.cancel()
+                        query = ""
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+                            activeGroup = group
+                            if let first = activeCollections.first {
+                                selectedCollection = first
+                            }
+                        }
+                    } label: {
+                        Label(group.rawValue, systemImage: group.symbol)
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(selected ? .white : .white.opacity(0.62))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 46)
+                            .background(selected ? XSV3.coral.opacity(0.20) : .clear,
+                                        in: RoundedRectangle(cornerRadius: 14))
+                            .overlay(RoundedRectangle(cornerRadius: 14)
+                                .stroke(selected ? XSV3.coral.opacity(0.38) : .clear))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
             }
-        }
-    }
+            .padding(5)
+            .background(XSV3.lifted, in: RoundedRectangle(cornerRadius: 18))
+            .padding(.horizontal, 22)
 
-    private func chipRail(title: String, items: [XSCatalogCollection]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.system(size: 12, weight: .bold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.74))
-                .padding(.horizontal, 22)
             ScrollView(.horizontal) {
                 LazyHStack(spacing: 8) {
-                    ForEach(items) { section in
+                    ForEach(activeCollections) { section in
                         let selected = selectedCollection.id == section.id
                         Button {
-                            guard selectedCollection.id != section.id else { return }
+                            guard !selected else { return }
                             queryTask?.cancel()
                             query = ""
                             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
@@ -393,10 +434,11 @@ struct XSReferenceCatalogView: View {
                         } label: {
                             Label(section.title, systemImage: section.symbol)
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(selected ? .black : .white.opacity(0.87))
+                                .foregroundStyle(selected ? .black : .white.opacity(0.82))
                                 .padding(.horizontal, 14)
-                                .frame(height: 43)
-                                .background(selected ? Color.white : XSV3.lifted, in: Capsule())
+                                .frame(height: 40)
+                                .background(selected ? Color.white : XSV3.lifted,
+                                            in: Capsule())
                                 .overlay(Capsule().stroke(selected ? .clear : .white.opacity(0.09)))
                         }
                         .buttonStyle(XSV3PressStyle())
@@ -404,7 +446,7 @@ struct XSReferenceCatalogView: View {
                     }
                 }
                 .padding(.horizontal, 22)
-                .padding(.vertical, 2)
+                .padding(.vertical, 3)
             }
             .scrollIndicators(.hidden)
         }
