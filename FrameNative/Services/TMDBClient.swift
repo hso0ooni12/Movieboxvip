@@ -88,6 +88,53 @@ struct TMDBClient {
         return response.results.compactMap { $0.mediaItem(forcedKind: .tv) }
     }
 
+    // V8: real paged discovery from the same metadata backend used by
+    // FrameXTV playback, not a handful of locally recycled trending posters.
+    // Provider metadata reflects TMDB watch-provider catalogs for US region;
+    // it does NOT guarantee that the source site's player has every title.
+    func discoverCollection(
+        kind: MediaKind,
+        collection: XSCatalogCollection,
+        page: Int = 1
+    ) async throws -> XSCatalogPage {
+        let mediaType = kind == .movie ? "movie" : "tv"
+        let safePage = max(1, min(page, 500))
+        var path = "/discover/\(mediaType)"
+        var query: [URLQueryItem] = [
+            .init(name: "language", value: language),
+            .init(name: "page", value: String(safePage)),
+            .init(name: "include_adult", value: "false"),
+            .init(name: "sort_by", value: "popularity.desc")
+        ]
+
+        switch collection.category {
+        case .discover: break
+        case .trending:
+            path = "/trending/\(mediaType)/week"
+        case .popular:
+            path = kind == .movie ? "/movie/popular" : "/tv/popular"
+        case .topRated:
+            path = kind == .movie ? "/movie/top_rated" : "/tv/top_rated"
+        case .new:
+            path = kind == .movie ? "/movie/now_playing" : "/tv/on_the_air"
+        case .genre(let id):
+            query.append(.init(name: "with_genres", value: String(id)))
+        case .provider(let id):
+            query.append(.init(name: "with_watch_providers", value: String(id)))
+            query.append(.init(name: "watch_region", value: "US"))
+            query.append(.init(name: "with_watch_monetization_types", value: "flatrate"))
+        }
+
+        let response = try await request(path: path, query: query, as: ListResponse.self)
+        let mediaKind: MediaKind = kind == .movie ? .movie : .tv
+        let items = response.results.compactMap { $0.mediaItem(forcedKind: mediaKind) }
+        let total = response.totalPages ?? (items.isEmpty ? safePage : safePage + 1)
+        return XSCatalogPage(
+            items: items,
+            hasMore: !items.isEmpty && safePage < min(total, 500)
+        )
+    }
+
     func search(_ query: String, page: Int = 1) async throws -> [MediaItem] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
@@ -180,6 +227,11 @@ private struct ErrorResponse: Decodable {
 }
 private struct ListResponse: Decodable {
     let results: [ListResult]
+    let totalPages: Int?
+    enum CodingKeys: String, CodingKey {
+        case results
+        case totalPages = "total_pages"
+    }
 }
 private struct ListResult: Decodable {
     let id: Int
