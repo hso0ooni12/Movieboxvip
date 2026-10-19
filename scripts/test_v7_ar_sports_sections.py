@@ -10,6 +10,8 @@ root=Path("FrameNative/Views/EnhancedRootView.swift").read_text()
 home=Path("FrameNative/Views/XSCinematicHomeView.swift").read_text()
 service=Path("FrameNative/Services/IPTVService.swift").read_text()
 player=Path("FrameNative/FrameXTVPlayerV6.swift").read_text()
+models=Path("FrameNative/Core/Models.swift").read_text()
+posters=Path("FrameNative/Views/Components.swift").read_text()
 
 checks={
     "strict AR prefix": 'guard name.uppercased().hasPrefix("AR") else { return false }' in sports,
@@ -49,6 +51,10 @@ checks={
     "V6 servers acknowledge existing source": "player.selectServer(server)" in player and
         "showSelectionNotice" in player and
         'var payload: [String: Any] = ["action": "server", "name": server.name]' in player,
+    "no original size hero images": 'default: size = backdrop ? "w1280" : "original"' in models,
+    "poster network size follows visible width": "proxy.size.width * displayScale" in posters and
+        "item.imageURL(backdrop: backdrop, width: deliveredWidth)" in posters,
+    "poster transition respects reduce motion": "reduceMotion ? nil : .easeInOut(duration: 0.16)" in posters,
     "V6 subtitles confirm source cue": "player.pendingSubtitleID" in player and
         "sourceSubtitles.select(payload);" in player and
         "player.selectedSubtitleID == expected" in player,
