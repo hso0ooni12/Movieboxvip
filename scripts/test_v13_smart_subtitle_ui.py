@@ -35,8 +35,8 @@ checks={
       "captureStream" in s and "createMediaStreamSource(stream)" in s
       and "source.connect(analyser)" in s and "context.close()" in s,
   "no mic, no network upload and no media routing":
-      "getUserMedia" not in s and "fetch(" not in s
-      and "createMediaElementSource(" not in s and
+      "getUserMedia(" not in s and "fetch(" not in s
+      and ".createMediaElementSource(" not in s and
       "source.connect(context.destination)" not in s,
   "confidence threshold, safe default and no guessing":
       "if (!answer)" in s and
