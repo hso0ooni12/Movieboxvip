@@ -165,8 +165,17 @@ private struct XSFebboxFolderView: View {
                     .padding(.vertical, 18)
                 }
                 if !model.loading && model.entries.isEmpty && model.error == nil {
-                    ContentUnavailableView("المجلد فارغ", systemImage: "folder",
-                                           description: Text("لا توجد ملفات في هذا المجلد حالياً."))
+                    VStack(spacing: 9) {
+                        Image(systemName: "folder")
+                            .font(.system(size: 28))
+                        Text("المجلد فارغ")
+                            .font(.subheadline.bold())
+                        Text("لا توجد ملفات في هذا المجلد حالياً.")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.white.opacity(0.62))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 30)
                 }
                 if !model.loading && model.more && !model.entries.isEmpty && !search.isEmpty {
                     Text("البحث يشمل العناصر المحملة في هذا المجلد فقط")
