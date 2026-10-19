@@ -55,7 +55,7 @@ checks={
     "supported TMDB backdrop sizes": 'case ..<420: size = "w300"' in models and 'case ..<1000: size = "w780"' in models,
     "poster network size follows visible width": "proxy.size.width * displayScale" in posters and
         "item.imageURL(backdrop: backdrop, width: deliveredWidth)" in posters,
-    "poster transition respects reduce motion": "reduceMotion ? nil : .easeInOut(duration: 0.16)" in posters,
+    "poster loads without per-tile animations": "Transaction(animation: nil)" in posters,
     "V6 subtitles confirm source cue": "player.pendingSubtitleID" in player and
         "sourceSubtitles.select(payload);" in player and
         "player.selectedSubtitleID == expected" in player,
