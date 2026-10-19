@@ -1,4 +1,5 @@
 import Foundation
+import WebKit
 
 // XS TV Febbox read-only shared-library integration (V18).
 // Uses only public Febbox share links which are explicitly shared by their
@@ -65,13 +66,16 @@ enum XSFebboxError: LocalizedError {
     case invalidResponse
     case unavailable(String)
     case noAuthorizedPlayback
+    case signInRequired
 
     var errorDescription: String? {
         switch self {
         case .invalidResponse: return "تعذر قراءة استجابة مكتبة Febbox."
         case .unavailable(let reason): return reason
         case .noAuthorizedPlayback:
-            return "هذا الفيديو لا يتيح رابط تشغيل عاماً. افتحه من حساب Febbox الأصلي."
+            return "لم يوفّر Febbox رابط تشغيل لهذه الحلقة حتى بعد فحص صلاحيات المشاركة."
+        case .signInRequired:
+            return "يلزم تسجيل الدخول بحساب Febbox المصرّح له قبل تشغيل هذا الملف."
         }
     }
 }
@@ -161,6 +165,25 @@ actor XSFebboxLibraryService {
         return result
     }
 
+    // A signed-in Febbox web session belongs to this app's WebKit data store.
+    // Read only Febbox cookies, in memory, for a Febbox-owned endpoint.
+    // Do not embed cookies in the IPA, publish them, or log their values.
+    private func accountCookies() async -> [HTTPCookie] {
+        let all: [HTTPCookie] = await withCheckedContinuation { continuation in
+            WKWebsiteDataStore.default().httpCookieStore.getAllCookies {
+                continuation.resume(returning: $0)
+            }
+        }
+        return all.filter {
+            let domain = $0.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            return domain == "febbox.com" || domain.hasSuffix(".febbox.com")
+        }
+    }
+
+    func hasAccountSession() async -> Bool {
+        await accountCookies().contains { $0.name == "ui" && !$0.value.isEmpty }
+    }
+
     // This is an optional and read-only capability: some Febbox shared files
     // allow quality inspection anonymously; others need account permission.
     // The app must never guess private links or persist expiring CDN URLs.
@@ -173,11 +196,18 @@ actor XSFebboxLibraryService {
         request.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
         request.setValue(item.shelf.publicSharePage.absoluteString, forHTTPHeaderField: "Referer")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let cookies = await accountCookies()
+        // The WebKit browser session is used only for Febbox video requests.
+        // HTTPCookie builds a correctly escaped header without persisting secrets.
+        for (name, value) in HTTPCookie.requestHeaderFields(with: cookies) {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
         let (body, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200,
               let object = try JSONSerialization.jsonObject(with: body) as? [String: Any],
               let html = object["html"] as? String, !html.isEmpty else {
-            throw XSFebboxError.noAuthorizedPlayback
+            throw cookies.contains(where: { $0.name == "ui" })
+                ? XSFebboxError.noAuthorizedPlayback : XSFebboxError.signInRequired
         }
         // Each .file_quality element in the original Febbox response contains
         // data-url/data-quality attributes; no alternate servers are invented.
@@ -199,6 +229,10 @@ actor XSFebboxLibraryService {
                   ["https", "http"].contains(u.scheme?.lowercased() ?? ""),
                   u.host != nil else { continue }
             qualities.append(XSFebboxQuality(name: attrs["quality"] ?? "Source", url: u))
+        }
+        guard !qualities.isEmpty else {
+            throw cookies.contains(where: { $0.name == "ui" })
+                ? XSFebboxError.noAuthorizedPlayback : XSFebboxError.signInRequired
         }
         return Array(Set(qualities)).sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
