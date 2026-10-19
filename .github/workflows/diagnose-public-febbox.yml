@@ -58,6 +58,7 @@ jobs:
           # Do not download media, subtitles, protected streams or user data.
           links = sorted(set(re.findall(r'/share/([A-Za-z0-9_-]{8})',body,re.I)))
           print('PUBLIC_SHARE_HREF_LINKS',len(links))
+          print('PUBLIC_FOLDER_LINKS',[('https://www.febbox.com/share/'+k) for k in links])
           for idx,key in enumerate(links[:6],start=1):
             u='https://www.febbox.com/share/'+key
             try:
