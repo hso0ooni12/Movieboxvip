@@ -59,7 +59,8 @@ once(
 once(
     "          else if (action === 'subtitleDelay') { subtitleDelay = Number(payload.seconds || 0); sourceSubtitles.setDelay(subtitleDelay); }",
     """          else if (action === 'subtitleDelay') { subtitleDelay = Number(payload.seconds || 0); sourceSubtitles.setDelay(subtitleDelay); }
-          else if (action === 'subtitleSyncPoint') { sourceSubtitles.syncPoint(); }""",
+          else if (action === 'subtitleSyncPoint') { sourceSubtitles.syncPoint(); }
+          else if (action === 'subtitleSyncReset') { sourceSubtitles.clearSync(); }""",
     "exact owner iframe action"
 )
 once(
@@ -81,6 +82,14 @@ once(
             return
         }
         send(["action": "subtitleSyncPoint"])
+    }
+
+    func clearSubtitleCalibration() {
+        subtitlePointStatus = nil
+        subtitlePointResult = nil
+        subtitlePointRate = 1
+        subtitlePointCount = 0
+        send(["action": "subtitleSyncReset"])
     }''',
     "point-sync owner command"
 )
@@ -168,6 +177,7 @@ panel=r'''    // V16_SOURCE_CUE_SYNC: no AI. Real TextTrack start/end times comp
 
                 Button {
                     subtitleDelay=0
+                    player.clearSubtitleCalibration()
                     UISelectionFeedbackGenerator().selectionChanged()
                 } label: {
                     VStack(spacing: 3) {
