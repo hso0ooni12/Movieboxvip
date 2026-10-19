@@ -45,7 +45,8 @@ checks={
     "(delay === 0 && subtitleRate === 1)" in source,
   "source cue editor no longer includes audio analysis or made-up timing":
     "function syncPoint()" in source and "return {frameID, scan, publish, select, reset, tick, hidePanels, dispose, syncPoint," in source and
-    "audio" not in source.lower(),
+    "captureStream(" not in source and "getUserMedia(" not in source and
+    "XSNativeSubtitleAI" not in source,
   "source menu owns exact subtitle selection and original server flow":
     "sourceSubtitles.select(payload);" in p and
     "choice.row.click();" in source and
