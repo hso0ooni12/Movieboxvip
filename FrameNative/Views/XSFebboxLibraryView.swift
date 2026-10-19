@@ -264,6 +264,8 @@ private struct XSFebboxFileDetailsView: View {
     @State private var loading = false
     @State private var playbackError: String?
     @State private var selectedQuality: XSFebboxQuality?
+    @State private var signInRequired = false
+    @State private var showAccount = false
 
     var body: some View {
         ScrollView {
@@ -307,8 +309,17 @@ private struct XSFebboxFileDetailsView: View {
                             .font(.footnote)
                             .foregroundStyle(.orange)
                             .fixedSize(horizontal: false, vertical: true)
+                        if signInRequired {
+                            Button {
+                                showAccount = true
+                            } label: {
+                                Label("تسجيل الدخول إلى Febbox للتشغيل", systemImage: "person.crop.circle.badge.checkmark")
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
                         Link(destination: file.shelf.publicSharePage) {
-                            Label("فتح مكتبة Febbox الأصلية", systemImage: "arrow.up.right.square")
+                            Label("فتح مشاركة Febbox الأصلية", systemImage: "arrow.up.right.square")
                         }
                         .font(.footnote.bold())
                     }
@@ -332,52 +343,34 @@ private struct XSFebboxFileDetailsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             guard file.playable, qualities.isEmpty else { return }
-            loading = true
-            defer { loading = false }
-            do {
-                qualities = try await XSFebboxLibraryService.shared.publicVideoQualities(for: file)
-                if qualities.isEmpty { playbackError = XSFebboxError.noAuthorizedPlayback.localizedDescription }
-            } catch { playbackError = error.localizedDescription }
+            await loadPlaybackLinks()
+        }
+        .sheet(isPresented: $showAccount, onDismiss: {
+            Task { await loadPlaybackLinks() }
+        }) {
+            XSFebboxAccountView()
         }
         .fullScreenCover(item: $selectedQuality) { option in
-            XSFebboxPlaybackView(quality: option)
+            XSFebboxVLCPlaybackView(quality: option)
         }
     }
-}
-
-private struct XSFebboxPlaybackView: View {
-    let quality: XSFebboxQuality
-    @Environment(\.dismiss) private var dismiss
-    @State private var player: AVPlayer?
-
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Color.black.ignoresSafeArea()
-            if let player {
-                VideoPlayer(player: player)
-                    .ignoresSafeArea()
-            } else {
-                ProgressView().tint(.white)
-            }
-            Button {
-                player?.pause()
-                dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 15, weight: .bold))
-                    .padding(12)
-                    .background(.black.opacity(0.65), in: Circle())
-            }
-            .tint(.white)
-            .padding(18)
-        }
-        .onAppear {
-            player = AVPlayer(url: quality.url)
-            player?.play()
-        }
-        .onDisappear {
-            player?.pause()
-            player = nil
+    private func loadPlaybackLinks() async {
+        guard !loading else { return }
+        loading = true
+        playbackError = nil
+        defer { loading = false }
+        do {
+            let links = try await XSFebboxLibraryService.shared.publicVideoQualities(for: file)
+            qualities = links
+            signInRequired = false
+        } catch {
+            qualities = []
+            signInRequired = (error as? XSFebboxError).map {
+                if case .signInRequired = $0 { return true }
+                return false
+            } ?? false
+            playbackError = error.localizedDescription
         }
     }
+
 }
