@@ -1,0 +1,22 @@
+name: Read-only VOD Source Capability Check
+on:
+  push:
+    branches: ["iptv-vod-capability-check-20261019"]
+    paths:
+      - "scripts/check_embedded_provider_vod.py"
+      - ".github/workflows/check-embedded-iptv-vod.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check-vod:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      XS_IPTV_HOST: ${{ secrets.XS_IPTV_HOST }}
+      XS_IPTV_USERNAME: ${{ secrets.XS_IPTV_USERNAME }}
+      XS_IPTV_PASSWORD: ${{ secrets.XS_IPTV_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Query only catalog availability; never log URLs or credentials
+        run: python3 scripts/check_embedded_provider_vod.py
