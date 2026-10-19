@@ -199,8 +199,8 @@ replace_exact(old,replacement,"wait for true source caption timestamps")
 # Prevent a subtitle source with DOM-only cues from arriving at the 5-cue
 # threshold with no observations: pick up DOM text while timing remains 0.
 replace_exact(
-   "      function reportCaption() {\n        const v = findVideo();\n        if (!active || !v || !delay) {",
-   "      function reportCaption() {\n        const v = findVideo();\n        if (active && v && !delay) captureSourceCaption(v);\n        if (!active || !v || !delay) {",
+   "        function reportCaption() {\n          const v = findVideo();\n          if (!active || !v || !delay) {",
+   "        function reportCaption() {\n          const v = findVideo();\n          if (active && v && !delay) captureSourceCaption(v);\n          if (!active || !v || !delay) {",
    "source DOM caption observation at zero timing offset"
 )
 
