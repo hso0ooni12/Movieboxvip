@@ -257,7 +257,7 @@ private struct XSFebboxFileRow: View {
     }
 }
 
-private struct XSFebboxFileDetailsView: View {
+struct XSFebboxFileDetailsView: View {
     let file: XSFebboxEntry
 
     @State private var qualities: [XSFebboxQuality] = []
