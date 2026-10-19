@@ -31,6 +31,7 @@ targets:
           - FrameXTVPlayerV4.swift
           - FrameXTVPlayerV5.swift
           - Views/GenreCatalogView.swift
+          - Views/XSFebboxPremiumCatalog.swift
     dependencies:
       - package: VLCKitSPM
     info:
