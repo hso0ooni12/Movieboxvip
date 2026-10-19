@@ -172,6 +172,17 @@ actor XSVODService {
         }
     }
 
+    // Load the two massive VOD catalogs independently so movies appear while
+    // the provider is still loading thousands of series (and vice versa).
+    func catalogFor(kind: XSVODKind) async throws -> ([XSVODCategory], [XSVODTitle]) {
+        let categoriesAction = kind == .movie ? "get_vod_categories" : "get_series_categories"
+        let titlesAction = kind == .movie ? "get_vod_streams" : "get_series"
+        let categories = try await categories(action: categoriesAction)
+        let items = try await titles(action: titlesAction, kind: kind,
+                                     allowedCategories: Set(categories.map(\.id)))
+        return (categories, items)
+    }
+
     func catalog() async throws -> XSVODCatalogSnapshot {
         async let movieCategories = categories(action: "get_vod_categories")
         async let seriesCategories = categories(action: "get_series_categories")
@@ -250,13 +261,12 @@ final class XSVODCatalogStore: ObservableObject {
     private let favoritesKey = "XSTV.VOD.favorites.v1"
     private let cacheName = "xs-vod-catalog-v1.json"
 
+    private var lastFetched: Date?
+
     init() {
         favorites = Set(UserDefaults.standard.stringArray(forKey: favoritesKey) ?? [])
-        if let url = cacheURL,
-           let data = try? Data(contentsOf: url),
-           let snapshot = try? JSONDecoder().decode(XSVODCatalogSnapshot.self, from: data) {
-            apply(snapshot)
-        }
+        // Never synchronously read/decode the 33k-title JSON snapshot on
+        // main during app launch. Restoring is off-main in load().
     }
 
     var cacheURL: URL? {
@@ -279,25 +289,57 @@ final class XSVODCatalogStore: ObservableObject {
         UserDefaults.standard.set(Array(favorites), forKey: favoritesKey)
     }
 
+    private func restoreSnapshot() async {
+        guard !loaded, let url = cacheURL else { return }
+        let cached = await Task.detached(priority: .utility) { () -> XSVODCatalogSnapshot? in
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return try? JSONDecoder().decode(XSVODCatalogSnapshot.self, from: data)
+        }.value
+        guard let cached, !loaded else { return }
+        apply(cached)
+    }
+
     func load(force: Bool = false) async {
-        guard !loading && (force || !loaded) else { return }
+        guard !loading else { return }
+        if !force && !loaded { await restoreSnapshot() }
+        if !force, let lastFetched,
+           Date().timeIntervalSince(lastFetched) < 6 * 3600 { return }
+
         loading = true
         message = nil
         defer { loading = false }
-        do {
-            let snapshot = try await XSVODService.shared.catalog()
-            apply(snapshot)
-            if let url = cacheURL {
-                // Avoid serializing large catalogs on the UI actor.
+
+        async let movieTask = XSVODService.shared.catalogFor(kind: .movie)
+        async let seriesTask = XSVODService.shared.catalogFor(kind: .series)
+        var gotNewData = false
+
+        if let result = try? await movieTask {
+            movieCategories = result.0
+            movies = result.1
+            loaded = true
+            gotNewData = true
+        }
+        // Publish movie results immediately; don't await series first.
+        if let result = try? await seriesTask {
+            seriesCategories = result.0
+            series = result.1
+            loaded = true
+            gotNewData = true
+        }
+        if gotNewData {
+            lastFetched = Date()
+            if let url = cacheURL, !movies.isEmpty && !series.isEmpty {
+                let snapshot = XSVODCatalogSnapshot(
+                    categoriesMovies: movieCategories, categoriesSeries: seriesCategories,
+                    movies: movies, series: series, timestamp: Date())
                 Task.detached(priority: .utility) {
                     if let data = try? JSONEncoder().encode(snapshot) {
                         try? data.write(to: url, options: .atomic)
                     }
                 }
             }
-        } catch {
-            message = (error as? XSVODFailure)?.localizedDescription
-                ?? "تعذر تحديث المكتبة الآن."
+        } else if !loaded {
+            message = "تعذر تحميل مكتبة الأفلام والمسلسلات. افحص اتصالك ثم حاول مرة ثانية."
         }
     }
 
@@ -307,5 +349,6 @@ final class XSVODCatalogStore: ObservableObject {
         movies = snapshot.movies
         series = snapshot.series
         loaded = true
+        lastFetched = snapshot.timestamp
     }
 }
