@@ -204,6 +204,24 @@ replace_exact(
    "source DOM caption observation at zero timing offset"
 )
 
+# Watchdog for missing/cross-origin source responses. A source may never
+# respond to subtitleCueWindows; restore the button rather than spinning.
+# Once native ReplayKit has started, the status changes and this watchdog
+# intentionally leaves the active user-authorized capture alone.
+replace_exact(
+    '        send(["action": "subtitleCueWindows"])',
+    '''        send(["action": "subtitleCueWindows"])
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 20_000_000_000)
+            guard !Task.isCancelled, let self,
+                  self.smartSyncRunning,
+                  self.smartSyncStatus == "جارٍ تجهيز المزامنة الذكية…" else { return }
+            self.smartSyncRunning = false
+            self.smartSyncStatus = "المصدر لم يرسل بيانات الترجمة في الوقت المحدد؛ جرب سيرفراً آخر."
+        }''',
+    "avoid permanently spinning automatic sync if source does not reply"
+)
+
 assert "sourceSubtitles.select(payload);" in p
 assert "const finishDispatchedSelection = () =>" in p
 assert "subtitleDelay = 0\n        player.setSubtitleDelay(0)\n        activePlayback = next" in p
