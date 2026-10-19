@@ -51,7 +51,8 @@ checks={
     "V6 servers acknowledge existing source": "player.selectServer(server)" in player and
         "showSelectionNotice" in player and
         'var payload: [String: Any] = ["action": "server", "name": server.name]' in player,
-    "no original size hero images": 'default: size = backdrop ? "w1280" : "original"' in models,
+    "no original size hero images": 'if backdrop {' in models and 'default: size = "w1280"' in models,
+    "supported TMDB backdrop sizes": 'case ..<420: size = "w300"' in models and 'case ..<1000: size = "w780"' in models,
     "poster network size follows visible width": "proxy.size.width * displayScale" in posters and
         "item.imageURL(backdrop: backdrop, width: deliveredWidth)" in posters,
     "poster transition respects reduce motion": "reduceMotion ? nil : .easeInOut(duration: 0.16)" in posters,
