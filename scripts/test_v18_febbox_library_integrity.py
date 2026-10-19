@@ -30,7 +30,7 @@ checks={
     'row["is_dir"]' in service and
     'row["ext"]' in service and
     'row["runtime"]' in service and
-    'row["thumb"]' not in service or '["thumb_big", "thumb", "thumb_small"]' in service,
+    '["thumb_big", "thumb", "thumb_small"]' in service,
  "source-only filename indexing does not invent catalog counts":
     'model.entries' in view and
     'model.more' in view and
@@ -65,7 +65,7 @@ checks={
     'XSSportsLiveViewV33()' in root,
  "iOS16 compatibility":
     "ContentUnavailableView" not in view and
-    "iOS: \\"16.0\\"" in Path("project-native.yml").read_text(),
+    'iOS: "16.0"' in Path("project-native.yml").read_text(),
 }
 for name,ok in checks.items():
     if not ok: raise SystemExit("V18 Febbox QA FAILED: "+name)
