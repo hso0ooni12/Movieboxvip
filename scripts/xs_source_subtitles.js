@@ -78,24 +78,11 @@ function createXSSourceSubtitles(env) {
     }).filter(it => it.label && it.label !== '✕');
   }
 
-  // Keep the source menu as the authority for loading and selecting tracks,
-  // but keep the native list focused on the two languages this app exposes.
-  // `catalog` intentionally retains every source row so no source-owned ID or
-  // click behaviour is rewritten; these rows are only filtered for display.
-  function preferredLanguage(item) {
-    const value = normal(item && item.label).toLowerCase();
-    if (/(^|[^a-z])(arabic|ar|ara)([^a-z]|$)/.test(value) || /العرب|عربي|عربية/.test(value)) return 'arabic';
-    if (/(^|[^a-z])(english|en|eng)([^a-z]|$)/.test(value) || /إنجلي|انجلي/.test(value)) return 'english';
-    return '';
-  }
+  // V11_ALL_SOURCE_SUBTITLES: every source-owned row remains selectable,
+  // including alternate tracks, SDH/CC, Arabic variants and other languages.
+  // Keep occurrences and ordering; only Off is rendered separately in Swift.
   function visibleCatalog() {
-    const seen = new Set();
-    return catalog.filter(item => {
-      const language = preferredLanguage(item);
-      if (!language || seen.has(language)) return false;
-      seen.add(language);
-      return true;
-    });
+    return catalog.filter(item => item.label && item.label !== 'Off');
   }
   function publish(final) {
     const current = rows();
@@ -142,9 +129,13 @@ function createXSSourceSubtitles(env) {
     return Array.from(v && v.textTracks || []).filter(t => /^(subtitles|captions)$/.test(t.kind) && t.mode !== 'disabled' && t.cues && t.cues.length);
   }
   function trackFor(item) {
-    const name = item.label.replace(/ \((In-Stream|Uploaded)\)$/, '');
-    return tracks().find(t => normal(t.label || t.language) === name ||
-      ((!t.label || t.label === 'Subtitles') && normal(t.language) === name)) || null;
+    // The site sometimes appends (SDH) / (Uploaded) to a menu choice while
+    // the loaded TextTrack exposes the base language. The checked source row
+    // remains mandatory before we report a successful track load.
+    const clean = value => normal(value).replace(/ \((?:In-Stream|Uploaded|SDH|CC|Forced|Hearing Impaired)\)$/i, '').toLowerCase();
+    const wanted = clean(item.label);
+    return tracks().find(t => clean(t.label || t.language) === wanted ||
+      ((!t.label || t.label === 'Subtitles') && clean(t.language) === wanted)) || null;
   }
   function caption(value) {
     if (value === lastCaption) return;
@@ -187,6 +178,13 @@ function createXSSourceSubtitles(env) {
     caption(lines.join('\n'));
   }
   function reset() {
+    // Switching a provider must restore any text track hidden by our
+    // non-zero delay renderer. Keep the chosen delay within this movie/episode;
+    // Swift resets it to zero when a NEW content item starts.
+    if (timingTrack && timingTrack.mode === 'hidden') {
+      try { timingTrack.mode = 'showing'; } catch (_) {}
+    }
+    timingTrack = null;
     generation++; pending = null; active = null; catalog = []; caption('');
     if (ccButton()) send({event: 'xs:subtitles', final: false, items: []});
   }
