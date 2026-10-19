@@ -1,0 +1,41 @@
+name: Febbox Anonymous Share Permission Probe
+on:
+  push:
+    branches: ["diagnostics-febbox-public-20261019"]
+    paths: [".github/workflows/probe-public-febbox-catalog.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Verify two public folders expose actual file metadata without authentication
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request,urllib.error,urllib.parse
+          shares=[("Movies","C2jBoH52"),("TVshow","eHH8d0S1")]
+          for name,key in shares:
+            path="/file/file_share_list"
+            url="https://www.febbox.com"+path+"?"+urllib.parse.urlencode({"share_key":key,"pwd":"","parent_id":"0","is_html":"0"})
+            headers={"User-Agent":"Mozilla/5.0","Referer":f"https://www.febbox.com/share/{key}","X-Requested-With":"XMLHttpRequest","Accept":"application/json"}
+            try:
+              req=urllib.request.Request(url,headers=headers)
+              with urllib.request.urlopen(req,timeout=20) as res:
+                content=res.read(200000)
+                print(name,"HTTP",res.status,"TYPE",res.headers.get("Content-Type",""),"RESPONSE_SIZE",len(content))
+                try:
+                  result=json.loads(content.decode("utf-8","replace"))
+                  print(name,"RESULT_CODE",result.get("code"),"MESSAGE",str(result.get("msg",""))[:140])
+                  data=result.get("data",{}) or {}
+                  files=data.get("file_list") if isinstance(data,dict) else None
+                  print(name,"FILE_LIST_TYPE",type(files).__name__,"VISIBLE_COUNT",len(files) if isinstance(files,list) else "unavailable")
+                  # No file titles or links are logged: only auth state.
+                except Exception as err:
+                  print(name,"NON_JSON",type(err).__name__)
+            except urllib.error.HTTPError as e:
+              print(name,"HTTP_ERROR",e.code)
+            except Exception as err:
+              print(name,"NETWORK_ERROR",type(err).__name__,str(err)[:130])
+          PY
