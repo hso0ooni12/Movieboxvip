@@ -124,9 +124,9 @@ final class XSNativeSubtitleAI {
     }
 
     func align(cues: [XSNativeSubtitleCue],
-               mediaTime: Double,
+               mediaTime: @escaping @MainActor () -> Double,
                currentOffset: Double) async -> XSNativeSubtitleResult {
-        guard cues.count >= 5, mediaTime.isFinite else {
+        guard cues.count >= 5 else {
             return .unavailable("لا تتوفر جمل ترجمة موقّتة كافية للمقارنة بالصوت.")
         }
         let recorder = RPScreenRecorder.shared()
@@ -162,6 +162,7 @@ final class XSNativeSubtitleAI {
 
         // On-device capture without microphone or network transmissions.
         // User has explicitly opted in by tapping "Smart Sync".
+        let startMediaTime = mediaTime()
         try? await Task.sleep(nanoseconds: 26_000_000_000)
         guard requestID == token else {
             return .unavailable("أُلغيت المزامنة التلقائية.")
@@ -188,7 +189,7 @@ final class XSNativeSubtitleAI {
                     let correction = Self.estimateSpeechOffset(
                         speech: observer.events,
                         cues: cues,
-                        mediaStart: mediaTime,
+                        mediaStart: startMediaTime,
                         originalOffset: currentOffset
                     )
                     continuation.resume(returning: correction)
