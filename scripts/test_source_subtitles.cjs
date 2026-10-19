@@ -195,7 +195,7 @@ test('DOM-only source: positive subtitle delay changes visible cue timing, not j
   assert.equal(f.last('xs:subtitleTimingStatus').mode,'buffered');
   assert.equal(f.cue.style.opacity,'0');
   f.video.currentTime=1;f.adapter.tick();
-  assert.equal(f.last('xs:caption').text,'');
+  assert.equal(f.last('xs:caption')?.text ?? '','');
   f.video.currentTime=2.1;f.adapter.tick();
   assert.equal(f.last('xs:caption').text,'Arabic message');
   f.video.currentTime=3;f.cue.textContent='Second dialogue';f.adapter.tick();
@@ -213,7 +213,7 @@ test('DOM-only source: impossible negative lookahead must NOT silently pretend t
   f.adapter.setDelay(-1.5);
   assert.equal(f.last('xs:subtitleTimingStatus').mode,'unsupported');
   assert.equal(f.cue.style.opacity,'');
-  assert.equal(f.last('xs:caption').text,'');
+  assert.equal(f.last('xs:caption')?.text ?? '','');
   f.cleanup();
 });
 test('empty wrapper frames cannot erase the source frame subtitle list',async()=>{
