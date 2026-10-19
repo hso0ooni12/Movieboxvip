@@ -284,6 +284,6 @@ p=p[:start]+panel+p[end:]
 assert "sourceSubtitles.select(payload);" in p
 assert "const finishDispatchedSelection = () =>" in p
 assert "V12_DOM_DELAY" in p
-assert "let visibleVideoBottomPadding" in p
+assert "captionOverlay(" in p and ("R5_ASPECTFIT_CAPTION" in p or "let visibleVideoBottomPadding" in p)
 path.write_text(p,encoding="utf-8")
 print("V13 subtitle timing: precise buttons, low video-bottom captions, opt-in safe audio alignment, preserved R5.")
