@@ -306,7 +306,7 @@ function createXSSourceSubtitles(env) {
   }
   function reportCaption() {
     const v = findVideo();
-    if (!active || !v || !delay) {
+    if (!active || !v || (delay === 0 && subtitleRate === 1)) {
       if (timingTrack && timingTrack.mode === 'hidden') {
         try { timingTrack.mode = 'showing'; } catch (_) {}
       }
