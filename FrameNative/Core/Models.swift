@@ -59,7 +59,7 @@ struct MediaItem: Identifiable, Hashable, Codable {
         case ..<300: size = "w342"
         case ..<600: size = "w500"
         case ..<1000: size = "w780"
-        default: size = "original"
+        default: size = backdrop ? "w1280" : "original"
         }
         return URL(string: "https://image.tmdb.org/t/p/\(size)\(path)")
     }
