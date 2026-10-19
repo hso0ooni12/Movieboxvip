@@ -615,17 +615,46 @@ struct XSReferenceCatalogView: View {
         requestGeneration = generation
         isLoading = false
         loadError = nil
+        catalogNotice = nil
         if !force, query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            let cached = collectionCache[currentCacheKey] {
             loaded = cached.items
             nextPage = cached.nextPage
             hasMore = cached.hasMore
+            catalogNotice = cached.notice
             return
         }
         loaded = []
         nextPage = 1
         hasMore = true
-        await loadNextPage(generation: generation)
+        await autoLoadNextPages(generation: generation)
+    }
+
+    // Runs at the lazy bottom sentinel and on initial load.
+    // Retry temporary failures with bounded backoff, and scan more pages
+    // when a sparse genre doesn't match the first popular-title page.
+    @MainActor
+    private func autoLoadNextPages(generation expected: UUID? = nil) async {
+        let generation = expected ?? requestGeneration
+        var failures = 0
+        var emptyPages = 0
+        while requestGeneration == generation && hasMore && !Task.isCancelled {
+            if loadError != nil { loadError = nil }
+            await loadNextPage(generation: generation)
+            guard requestGeneration == generation else { return }
+            if loadError != nil {
+                failures += 1
+                if failures >= 3 { return }
+                let delay = UInt64(1 << failures) * 1_000_000_000
+                try? await Task.sleep(nanoseconds: delay)
+                continue
+            }
+            if loaded.isEmpty && hasMore && !selectedCollection.isProvider {
+                emptyPages += 1
+                if emptyPages < 4 { continue }
+            }
+            return
+        }
     }
 
     @MainActor
@@ -657,10 +686,11 @@ struct XSReferenceCatalogView: View {
             loaded += response.items.filter { known.insert($0.id).inserted }
             nextPage += 1
             hasMore = response.hasMore
+            catalogNotice = response.notice
             loadError = nil
             if searchText.isEmpty {
                 let key = currentCacheKey
-                collectionCache[key] = CachedCollection(items: loaded, nextPage: nextPage, hasMore: hasMore)
+                collectionCache[key] = CachedCollection(items: loaded, nextPage: nextPage, hasMore: hasMore, notice: catalogNotice)
                 cacheOrder.removeAll { $0 == key }
                 cacheOrder.append(key)
                 while cacheOrder.count > 8 {
@@ -670,7 +700,25 @@ struct XSReferenceCatalogView: View {
             }
         } catch {
             guard requestGeneration == generation else { return }
-            loadError = error.localizedDescription
+            if page == 1 && loaded.isEmpty && !selectedCollection.isProvider {
+                let available = app.list(for: kind)
+                let fallback: [MediaItem]
+                if case .genre(let genreID) = selected.category {
+                    fallback = available.filter { $0.genreIDs.contains(genreID) }
+                } else {
+                    fallback = available
+                }
+                if !fallback.isEmpty {
+                    loaded = fallback
+                    hasMore = false
+                    catalogNotice = "تعذر الاتصال مؤقتاً؛ نعرض عناوين موجودة مسبقاً بالتطبيق."
+                    loadError = nil
+                } else {
+                    loadError = error.localizedDescription
+                }
+            } else {
+                loadError = error.localizedDescription
+            }
         }
 
         if requestGeneration == generation { isLoading = false }
