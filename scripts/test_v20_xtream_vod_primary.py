@@ -27,7 +27,7 @@ checks = {
  "Native movie plus series playback": all(x in ui for x in
      ("startMovie()", "startEpisode(", "XSVODVLCPlayerView(source: selection)")),
  "Subtitle tracks use source timestamps": all(x in player for x in
-     ("videoSubTitlesNames", "videoSubTitlesIndexes", "currentVideoSubTitleIndex")),
+     ("player.textTracks", "track.trackName", "isSelectedExclusively")),
  "Auto-select Arabic by native track": 's.contains("arabic")' in player and
      's.contains("عربي")' in player,
  "Caching and source catalog status": "xs-vod-catalog-v1.json" in service and
