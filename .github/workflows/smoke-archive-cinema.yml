@@ -1,0 +1,18 @@
+name: Verify licensed Archive movies
+on:
+  push:
+    branches:
+      - open-archive-source-smoke-20261020
+    paths:
+      - scripts/smoke_archive_source.py
+      - .github/workflows/smoke-archive-cinema.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/smoke_archive_source.py
