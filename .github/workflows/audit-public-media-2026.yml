@@ -5,6 +5,7 @@ on:
       - r5-source-research-audit-20261020
     paths:
       - scripts/audit_public_media_sources_2026.py
+      - scripts/audit_media_sources_extra.py
       - .github/workflows/audit-public-media-2026.yml
   workflow_dispatch:
 permissions:
@@ -17,3 +18,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Inspect catalogs subtitles and player landing pages (no media downloads)
         run: python3 scripts/audit_public_media_sources_2026.py
+      - name: Check Arabic subtitle samples and alternative providers
+        run: python3 scripts/audit_media_sources_extra.py
