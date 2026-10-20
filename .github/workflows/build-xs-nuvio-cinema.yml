@@ -61,6 +61,15 @@ jobs:
           key: konan-xs-tv-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('nuvio/gradle/libs.versions.toml') }}
           restore-keys: |
             konan-xs-tv-${{ runner.os }}-${{ runner.arch }}-
+      - name: Create optional Kotlin runtime config input
+        working-directory: nuvio
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Nuvio's GenerateRuntimeConfigs Gradle task declares local.properties
+          # as an input file. It must exist even when there are no credentials.
+          touch local.properties
+          chmod 600 local.properties
       - name: Prepare iOS dependencies
         working-directory: nuvio
         run: ./scripts/prepare-ios-dependencies.sh
