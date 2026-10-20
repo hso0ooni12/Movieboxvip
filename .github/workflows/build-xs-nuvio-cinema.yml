@@ -40,8 +40,13 @@ jobs:
           python3 xs-tv/scripts/patch_nuvio_xs_cinema.py nuvio xs-tv
           python3 - <<'PY'
           from pathlib import Path
-          assert "androsubs.vercel.app" in Path("nuvio/composeApp/src/iosMain/kotlin/com/nuvio/app/features/addons/AddonPlatform.ios.kt").read_text()
+          data = Path("nuvio/composeApp/src/iosMain/kotlin/com/nuvio/app/features/addons/AddonPlatform.ios.kt").read_text()
+          assert "opensubtitles-v3.strem.io/manifest.json" in data
+          assert "androsubs.vercel.app" not in data, "Dead addon must not slow home screen"
           assert "PRODUCT_BUNDLE_IDENTIFIER=com.xstv.cinema.preview" in Path("nuvio/iosApp/Configuration/Config.xcconfig").read_text()
+          pbx = Path("nuvio/iosApp/iosApp.xcodeproj/project.pbxproj").read_text()
+          assert pbx.count("PRODUCT_BUNDLE_IDENTIFIER = com.xstv.cinema.preview;") == 2
+          assert pbx.count("PRODUCT_BUNDLE_IDENTIFIER = com.xstv.cinema.preview.DownloadsWidgetExtension;") == 2
           assert "XS TV Cinema" in Path("nuvio/iosApp/iosApp/Info.plist").read_text()
           print("Addon and branding integration passes source checks.")
           PY
