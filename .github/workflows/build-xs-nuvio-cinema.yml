@@ -1,0 +1,87 @@
+name: Build XS TV Cinema from Nuvio iOS
+on:
+  push:
+    branches:
+      - xs-nuvio-mobile-addon-build-20261020
+    paths:
+      - "scripts/patch_nuvio_xs_cinema.py"
+      - "scripts/check_nuvio_xs_sources.py"
+      - ".github/workflows/build-xs-nuvio-cinema.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: xs-tv-cinema-source-build
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 85
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      GRADLE_OPTS: "-Dfile.encoding=UTF-8"
+      NUVIO_IOS_DISTRIBUTION: full
+      IOS_CONFIGURATION: Release
+      KOTLIN_DAEMON_JVMARGS: "-Xmx2048M"
+      NUVIO_GRADLE_JVMARGS: "-Xmx4608M -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=768M"
+      NUVIO_KOTLIN_NATIVE_JVMARGS: "-Xmx4608M"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: xs-tv
+      - uses: actions/checkout@v4
+        with:
+          repository: NuvioMedia/NuvioMobile
+          ref: 0.6.2-beta
+          path: nuvio
+      - name: Prepare XS TV Cinema based on the pinned upstream Nuvio release
+        run: |
+          set -euo pipefail
+          python3 xs-tv/scripts/patch_nuvio_xs_cinema.py nuvio xs-tv
+          python3 - <<'PY'
+          from pathlib import Path
+          assert "androsubs.vercel.app" in Path("nuvio/composeApp/src/iosMain/kotlin/com/nuvio/app/features/addons/AddonPlatform.ios.kt").read_text()
+          assert "PRODUCT_BUNDLE_IDENTIFIER=com.xstv.cinema.preview" in Path("nuvio/iosApp/Configuration/Config.xcconfig").read_text()
+          assert "XS TV Cinema" in Path("nuvio/iosApp/iosApp/Info.plist").read_text()
+          print("Addon and branding integration passes source checks.")
+          PY
+      - name: Check free cinema and Arabic subtitle sources
+        run: python3 xs-tv/scripts/check_nuvio_xs_sources.py
+      - name: Install Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Configure Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Cache Kotlin Native
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-xs-tv-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('nuvio/gradle/libs.versions.toml') }}
+          restore-keys: |
+            konan-xs-tv-${{ runner.os }}-${{ runner.arch }}-
+      - name: Prepare iOS dependencies
+        working-directory: nuvio
+        run: ./scripts/prepare-ios-dependencies.sh
+      - name: Compile and package unsigned XS TV Cinema IPA
+        working-directory: nuvio
+        run: ./scripts/build-ios-ipa.sh
+      - name: Inspect generated IPA
+        working-directory: nuvio
+        run: |
+          set -euo pipefail
+          ipa_path=$(find build/ios-ipa -maxdepth 1 -name "*-full-release.ipa" -print -quit)
+          test -n "${ipa_path}"
+          unzip -tq "${ipa_path}"
+          unzip -p "${ipa_path}" Payload/Nuvio.app/Info.plist > /tmp/xstv-cinema-info.plist
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' /tmp/xstv-cinema-info.plist | grep -Fx "XS TV Cinema"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' /tmp/xstv-cinema-info.plist | grep -Fx "com.xstv.cinema.preview"
+          echo "XS TV Cinema unsigned IPA packaged and verified"
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: XS-TV-Cinema-Nuvio-Unsigned-IPA
+          path: nuvio/build/ios-ipa/*.ipa
+          if-no-files-found: error
+          retention-days: 30
