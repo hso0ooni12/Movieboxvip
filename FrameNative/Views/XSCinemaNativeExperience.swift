@@ -18,11 +18,18 @@ private enum XSNativeCinemaColors {
 
 struct XSCinemaNativeHomeView: View {
     @EnvironmentObject private var store: XSCinemaNativeStore
+    @State private var ambientGlow = false
     private var featured: XSCinemaMedia? { store.movies.first ?? store.freeMovies.first }
 
     var body: some View {
         ZStack {
             XSNativeCinemaColors.background.ignoresSafeArea()
+            RadialGradient(
+                colors:[.pink.opacity(ambientGlow ? 0.17 : 0.06),
+                        .purple.opacity(0.06), .clear],
+                center:.topLeading,startRadius:20,endRadius:420)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
             ScrollView {
                 LazyVStack(alignment:.leading,spacing:24) {
                     if let featured {
@@ -83,6 +90,11 @@ struct XSCinemaNativeHomeView: View {
         }
         .toolbar(.hidden,for:.navigationBar)
         .task { await store.boot() }
+        .onAppear {
+            withAnimation(.easeInOut(duration:2.8).repeatForever(autoreverses:true)) {
+                ambientGlow = true
+            }
+        }
     }
 
     private func featuredArtwork(_ item:XSCinemaMedia)->some View {
@@ -93,6 +105,12 @@ struct XSCinemaNativeHomeView: View {
                                    XSNativeCinemaColors.background],
                            startPoint:.top,endPoint:.bottom)
             VStack(alignment:.leading,spacing:11) {
+                Label("XS TV ORIGINAL EXPERIENCE", systemImage:"sparkles")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.white.opacity(0.82))
+                    .padding(.horizontal,13)
+                    .padding(.vertical,8)
+                    .background(.ultraThinMaterial,in:Capsule())
                 Text("XS TV   ·   FEATURED")
                     .font(.caption2.bold())
                     .tracking(2.8)
@@ -342,6 +360,7 @@ struct XSCinemaNativeDetailView:View {
     @EnvironmentObject private var store:XSCinemaNativeStore
     @State private var details:XSCinemaMedia?
     @State private var selection:XSVODPlaybackSelection?
+    @State private var websitePlayer:XSETWatchPlaybackRequest?
     @State private var selectedSeason=1
 
     private var item:XSCinemaMedia { details ?? media }
@@ -378,6 +397,17 @@ struct XSCinemaNativeDetailView:View {
                             .buttonStyle(.borderedProminent)
                             .tint(XSNativeCinemaColors.accent)
                         }
+                        if !item.isPlayable,
+                           let provider = XSETWatchPlaybackRequest.forTitle(item) {
+                            Button {
+                                websitePlayer = provider
+                            } label: {
+                                Label("تجربة مشغل ETWatch", systemImage:"play.rectangle.fill")
+                                    .frame(maxWidth:.infinity,minHeight:45)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(XSNativeCinemaColors.accent)
+                        }
                         Button {
                             store.toggle(item)
                         } label: {
@@ -393,7 +423,9 @@ struct XSCinemaNativeDetailView:View {
                             .foregroundStyle(.white.opacity(0.79))
                     }
                     if !item.isPlayable {
-                        Label("هذا العنوان موجود في الفهرس فقط. ما توفر له رابط تشغيل مصرح به، ولا بنعرض زر تشغيل وهمي.",
+                        Label(item.tmdbID == nil
+                              ? "بيانات الفيلم متوفرة، لكن ما وجدنا طريقة لفتح مشغل ETWatch لهذا العنوان."
+                              : "تجربة مشغل ETWatch اختيارية. تشغيله يعتمد على خوادم الموقع، وقد لا يتوفر الفيديو أو الترجمة.",
                               systemImage:"info.circle")
                             .font(.caption)
                             .foregroundStyle(.orange.opacity(0.95))
@@ -413,23 +445,32 @@ struct XSCinemaNativeDetailView:View {
                                 }
                                 .pickerStyle(.menu)
                                 ForEach(item.episodes.filter{$0.season==selectedSeason}) { ep in
-                                    HStack(spacing:12) {
-                                        Image(systemName:"play.rectangle")
-                                            .frame(width:53,height:51)
-                                            .background(XSNativeCinemaColors.tile,
-                                                        in:RoundedRectangle(cornerRadius:11))
-                                        VStack(alignment:.leading,spacing:4) {
-                                            Text("\(ep.number). \(ep.title)")
-                                                .font(.subheadline.bold())
-                                            Text("Episode \(ep.number)")
-                                                .font(.caption2)
+                                    Button {
+                                        websitePlayer = XSETWatchPlaybackRequest.forTitle(item, episode:ep)
+                                    } label: {
+                                        HStack(spacing:12) {
+                                            Image(systemName:"play.rectangle.fill")
+                                                .foregroundStyle(XSNativeCinemaColors.accent)
+                                                .frame(width:53,height:51)
+                                                .background(XSNativeCinemaColors.tile,
+                                                            in:RoundedRectangle(cornerRadius:11))
+                                            VStack(alignment:.leading,spacing:4) {
+                                                Text("\(ep.number). \(ep.title)")
+                                                    .font(.subheadline.bold())
+                                                Text("اختيار الحلقة داخل مشغّل الموقع")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(XSNativeCinemaColors.muted)
+                                            }
+                                            Spacer()
+                                            Image(systemName:"chevron.forward")
                                                 .foregroundStyle(XSNativeCinemaColors.muted)
                                         }
-                                        Spacer()
+                                        .padding(.vertical,4)
                                     }
-                                    .padding(.vertical,4)
+                                    .buttonStyle(.plain)
+                                    .disabled(item.tmdbID == nil)
                                 }
-                                Text("بيانات الحلقات متوفرة للفهرسة، وليس لدينا روابط مرخصة لتشغيلها.")
+                                Text("مواسم وحلقات الفهرس لا تحتوي روابط تشغيل مباشرة. الضغط يفتح صفحة المسلسل في ETWatch لاختيار الحلقة.")
                                     .font(.caption2)
                                     .foregroundStyle(XSNativeCinemaColors.muted)
                             } else {
@@ -460,6 +501,9 @@ struct XSCinemaNativeDetailView:View {
         }
         .fullScreenCover(item:$selection) { chosen in
             XSVODVLCPlayerView(source:chosen)
+        }
+        .fullScreenCover(item:$websitePlayer) { chosen in
+            XSETWatchIsolatedPlayerView(request:chosen)
         }
     }
 }
