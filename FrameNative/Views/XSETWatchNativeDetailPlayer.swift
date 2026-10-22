@@ -305,9 +305,9 @@ private struct XSETWatchVideoWebView: UIViewRepresentable {
               if(data!==null && Number(data)===desiredEpisode)return true;
               const label=(el.getAttribute("aria-label")||"")+" "+(el.innerText||"");
               const compact=label.trim();
-              return new RegExp("^E\\\\s*"+desiredEpisode+"(?:\\\\b|\\\\s)", "i").test(compact)
-                || new RegExp("^Episode\\\\s*"+desiredEpisode+"(?:\\\\b|\\\\s)", "i").test(compact)
-                || new RegExp("^حلقة\\\\s*"+desiredEpisode+"(?:\\\\b|\\\\s)").test(compact);
+              return new RegExp("^E[ ]*"+desiredEpisode+"(?:[^0-9]|$)", "i").test(compact)
+                || new RegExp("^Episode[ ]*"+desiredEpisode+"(?:[^0-9]|$)", "i").test(compact)
+                || new RegExp("^حلقة[ ]*"+desiredEpisode+"(?:[^0-9]|$)").test(compact);
             });
             if(!target)return false;
             episodeChosen=true;
