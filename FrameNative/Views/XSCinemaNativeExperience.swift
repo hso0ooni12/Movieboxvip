@@ -494,10 +494,10 @@ struct XSCinemaNativeDetailView:View {
         .navigationTitle(item.title)
         .navigationBarTitleDisplayMode(.inline)
         .task(id:media.id) {
-            if media.kind == .series {
-                details=await XSCinemaCatalogAPI.shared.detail(media)
-                selectedSeason=seasons.first ?? 1
-            }
+            // Search preview cards may omit TMDB IDs or episode metadata.
+            // Resolve details for BOTH movies and series before source handoff.
+            details=await XSCinemaCatalogAPI.shared.detail(media)
+            if media.kind == .series { selectedSeason=seasons.first ?? 1 }
         }
         .fullScreenCover(item:$selection) { chosen in
             XSVODVLCPlayerView(source:chosen)
