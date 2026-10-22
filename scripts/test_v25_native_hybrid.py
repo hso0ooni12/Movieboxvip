@@ -8,8 +8,8 @@ project=Path("project-native.yml").read_text()
 sports=Path("FrameNative/Views/SportsLiveViewV33.swift").read_text()
 checks={
     "Native movies series home not website browser":
-      all(x in root for x in ("XSCinemaNativeHomeView()", "XSCinemaNativeBrowseView(kind:.movie)",
-                              "XSCinemaNativeBrowseView(kind:.series)")) and "XSETWatchPortalView" not in root,
+      all(x in root for x in ("XSCinemaNativeHomeView()", "XSCinemaNativeBrowseView(kind: .movie)",
+                              "XSCinemaNativeBrowseView(kind: .series)")) and "XSETWatchPortalView" not in root,
     "Sports IPTV engine preserved": "XSSportsLiveViewV33()" in root and "XSVLCStableSurfaceView" in sports,
     "Cinemeta robust parser": "decodeCatalog(_ payload:" in catalog and
       "compactMap" in catalog and "JSONSerialization.jsonObject" in catalog,
