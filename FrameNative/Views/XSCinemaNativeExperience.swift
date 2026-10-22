@@ -56,7 +56,7 @@ struct XSCinemaNativeHomeView: View {
                     VStack(alignment:.leading,spacing:7) {
                         Text("مكتبة مستقلة عن IPTV")
                             .font(.subheadline.bold())
-                        Text("هذي واجهة نيتيف لفهرس الأفلام والمسلسلات. الأعمال اللي لها حقوق تشغيل متاحة فقط يظهر لها زر مشاهدة. مصدر ETWatch ما زال يحتاج واجهة رسمية لربط مكتبته ومشغله.")
+                        Text("تصفح الأفلام والمسلسلات نيتيف. زر تجربة مشغل الموقع يفتح صفحة مشاهدة العنوان فقط؛ توفر الفيديو والترجمة يخضع للموقع.")
                             .font(.caption)
                             .foregroundStyle(XSNativeCinemaColors.muted)
                     }
@@ -69,7 +69,7 @@ struct XSCinemaNativeHomeView: View {
                 .padding(.bottom,45)
             }
             .scrollIndicators(.hidden)
-            .refreshable { await store.boot() }
+            .refreshable { await store.boot(force:true) }
         }
         .overlay(alignment:.topTrailing) {
             NavigationLink { XSCinemaNativeSearchView() } label: {
@@ -262,7 +262,7 @@ struct XSCinemaNativeBrowseView: View {
             searchTask=Task {
                 try? await Task.sleep(nanoseconds:420_000_000)
                 guard !Task.isCancelled else { return }
-                if let results=try? await XSCinemaCatalogAPI.shared.search(value,kind:kind),
+                if let results=try? await XSCinemaV25FlexibleCatalog.shared.search(value,kind:kind),
                    !Task.isCancelled { remote=results }
             }
         }
@@ -280,10 +280,9 @@ struct XSCinemaNativeSearchView:View {
         guard !search.isEmpty else { return [] }
         let originals=store.movies+store.series+store.freeMovies
         let local=originals.filter { $0.title.localizedStandardContains(search) }
-        var ids=Set(local.map(\.id))
-        return Array((local+remoteMovies+remoteSeries)
-            .filter { ids.insert($0.id).inserted == false ? local.contains($0) : true }
-            .prefix(120))
+        var ids = Set<String>()
+        let all = local + remoteMovies + remoteSeries
+        return Array(all.filter { ids.insert($0.id).inserted }.prefix(120))
     }
 
     var body:some View {
@@ -328,8 +327,8 @@ struct XSCinemaNativeSearchView:View {
             task=Task {
                 try? await Task.sleep(nanoseconds:430_000_000)
                 guard !Task.isCancelled else{return}
-                async let m=XSCinemaCatalogAPI.shared.search(value,kind:.movie)
-                async let s=XSCinemaCatalogAPI.shared.search(value,kind:.series)
+                async let m=XSCinemaV25FlexibleCatalog.shared.search(value,kind:.movie)
+                async let s=XSCinemaV25FlexibleCatalog.shared.search(value,kind:.series)
                 if let movies=try? await m,!Task.isCancelled{remoteMovies=movies}
                 if let series=try? await s,!Task.isCancelled{remoteSeries=series}
             }
@@ -342,6 +341,7 @@ struct XSCinemaNativeDetailView:View {
     @EnvironmentObject private var store:XSCinemaNativeStore
     @State private var details:XSCinemaMedia?
     @State private var selection:XSVODPlaybackSelection?
+    @State private var websiteSelection:XSCinemaV25PlayerSelection?
     @State private var selectedSeason=1
 
     private var item:XSCinemaMedia { details ?? media }
@@ -378,6 +378,17 @@ struct XSCinemaNativeDetailView:View {
                             .buttonStyle(.borderedProminent)
                             .tint(XSNativeCinemaColors.accent)
                         }
+                        if let tmdb = item.tmdbID, tmdb > 0, item.kind == .movie {
+                            Button {
+                                websiteSelection = XSCinemaV25PlayerSelection(
+                                    tmdbID:tmdb,kind:.movie,title:item.title,season:1,episode:1)
+                            } label: {
+                                Label("جرّب مشغل الموقع",systemImage:"play.rectangle")
+                                    .frame(maxWidth:.infinity,minHeight:45)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(XSNativeCinemaColors.accent)
+                        }
                         Button {
                             store.toggle(item)
                         } label: {
@@ -392,11 +403,15 @@ struct XSCinemaNativeDetailView:View {
                             .font(.subheadline)
                             .foregroundStyle(.white.opacity(0.79))
                     }
-                    if !item.isPlayable {
+                    if !item.isPlayable && item.tmdbID == nil {
                         Label("هذا العنوان موجود في الفهرس فقط. ما توفر له رابط تشغيل مصرح به، ولا بنعرض زر تشغيل وهمي.",
                               systemImage:"info.circle")
                             .font(.caption)
                             .foregroundStyle(.orange.opacity(0.95))
+                    } else if item.tmdbID != nil {
+                        Text("مشغل الموقع تجربة مباشرة بصفحة المشاهدة. قد يتعذر تشغيل بعض العناوين أو ترجماتها.")
+                            .font(.caption)
+                            .foregroundStyle(XSNativeCinemaColors.muted)
                     } else {
                         Text("تشغيل مباشر من مصدر مفتوح الترخيص. اختيار الترجمة يعتمد على المسارات التي يوفرها الملف.")
                             .font(.caption)
@@ -413,6 +428,12 @@ struct XSCinemaNativeDetailView:View {
                                 }
                                 .pickerStyle(.menu)
                                 ForEach(item.episodes.filter{$0.season==selectedSeason}) { ep in
+                                    Button {
+                                        guard let tmdb = item.tmdbID, tmdb > 0 else { return }
+                                        websiteSelection = XSCinemaV25PlayerSelection(
+                                            tmdbID:tmdb,kind:.series,title:item.title,
+                                            season:ep.season,episode:ep.number)
+                                    } label: {
                                     HStack(spacing:12) {
                                         Image(systemName:"play.rectangle")
                                             .frame(width:53,height:51)
@@ -428,8 +449,11 @@ struct XSCinemaNativeDetailView:View {
                                         Spacer()
                                     }
                                     .padding(.vertical,4)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(item.tmdbID == nil)
                                 }
-                                Text("بيانات الحلقات متوفرة للفهرسة، وليس لدينا روابط مرخصة لتشغيلها.")
+                                Text("اضغط الحلقة لتجربة مشغل الموقع. التوفر والترجمة يعتمدان على المصدر.")
                                     .font(.caption2)
                                     .foregroundStyle(XSNativeCinemaColors.muted)
                             } else {
@@ -453,13 +477,14 @@ struct XSCinemaNativeDetailView:View {
         .navigationTitle(item.title)
         .navigationBarTitleDisplayMode(.inline)
         .task(id:media.id) {
-            if media.kind == .series {
-                details=await XSCinemaCatalogAPI.shared.detail(media)
-                selectedSeason=seasons.first ?? 1
-            }
+            details = await XSCinemaV25FlexibleCatalog.shared.detail(media)
+            selectedSeason = seasons.first ?? 1
         }
         .fullScreenCover(item:$selection) { chosen in
             XSVODVLCPlayerView(source:chosen)
+        }
+        .fullScreenCover(item:$websiteSelection) { chosen in
+            XSCinemaV25SitePlayerView(selection:chosen)
         }
     }
 }
