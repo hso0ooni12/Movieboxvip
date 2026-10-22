@@ -49,14 +49,25 @@ private struct XSCinemaCinemetaMeta: Decodable {
     let description: String?
     let releaseInfo: String?
     let imdbRating: String?
+    let moviedb_id: XSCinemaFlexibleIdentifier?
     let videos: [XSCinemaCinemetaVideo]?
 }
 private struct XSCinemaCinemetaVideo: Decodable {
-    let id: String
+    let id: String?
     let season: Int?
     let episode: Int?
     let title: String?
     let thumbnail: String?
+}
+
+private struct XSCinemaFlexibleIdentifier: Decodable {
+    let value: String
+    init(from decoder: Decoder) throws {
+        let v = try decoder.singleValueContainer()
+        if let s = try? v.decode(String.self) { value = s }
+        else if let n = try? v.decode(Int.self) { value = String(n) }
+        else { value = "" }
+    }
 }
 private struct XSCinemaCinemetaDetail: Decodable {
     let meta: XSCinemaCinemetaMeta
@@ -80,16 +91,31 @@ actor XSCinemaCatalogAPI {
     private func media(_ meta: XSCinemaCinemetaMeta, kind: XSCinemaMediaKind) -> XSCinemaMedia {
         let eps = (meta.videos ?? []).compactMap { v -> XSCinemaEpisode? in
             guard let season = v.season, let number = v.episode, season > 0 else { return nil }
-            return XSCinemaEpisode(id: v.id, season: season, number: number,
+            return XSCinemaEpisode(id: v.id ?? "\(season):\(number)", season: season, number: number,
                                    title: v.title ?? "Episode \(number)", thumbnail: v.thumbnail)
         }
+        // ETWatch's publicly exposed site navigation uses TMDB identifiers
+        // and a title/year slug. This is a browser navigation destination,
+        // never an extracted/guessed media stream URL.
+        let slug = meta.name.lowercased()
+            .replacingOccurrences(of: "&", with: " and ")
+            .replacingOccurrences(of: "[^a-z0-9]+", with: "-",
+                                  options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        let year = (meta.releaseInfo ?? "").range(
+            of: #"(?:19|20)\d{2}"#, options: .regularExpression)
+            .map { String((meta.releaseInfo ?? "")[$0]) }
+        let kindPath = kind == .movie ? "movie" : "series"
+        let route = meta.moviedb_id?.value.isEmpty == false
+            ? "https://www.etwatch.net/\(kindPath)/\(meta.moviedb_id!.value)-\(slug)\(year.map { "-" + $0 } ?? "")"
+            : nil
         return XSCinemaMedia(id: kind.rawValue + ":" + meta.id,
                              title: meta.name, kind: kind,
                              poster: meta.poster, backdrop: meta.background,
                              summary: meta.description ?? "",
                              year: meta.releaseInfo ?? "",
                              rating: Double(meta.imdbRating ?? "") ?? 0,
-                             playableURL: nil, sourceURL: nil, licenseURL: nil,
+                             playableURL: nil, sourceURL: route, licenseURL: nil,
                              imdbID: meta.id, episodes: eps)
     }
 
