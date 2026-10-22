@@ -1,0 +1,329 @@
+name: Build XS TV V26 — One Tap Play + Cinema Captions (R5 Sports)
+
+on:
+  push:
+    branches: ["r5-premium-v26-one-tap-cinema-captions-20261023"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-native-unsigned-ipa-premium-v18:
+    runs-on: macos-15
+    timeout-minutes: 50
+    env:
+      APP_NAME: XS TV
+      BUNDLE_ID: com.xsstore.xstv
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Embed Sports IPTV credentials from GitHub Secrets
+        shell: bash
+        env:
+          XS_IPTV_HOST: ${{ secrets.XS_IPTV_HOST }}
+          XS_IPTV_USERNAME: ${{ secrets.XS_IPTV_USERNAME }}
+          XS_IPTV_PASSWORD: ${{ secrets.XS_IPTV_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$XS_IPTV_HOST"
+          test -n "$XS_IPTV_USERNAME"
+          test -n "$XS_IPTV_PASSWORD"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          def swift_string(value: str) -> str:
+              value = value.replace('\\', '\\\\').replace('"', '\\"')
+              value = value.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+              return '"' + value + '"'
+
+          target = Path('FrameNative/Core/IPTVEmbeddedConfig.swift')
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_text(
+              'import Foundation\n\n'
+              'enum XSIPTVEmbeddedConfig {\n'
+              '    static let credentials: IPTVCredentials? = IPTVCredentials(\n'
+              f'        host: {swift_string(os.environ["XS_IPTV_HOST"])},\n'
+              f'        username: {swift_string(os.environ["XS_IPTV_USERNAME"])},\n'
+              f'        password: {swift_string(os.environ["XS_IPTV_PASSWORD"])}\n'
+              '    )\n'
+              '    static let isConfigured = true\n'
+              '}\n',
+              encoding='utf-8'
+          )
+          print('Sports IPTV configuration generated from GitHub Secrets.')
+          PY
+
+      - name: Diagnose configured IPTV account (safe status only)
+        continue-on-error: true
+        env:
+          XS_IPTV_HOST: ${{ secrets.XS_IPTV_HOST }}
+          XS_IPTV_USERNAME: ${{ secrets.XS_IPTV_USERNAME }}
+          XS_IPTV_PASSWORD: ${{ secrets.XS_IPTV_PASSWORD }}
+        run: python3 scripts/diagnose_v5_iptv_secrets.py
+
+      - name: Generate XS TV brand assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          APPICON_DIR="FrameNative/Assets.xcassets/AppIcon.appiconset"
+          LOGO_DIR="FrameNative/Assets.xcassets/XSStoreLogo.imageset"
+          mkdir -p "$APPICON_DIR" "$LOGO_DIR"
+          cat > /tmp/xstv-icon.swift <<'SWIFT'
+          import AppKit
+          func polygon(_ points: [NSPoint]) -> NSBezierPath {
+              let p = NSBezierPath(); guard let first = points.first else { return p }
+              p.move(to: first); for point in points.dropFirst() { p.line(to: point) }; p.close(); return p
+          }
+          func makeIcon(size: CGFloat, path: String) throws {
+              let image = NSImage(size: NSSize(width: size, height: size)); image.lockFocus()
+              NSColor(calibratedRed: 0.025, green: 0.02, blue: 0.055, alpha: 1).setFill()
+              NSRect(x: 0, y: 0, width: size, height: size).fill()
+              let glow = NSGradient(colors: [NSColor(calibratedRed: 0.38, green: 0.05, blue: 1.0, alpha: 0.34), NSColor(calibratedRed: 0.78, green: 0.02, blue: 0.55, alpha: 0.10), NSColor.clear])!
+              glow.draw(fromCenter: NSPoint(x: size * 0.5, y: size * 0.54), radius: 0, toCenter: NSPoint(x: size * 0.5, y: size * 0.54), radius: size * 0.62, options: [])
+              let gradient = NSGradient(colors: [NSColor(calibratedRed: 0.22, green: 0.04, blue: 1.0, alpha: 1), NSColor(calibratedRed: 0.76, green: 0.02, blue: 0.62, alpha: 1), NSColor(calibratedRed: 1.0, green: 0.24, blue: 0.02, alpha: 1)])!
+              let w = size, h = size
+              let left = polygon([NSPoint(x:w*0.13,y:h*0.18),NSPoint(x:w*0.29,y:h*0.18),NSPoint(x:w*0.59,y:h*0.84),NSPoint(x:w*0.49,y:h*0.93)])
+              let middle = polygon([NSPoint(x:w*0.34,y:h*0.18),NSPoint(x:w*0.50,y:h*0.18),NSPoint(x:w*0.69,y:h*0.68),NSPoint(x:w*0.61,y:h*0.79)])
+              let right = polygon([NSPoint(x:w*0.54,y:h*0.18),NSPoint(x:w*0.85,y:h*0.18),NSPoint(x:w*0.70,y:h*0.52),NSPoint(x:w*0.61,y:h*0.41)])
+              for shape in [left,middle,right] { gradient.draw(in: shape, angle: 225) }
+              image.unlockFocus()
+              guard let tiff=image.tiffRepresentation, let rep=NSBitmapImageRep(data:tiff), let png=rep.representation(using:.png,properties:[:]) else { throw NSError(domain:"XSTV",code:1) }
+              try png.write(to: URL(fileURLWithPath:path))
+          }
+          try makeIcon(size:1024,path:CommandLine.arguments[1]); try makeIcon(size:512,path:CommandLine.arguments[2])
+          SWIFT
+          swift /tmp/xstv-icon.swift "$APPICON_DIR/AppIcon-1024.png" "$LOGO_DIR/XSStoreLogo.png"
+          cat > "$APPICON_DIR/Contents.json" <<'JSON'
+          {"images":[{"filename":"AppIcon-1024.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"author":"xcode","version":1}}
+          JSON
+          cat > "$LOGO_DIR/Contents.json" <<'JSON'
+          {"images":[{"filename":"XSStoreLogo.png","idiom":"universal","scale":"1x"},{"idiom":"universal","scale":"2x"},{"idiom":"universal","scale":"3x"}],"info":{"author":"xcode","version":1}}
+          JSON
+          cat > "FrameNative/Assets.xcassets/Contents.json" <<'JSON'
+          {"info":{"author":"xcode","version":1}}
+          JSON
+
+      - name: Apply XS Player interaction fix
+        run: python3 scripts/player_visibility_fix.py
+      - name: Apply stable XS Player v7 engine
+        run: python3 scripts/player_v7_stable_engine.py
+      - name: Apply XS Player v8 functional controls
+        run: python3 scripts/player_v8_functional_fix.py
+      - name: Apply XS Player v9 subtitle and tap fix
+        run: python3 scripts/player_v9_subtitle_tap_fix.py
+      - name: Apply XS Player v11 network discovery
+        run: python3 scripts/player_v11_subtitle_network_server_fix.py
+      - name: Apply V24 source-owned subtitle selection
+        run: python3 scripts/player_v24_source_menu_bridge.py
+      - name: Apply V25 subtitle appearance
+        run: python3 scripts/player_v25_run3.py
+      - name: Fix V25 bridge indentation
+        run: python3 scripts/player_v25_indent_fix.py
+      - name: Restore V24 request helper
+        run: python3 scripts/player_v25_restore_v24_request.py
+      - name: Apply V26 player UI polish
+        run: python3 scripts/player_v26_final_ui_polish.py
+      - name: Apply V27 compact subtitle controls
+        run: python3 scripts/player_v27_compact_subtitle_controls.py
+      - name: Apply V28 proportional player chrome
+        run: python3 scripts/player_v28_proportional_chrome.py
+      - name: Apply V29 ultra compact chrome
+        run: python3 scripts/player_v29_ultra_compact.py
+      - name: Apply V29 smooth browsing
+        run: python3 scripts/app_v29_smooth_browsing.py
+      - name: Apply V30 floating menus and hit targets
+        run: python3 scripts/player_v30_floating_hit_targets.py
+      - name: Apply V34 iOS sports controls and clean-anime filter
+        run: python3 scripts/app_v34_ios_player_clean_anime.py
+      - name: Apply V35 final playback and performance polish
+        run: python3 scripts/app_v35_final_polish.py
+
+      - name: Test source subtitle bridge
+        shell: bash
+        run: |
+          npm install --prefix "$RUNNER_TEMP/xs-subtitle-tests" --no-audit --no-fund jsdom@26.1.0 @sinonjs/fake-timers@13.0.5
+          NODE_PATH="$RUNNER_TEMP/xs-subtitle-tests/node_modules" node --test scripts/test_source_subtitles.cjs
+      - name: Verify V26 engine integrity
+        run: python3 scripts/test_v26_player_integrity.py
+      - name: Verify V29 compact and ProMotion settings
+        run: python3 scripts/test_v29_compact_promotion.py
+      - name: Verify V33 sports backend and server-only settings
+        run: python3 scripts/test_v33_sports_vlc.py
+      - name: Verify V34 iOS player and clean anime filter
+        run: python3 scripts/test_v34_native_player_clean_anime.py
+      - name: Verify V35 full app polish
+        run: python3 scripts/test_v35_final_polish.py
+
+      - name: Apply and validate protected R5 engine layers in order
+        run: |
+          python3 scripts/app_v39_native_polish.py
+          python3 scripts/test_v39_native_polish.py
+          python3 scripts/app_v39_device_refinements.py
+          python3 scripts/test_v39_device_refinements.py
+          python3 scripts/app_v39_r3_device_fixes.py
+          python3 scripts/test_v39_r3_device_fixes.py
+          python3 scripts/app_v39_r4_root_fixes.py
+          python3 scripts/test_v39_r4_root_fixes.py
+          python3 scripts/app_v39_r5_stability_restore.py
+          python3 scripts/app_r5_caption_layout.py
+          python3 scripts/app_v5_fast_player_discovery.py
+          python3 scripts/test_v39_r5_stability_restore.py
+          python3 scripts/app_v5_apply_iptv.py
+          python3 scripts/test_r5_cinema_ui.py
+          python3 scripts/test_r5_premium_v3.py
+          python3 scripts/test_r5_premium_v4_search.py
+          python3 scripts/test_v5_iptv_player_speed.py
+          python3 scripts/app_v6_arabic_channels_player_ux.py
+          python3 scripts/test_v6_arabic_channels_player_ux.py
+          python3 scripts/app_v7_ar_sports_sections.py
+          python3 scripts/test_v7_ar_sports_sections.py
+          python3 scripts/app_v8_sports_coverage.py
+          python3 scripts/test_v8_full_catalog_sports.py
+          python3 scripts/test_v9_catalog_reliability.py
+          python3 scripts/app_v10_final_performance.py
+          python3 scripts/test_v10_performance_integrity.py
+          python3 scripts/app_v11_server_subtitle_refinements.py
+          python3 scripts/test_v11_server_subtitle_integrity.py
+          python3 scripts/app_v12_subtitle_sync_engine.py
+          python3 scripts/test_v12_subtitle_sync_integrity.py
+          python3 scripts/app_v16_source_cue_sync.py
+          python3 scripts/test_v16_source_cue_sync_integrity.py
+          python3 scripts/app_v17_large_subtitle_offsets.py
+          python3 scripts/test_v17_large_subtitle_offsets.py
+          python3 scripts/test_v18_febbox_library_integrity.py
+
+      - name: Switch movie and series source to subscribed VOD (V20)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/app_v20_xtream_vod_primary.py
+          python3 scripts/test_v20_xtream_vod_primary.py
+          python3 scripts/test_v21_vod_player_fast_loading.py
+      - name: Replace VOD with ETWatch original player (Sports preserved)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/app_v23_etwatch_webplayer.py
+          python3 scripts/test_v23_etwatch_webplayer.py
+      - name: Switch to native cinematic home and source-independent browse
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/app_v24_native_cinema.py
+          python3 scripts/test_v24_native_cinema.py
+      - name: Seed native catalog and verify title-scoped ETWatch player
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/generate_v25_native_seed.py
+          python3 scripts/test_v25_native_etwatch.py
+          python3 scripts/test_v26_one_tap_cinema.py
+
+      - name: Parse all active SwiftUI and playback sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          find FrameNative -name '*.swift' ! -name 'FrameXTVPlayer.swift' ! -name 'FrameXTVPlayerV2.swift' ! -name 'FrameXTVPlayerV3.swift' ! -name 'FrameXTVPlayerV4.swift' ! -name 'FrameXTVPlayerV5.swift' ! -name 'GenreCatalogView.swift' -print0 | xargs -0 swiftc -frontend -parse
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate native Xcode project
+        run: xcodegen generate --spec project-native.yml
+
+      - name: Build unsigned native device app
+        shell: bash
+        run: |
+          mkdir -p build-native
+          set -o pipefail
+          xcodebuild \
+            -project FrameNative.xcodeproj \
+            -scheme FrameNative \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build-native/DerivedData \
+            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+            APP_DISPLAY_NAME="$APP_NAME" \
+            MARKETING_VERSION="18.0.0" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            clean build | tee build-native/xcodebuild-device.log
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find build-native/DerivedData/Build/Products/Release-iphoneos -maxdepth 1 -type d -name '*.app' | head -n 1)"
+          test -n "$APP_PATH"; test -d "$APP_PATH"
+          rm -rf "$APP_PATH/_CodeSignature"; rm -f "$APP_PATH/embedded.mobileprovision"
+          PACKAGE_DIR="build-native/UnsignedPackage"; IPA_PATH="build-native/XS-TV-Premium-V26-CinemaCaptions-unsigned.ipa"
+          rm -rf "$PACKAGE_DIR" "$IPA_PATH"; mkdir -p "$PACKAGE_DIR/Payload"
+          ditto "$APP_PATH" "$PACKAGE_DIR/Payload/XSTV.app"
+          (cd "$PACKAGE_DIR" && /usr/bin/zip -qry "../XS-TV-Premium-V26-CinemaCaptions-unsigned.ipa" Payload)
+          unzip -t "$IPA_PATH"
+          {
+            echo "App name: $APP_NAME"
+            echo "Bundle ID: $BUNDLE_ID"
+            echo "Playback: proven V24 subtitle/server engine preserved"
+            echo "Sports: VLCKit live decoder with direct tap hide/show controls"
+            echo "Sports: rotation-safe drawable rebinding and post-rotation recovery"
+            echo "Sports: faster live startup/failover and local catalog cache"
+            echo "Sports settings: server-only editing; account fields hidden"
+            echo "Cinema: source-independent native SwiftUI browser; Cinemeta offline metadata, open-license direct video, and ETWatch title-scoped original player"
+            echo "Performance: shared artwork cache, Release -O, whole-module optimization, ProMotion opt-in"
+            echo "VLCKit wrapper revision: aa0082dd94e4c91450dc3b9cbadb2b385f1e995e"
+            echo "Minimum iOS: 16.0"
+            echo "Signing: none"
+            echo "Build number: $GITHUB_RUN_NUMBER"
+            echo "Commit: $GITHUB_SHA"
+          } > build-native/BUILD-INFO.txt
+          echo "FINAL_IPA=$IPA_PATH" >> "$GITHUB_ENV"
+
+      - name: Validate packaged IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHECK_DIR="$RUNNER_TEMP/xstv-premium-v26-cinema-captions-check"
+          rm -rf "$CHECK_DIR"; mkdir -p "$CHECK_DIR"
+          unzip -q "$FINAL_IPA" -d "$CHECK_DIR"
+          APP="$CHECK_DIR/Payload/XSTV.app"
+          test -d "$APP"
+          test -f "$APP/Info.plist"
+          test -f "$APP/Assets.car"
+          ACTUAL_BUNDLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")"
+          test "$ACTUAL_BUNDLE" = "$BUNDLE_ID"
+          MIN_OS="$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP/Info.plist")"
+          test "$MIN_OS" = "16.0"
+          PROMOTION="$(/usr/libexec/PlistBuddy -c 'Print :CADisableMinimumFrameDuration' "$APP/Info.plist")"
+          test "$PROMOTION" = "true"
+          EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")"
+          test -x "$APP/$EXECUTABLE"
+          find "$APP" -name '*VLCKit*' -o -name '*VLC*' | head -n 20
+          IPA_BYTES="$(stat -f%z "$FINAL_IPA")"
+          test "$IPA_BYTES" -gt 1500000
+          echo "V35 IPA validation PASS: $IPA_BYTES bytes, bundle=$ACTUAL_BUNDLE, minOS=$MIN_OS, ProMotion=$PROMOTION"
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: xs-tv-premium-v26-cinema-captions-unsigned-ipa
+          path: |
+            ${{ env.FINAL_IPA }}
+            build-native/BUILD-INFO.txt
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xs-tv-premium-v26-cinema-captions-build-log
+          path: build-native/xcodebuild-device.log
+          retention-days: 7
