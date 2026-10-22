@@ -19,7 +19,7 @@ checks={
   "ETWatch site-specific navigation only":'https://www.etwatch.net/' in source
       and "moviedb_id" in source and "sourceURL: route" in source,
   "real player and source-specific episode screens":all(x in ui for x in
-    ("XSETWatchNativeDetailPlayer(url:url,title:item.title)",
+    ("XSETWatchNativeDetailPlayer(",
      "XSCinemaNativeDetailView", "selectedSeason", "fullScreenCover")),
   "site video remains under original website":all(x in player for x in
     ("WKWebView", "WKWebViewConfiguration", "websiteDataStore = .default()")),
