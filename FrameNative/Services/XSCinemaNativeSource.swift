@@ -21,6 +21,7 @@ struct XSCinemaMedia: Codable, Hashable, Identifiable, Sendable {
     var sourceURL: String?
     var licenseURL: String?
     var imdbID: String?
+    var tmdbID: Int?
     var episodes: [XSCinemaEpisode]
 
     var imageURL: URL? { poster.flatMap(URL.init(string:)) }
@@ -37,38 +38,15 @@ struct XSCinemaEpisode: Codable, Hashable, Identifiable, Sendable {
     let thumbnail: String?
 }
 
-private struct XSCinemaCinemetaCatalog: Decodable {
-    let metas: [XSCinemaCinemetaMeta]
-}
-private struct XSCinemaCinemetaMeta: Decodable {
-    let id: String
-    let name: String
-    let type: String?
-    let poster: String?
-    let background: String?
-    let description: String?
-    let releaseInfo: String?
-    let imdbRating: String?
-    let videos: [XSCinemaCinemetaVideo]?
-}
-private struct XSCinemaCinemetaVideo: Decodable {
-    let id: String
-    let season: Int?
-    let episode: Int?
-    let title: String?
-    let thumbnail: String?
-}
-private struct XSCinemaCinemetaDetail: Decodable {
-    let meta: XSCinemaCinemetaMeta
-}
-
+// The Cinemeta "metas" array contains heterogeneous objects. One malformed
+// artwork/episode value must not blank out the entire home page.
 actor XSCinemaCatalogAPI {
     static let shared = XSCinemaCatalogAPI()
     private let base = "https://v3-cinemeta.strem.io"
 
     private func data(_ url: URL) async throws -> Data {
-        var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 18)
-        request.setValue("XS-TV-Native-Cinema/1.0", forHTTPHeaderField: "User-Agent")
+        var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 14)
+        request.setValue("XS-TV/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let r = response as? HTTPURLResponse,
               (200..<300).contains(r.statusCode), !data.isEmpty else {
@@ -77,101 +55,162 @@ actor XSCinemaCatalogAPI {
         return data
     }
 
-    private func media(_ meta: XSCinemaCinemetaMeta, kind: XSCinemaMediaKind) -> XSCinemaMedia {
-        let eps = (meta.videos ?? []).compactMap { v -> XSCinemaEpisode? in
-            guard let season = v.season, let number = v.episode, season > 0 else { return nil }
-            return XSCinemaEpisode(id: v.id, season: season, number: number,
-                                   title: v.title ?? "Episode \(number)", thumbnail: v.thumbnail)
+    private func string(_ value: Any?) -> String? {
+        if let str = value as? String { return str }
+        if let value = value as? NSNumber { return value.stringValue }
+        return nil
+    }
+
+    private func media(_ object: [String: Any], kind: XSCinemaMediaKind) -> XSCinemaMedia? {
+        guard let id = string(object["id"]), !id.isEmpty,
+              let title = string(object["name"]), !title.isEmpty else { return nil }
+        let eps = (object["videos"] as? [[String: Any]] ?? []).compactMap { ep -> XSCinemaEpisode? in
+            guard let seasonText = string(ep["season"]), let season = Int(seasonText),
+                  let numberText = string(ep["episode"]), let number = Int(numberText),
+                  season > 0, number > 0 else { return nil }
+            let episodeID = string(ep["id"]) ?? id + ":\(season):\(number)"
+            return XSCinemaEpisode(id: episodeID, season: season, number: number,
+                                   title: string(ep["title"]) ?? "Episode \(number)",
+                                   thumbnail: string(ep["thumbnail"]))
         }
-        return XSCinemaMedia(id: kind.rawValue + ":" + meta.id,
-                             title: meta.name, kind: kind,
-                             poster: meta.poster, backdrop: meta.background,
-                             summary: meta.description ?? "",
-                             year: meta.releaseInfo ?? "",
-                             rating: Double(meta.imdbRating ?? "") ?? 0,
-                             playableURL: nil, sourceURL: nil, licenseURL: nil,
-                             imdbID: meta.id, episodes: eps)
+        let tmdb = string(object["moviedb_id"]).flatMap(Int.init)
+        let stars = string(object["imdbRating"]).flatMap(Double.init) ?? 0
+        return XSCinemaMedia(
+            id: kind.rawValue + ":" + id, title: title, kind: kind,
+            poster: string(object["poster"]), backdrop: string(object["background"]),
+            summary: string(object["description"]) ?? "",
+            year: string(object["releaseInfo"]) ?? string(object["year"]) ?? "",
+            rating: stars, playableURL: nil,
+            sourceURL: nil, licenseURL: nil, imdbID: id,
+            tmdbID: tmdb, episodes: eps)
+    }
+
+    private func catalogResponse(_ url: URL, kind: XSCinemaMediaKind) async throws -> [XSCinemaMedia] {
+        let payload = try await data(url)
+        return Self.decodeCatalog(payload, kind: kind)
+    }
+
+    nonisolated static func decodeCatalog(_ payload: Data, kind: XSCinemaMediaKind) -> [XSCinemaMedia] {
+        // Keep parser non-throwing for individual missing fields.
+        guard let top = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
+              let rows = top["metas"] as? [[String: Any]] else { return [] }
+        // Swift-actor isolation: a static nonisolated factory does not access actor
+        // instance fields, so keep a local primitive converter here.
+        func str(_ obj: Any?) -> String? {
+            if let text = obj as? String { return text }
+            if let num = obj as? NSNumber { return num.stringValue }
+            return nil
+        }
+        return rows.compactMap { row -> XSCinemaMedia? in
+            guard let id = str(row["id"]), !id.isEmpty,
+                  let title = str(row["name"]), !title.isEmpty else { return nil }
+            let episodes = (row["videos"] as? [[String: Any]] ?? []).compactMap { ep -> XSCinemaEpisode? in
+                guard let seasonS = str(ep["season"]), let season = Int(seasonS),
+                      let episodeS = str(ep["episode"]), let number = Int(episodeS),
+                      season > 0, number > 0 else { return nil }
+                return XSCinemaEpisode(
+                    id: str(ep["id"]) ?? "\(id):\(season):\(number)",
+                    season: season, number: number,
+                    title: str(ep["title"]) ?? "Episode \(number)",
+                    thumbnail: str(ep["thumbnail"]))
+            }
+            return XSCinemaMedia(
+                id: kind.rawValue + ":" + id, title: title, kind: kind,
+                poster: str(row["poster"]), backdrop: str(row["background"]),
+                summary: str(row["description"]) ?? "",
+                year: str(row["releaseInfo"]) ?? str(row["year"]) ?? "",
+                rating: str(row["imdbRating"]).flatMap(Double.init) ?? 0,
+                playableURL: nil, sourceURL: nil, licenseURL: nil,
+                imdbID: id,
+                tmdbID: str(row["moviedb_id"]).flatMap(Int.init),
+                episodes: episodes)
+        }
     }
 
     func catalog(_ kind: XSCinemaMediaKind, skip: Int = 0) async throws -> [XSCinemaMedia] {
         let extra = skip == 0 ? "" : "/skip=\(skip)"
-        guard let url = URL(string: base + "/catalog/\(kind.rawValue)/top\(extra).json") else { return [] }
-        let bytes = try await data(url)
-        let value = try JSONDecoder().decode(XSCinemaCinemetaCatalog.self, from: bytes)
-        return value.metas.map { media($0,kind:kind) }
+        guard let url = URL(string: base + "/catalog/\(kind.rawValue)/top\(extra).json")
+        else { return [] }
+        return try await catalogResponse(url, kind: kind)
     }
 
     func search(_ phrase: String, kind: XSCinemaMediaKind) async throws -> [XSCinemaMedia] {
         let trimmed = phrase.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
-              let url = URL(string: base + "/catalog/\(kind.rawValue)/top/search=\(encoded).json") else { return [] }
-        let bytes = try await data(url)
-        let value = try JSONDecoder().decode(XSCinemaCinemetaCatalog.self, from: bytes)
-        return value.metas.map { media($0,kind:kind) }
+        guard !trimmed.isEmpty,
+              let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: base + "/catalog/\(kind.rawValue)/top/search=\(encoded).json")
+        else { return [] }
+        return try await catalogResponse(url, kind: kind)
     }
 
     func detail(_ item: XSCinemaMedia) async -> XSCinemaMedia {
         guard let imdb = item.imdbID,
               let url = URL(string: base + "/meta/\(item.kind.rawValue)/\(imdb).json"),
-              let data = try? await data(url),
-              let wrapper = try? JSONDecoder().decode(XSCinemaCinemetaDetail.self, from: data) else {
+              let payload = try? await data(url),
+              let top = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
+              let object = top["meta"] as? [String: Any],
+              let body = try? JSONSerialization.data(withJSONObject: ["metas": [object]]),
+              let updated = Self.decodeCatalog(body, kind: item.kind).first else {
             return item
         }
-        return media(wrapper.meta, kind: item.kind)
+        return updated
     }
 
-    // This separate collection includes only material with an explicit open
-    // redistribution license, and an actual MP4 in its source metadata.
     func openFilms() async -> [XSCinemaMedia] {
-        var c = URLComponents(string: "https://archive.org/advancedsearch.php")!
-        c.queryItems = [
+        var components = URLComponents(string: "https://archive.org/advancedsearch.php")!
+        components.queryItems = [
             URLQueryItem(name: "q", value: "mediatype:movies AND licenseurl:http*"),
             URLQueryItem(name: "fl[]", value: "identifier"),
             URLQueryItem(name: "sort[]", value: "downloads desc"),
-            URLQueryItem(name: "rows", value: "30"),
+            URLQueryItem(name: "rows", value: "20"),
             URLQueryItem(name: "output", value: "json")
         ]
-        guard let url = c.url, let raw = try? await data(url),
-              let body = try? JSONSerialization.jsonObject(with: raw) as? [String:Any],
-              let response = body["response"] as? [String:Any],
-              let docs = response["docs"] as? [[String:Any]] else { return [] }
-        var result: [XSCinemaMedia] = []
-        for doc in docs.prefix(18) {
-            guard let id = doc["identifier"] as? String,
+        guard let url = components.url,
+              let raw = try? await data(url),
+              let body = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
+              let response = body["response"] as? [String: Any],
+              let docs = response["docs"] as? [[String: Any]] else { return [] }
+
+        var films: [XSCinemaMedia] = []
+        // Limited lightweight scan: not more than ten entries, no video downloads.
+        for item in docs.prefix(10) {
+            guard let id = item["identifier"] as? String,
                   id.range(of: #"^[A-Za-z0-9_.-]+$"#, options: .regularExpression) != nil,
-                  let metadataURL = URL(string: "https://archive.org/metadata/\(id)"),
-                  let d = try? await data(metadataURL),
-                  let object = try? JSONSerialization.jsonObject(with: d) as? [String:Any],
-                  let meta = object["metadata"] as? [String:Any],
-                  let files = object["files"] as? [[String:Any]],
-                  let license = meta["licenseurl"] as? String else { continue }
-            let valid = license.lowercased().contains("creativecommons.org/licenses/by/") ||
-                        license.lowercased().contains("creativecommons.org/licenses/by-sa/") ||
-                        license.lowercased().contains("creativecommons.org/publicdomain/zero/")
-            guard valid else { continue }
-            let mp4 = files.compactMap { f -> (String,Int)? in
-                guard let name = f["name"] as? String, name.lowercased().hasSuffix(".mp4"),
-                      let size = Int(f["size"] as? String ?? ""), size > 4_000_000,
-                      size < 3_000_000_000 else { return nil }
-                return (name,size)
+                  let endpoint = URL(string: "https://archive.org/metadata/\(id)"),
+                  let data = try? await data(endpoint),
+                  let info = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let meta = info["metadata"] as? [String: Any],
+                  let license = meta["licenseurl"] as? String,
+                  license.contains("creativecommons.org/licenses/by/") ||
+                    license.contains("creativecommons.org/licenses/by-sa/") ||
+                    license.contains("creativecommons.org/publicdomain/zero/"),
+                  let files = info["files"] as? [[String: Any]] else { continue }
+
+            let mp4 = files.compactMap { f -> (String, Int)? in
+                guard let filename = f["name"] as? String,
+                      filename.lowercased().hasSuffix(".mp4"),
+                      let bytes = Int(f["size"] as? String ?? ""), bytes > 4_000_000,
+                      bytes < 3_000_000_000 else { return nil }
+                return (filename, bytes)
             }.sorted { $0.1 < $1.1 }.first?.0
-            guard let file = mp4,
-                  let encoded = file.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { continue }
-            let title = (meta["title"] as? String) ?? id
-            let imageName = files.compactMap { $0["name"] as? String }
-                .first { $0.lowercased().hasSuffix(".jpg") || $0.lowercased().hasSuffix(".png") }
-            let poster = imageName.flatMap { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) }
+            guard let filename = mp4,
+                  let escaped = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+            else { continue }
+            let artwork = files.compactMap { $0["name"] as? String }
+                .first { $0.lowercased().hasSuffix(".jpg") }
+                .flatMap { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) }
                 .map { "https://archive.org/download/\(id)/\($0)" }
-            result.append(XSCinemaMedia(
-                id:"archive:"+id, title:title, kind:.movie,
-                poster:poster, backdrop:poster,
-                summary: "عمل متاح بموجب ترخيص مفتوح من Internet Archive.",
-                year:"", rating:0,
-                playableURL:"https://archive.org/download/\(id)/\(encoded)",
-                sourceURL:"https://archive.org/details/\(id)",
-                licenseURL:license, imdbID:nil, episodes:[]))
+            films.append(XSCinemaMedia(
+                id: "archive:" + id,
+                title: (meta["title"] as? String) ?? id,
+                kind: .movie, poster: artwork, backdrop: artwork,
+                summary: "فيلم بترخيص مفتوح من Internet Archive.",
+                year: "", rating: 0,
+                playableURL: "https://archive.org/download/\(id)/\(escaped)",
+                sourceURL: "https://archive.org/details/\(id)",
+                licenseURL: license, imdbID: nil, tmdbID: nil, episodes: []))
         }
-        return result
+        return films
     }
 }
 
@@ -197,29 +236,49 @@ final class XSCinemaNativeStore: ObservableObject {
         if !favorites.insert(item.id).inserted { favorites.remove(item.id) }
         UserDefaults.standard.set(Array(favorites),forKey:favoriteKey)
     }
+    private func bundled(_ kind: XSCinemaMediaKind) -> [XSCinemaMedia] {
+        guard let url = Bundle.main.url(forResource: "xs-cinema-\(kind.rawValue)-bootstrap",
+                                        withExtension: "json"),
+              let data = try? Data(contentsOf: url) else { return [] }
+        return XSCinemaCatalogAPI.decodeCatalog(data, kind: kind)
+    }
+
     func boot() async {
         guard !loaded && !loading else { return }
         loading = true
         defer { loading = false }
+        // On-device network errors must not leave all tabs blank.
+        if movies.isEmpty { movies = bundled(.movie) }
+        if series.isEmpty { series = bundled(.series) }
+        loaded = !movies.isEmpty || !series.isEmpty
+        error = nil
         async let a = XSCinemaCatalogAPI.shared.catalog(.movie)
         async let b = XSCinemaCatalogAPI.shared.catalog(.series)
-        async let c = XSCinemaCatalogAPI.shared.openFilms()
         do {
-            let m = try await a
-            movies = m
-            skips[.movie] = m.count
+            let fetched = try await a
+            if !fetched.isEmpty {
+                movies = fetched
+                skips[.movie] = fetched.count
+                loaded = true
+            }
         } catch {
-            self.error = "تعذر تحميل الأفلام الآن."
+            if movies.isEmpty { self.error = "تعذر جلب الأفلام، جرّب تحديث الاتصال." }
         }
         do {
-            let s = try await b
-            series = s
-            skips[.series] = s.count
+            let fetched = try await b
+            if !fetched.isEmpty {
+                series = fetched
+                skips[.series] = fetched.count
+                loaded = true
+            }
         } catch {
-            self.error = "تعذر تحميل المسلسلات الآن."
+            if series.isEmpty { self.error = "تعذر جلب المسلسلات، جرّب تحديث الاتصال." }
         }
-        freeMovies = await c
-        loaded = !movies.isEmpty || !series.isEmpty || !freeMovies.isEmpty
+        // Open-license scanning is separate: don't block home or navigation.
+        Task { [weak self] in
+            let publicTitles = await XSCinemaCatalogAPI.shared.openFilms()
+            self?.freeMovies = publicTitles
+        }
     }
     func more(_ kind: XSCinemaMediaKind) async {
         guard !loadingMore.contains(kind) else { return }
