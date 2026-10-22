@@ -344,6 +344,7 @@ struct XSCinemaNativeDetailView:View {
     @State private var selection:XSVODPlaybackSelection?
     @State private var selectedSeason=1
     @State private var showWebsitePlayer=false
+    @State private var selectedWebsiteEpisode: XSCinemaEpisode?
 
     private var item:XSCinemaMedia { details ?? media }
     private var seasons:[Int] { Array(Set(item.episodes.map(\.season))).sorted() }
@@ -383,6 +384,7 @@ struct XSCinemaNativeDetailView:View {
                            url.host=="www.etwatch.net" || url.host=="etwatch.net",
                            !item.isPlayable {
                             Button {
+                                selectedWebsiteEpisode = nil
                                 showWebsitePlayer=true
                             } label: {
                                 Label(item.kind == .movie ? "مشاهدة على ETWatch" : "فتح مشغل المسلسل",
@@ -429,23 +431,32 @@ struct XSCinemaNativeDetailView:View {
                                 }
                                 .pickerStyle(.menu)
                                 ForEach(item.episodes.filter{$0.season==selectedSeason}) { ep in
-                                    HStack(spacing:12) {
-                                        Image(systemName:"play.rectangle")
-                                            .frame(width:53,height:51)
-                                            .background(XSNativeCinemaColors.tile,
-                                                        in:RoundedRectangle(cornerRadius:11))
-                                        VStack(alignment:.leading,spacing:4) {
-                                            Text("\(ep.number). \(ep.title)")
-                                                .font(.subheadline.bold())
-                                            Text("Episode \(ep.number)")
-                                                .font(.caption2)
-                                                .foregroundStyle(XSNativeCinemaColors.muted)
+                                    Button {
+                                        selectedWebsiteEpisode = ep
+                                        showWebsitePlayer = true
+                                    } label: {
+                                        HStack(spacing:12) {
+                                            Image(systemName:"play.rectangle.fill")
+                                                .frame(width:53,height:51)
+                                                .background(XSNativeCinemaColors.tile,
+                                                            in:RoundedRectangle(cornerRadius:11))
+                                            VStack(alignment:.leading,spacing:4) {
+                                                Text("\(ep.number). \(ep.title)")
+                                                    .font(.subheadline.bold())
+                                                Text("S\(ep.season) E\(ep.number)")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(XSNativeCinemaColors.muted)
+                                            }
+                                            Spacer()
+                                            Image(systemName:"play.fill")
+                                                .foregroundStyle(XSNativeCinemaColors.accent)
                                         }
-                                        Spacer()
+                                        .contentShape(Rectangle())
+                                        .padding(.vertical,4)
                                     }
-                                    .padding(.vertical,4)
+                                    .buttonStyle(.plain)
                                 }
-                                Text("اختر الموسم والحلقة من مشغل الموقع عند فتح المسلسل؛ القائمة أعلاه لعرض التفاصيل فقط.")
+                                Text("الضغط على الحلقة يحاول فتحها مباشرة من قائمة الموقع. إذا تغيّر الموقع قد تحتاج اختيارها من مشغله.")
                                     .font(.caption2)
                                     .foregroundStyle(XSNativeCinemaColors.muted)
                             } else {
@@ -479,7 +490,11 @@ struct XSCinemaNativeDetailView:View {
         }
         .fullScreenCover(isPresented:$showWebsitePlayer) {
             if let source=item.sourceURL, let url=URL(string:source) {
-                XSETWatchNativeDetailPlayer(url:url,title:item.title)
+                XSETWatchNativeDetailPlayer(
+                    url: url,
+                    title: selectedWebsiteEpisode.map { "\(item.title)  S\($0.season) E\($0.number)" } ?? item.title,
+                    season: selectedWebsiteEpisode?.season,
+                    episode: selectedWebsiteEpisode?.number)
             }
         }
     }
