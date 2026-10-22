@@ -8,10 +8,11 @@ import SafariServices
 struct XSETWatchNativeDetailPlayer: View {
     let url: URL
     let title: String
+    var season: Int? = nil
+    var episode: Int? = nil
     @Environment(\.dismiss) private var dismiss
     @StateObject private var state = XSETWatchPlaybackHealth()
     @State private var presentSafari = false
-    @State private var websiteControlsVisible = true
 
     var body: some View {
         ZStack {
@@ -52,7 +53,7 @@ struct XSETWatchNativeDetailPlayer: View {
                 .padding(.vertical, 7)
 
                 }
-                XSETWatchVideoWebView(url: url, state: state)
+                XSETWatchVideoWebView(url: url, state: state, season: season, episode: episode)
                     .background(.black)
                     .overlay(alignment: .bottom) {
                         if state.stalled {
@@ -198,15 +199,23 @@ final class XSETWatchPlaybackHealth: ObservableObject {
 private struct XSETWatchVideoWebView: UIViewRepresentable {
     let url: URL
     @ObservedObject var state: XSETWatchPlaybackHealth
+    let season: Int?
+    let episode: Int?
 
-    func makeCoordinator() -> Coordinator { Coordinator(state: state) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(state: state, season: season, episode: episode)
+    }
 
     func makeUIView(context: Context) -> WKWebView {
         let userContent = WKUserContentController()
+        let desiredEpisode = episode.map(String.init) ?? "null"
+        let desiredSeason = season.map(String.init) ?? "null"
         let script = """
         (function() {
           if (window.__xstvVideoProbeReady) return;
           window.__xstvVideoProbeReady = true;
+          const desiredSeason = \(desiredSeason);
+          const desiredEpisode = \(desiredEpisode);
           const post = function(event, seconds) {
             try { window.webkit.messageHandlers.xstvVideoStatus.postMessage({
               event: event, seconds: Number(seconds)||0
@@ -255,25 +264,64 @@ private struct XSETWatchVideoWebView: UIViewRepresentable {
               if (v.__xstvObserved) return;
               v.__xstvObserved=true;
               ['playing','timeupdate','waiting','stalled','error','loadedmetadata'].forEach(function(event) {
-                v.addEventListener(event,function(){post(event,Number(v.currentTime)||0);},{passive:true});
+                v.addEventListener(event,function(){
+                  const seconds=Number(v.currentTime)||0;
+                  post(event,seconds);
+                  if ((event==="playing" || event==="timeupdate") && seconds>0.2) {
+                    if(window.top===window)window.__xstvEnterTheater();
+                    else window.parent.postMessage({type:"xstv-player-played"},"*");
+                  }
+                },{passive:true});
               });
             });
           }
           // The site's player may render its Arabic subtitles as an HTML layer,
           // outside <video>. Keep both in the same WKWebView visual hierarchy.
+          window.addEventListener("message",function(e){
+            if(e.data && e.data.type==="xstv-player-played"){
+              if(window.top===window)window.__xstvEnterTheater();
+              else window.parent.postMessage({type:"xstv-player-played"},"*");
+            }
+          });
           document.addEventListener("click",function(e) {
             const btn=e.target.closest && e.target.closest('button,[role="button"],a');
             if(!btn || !document.querySelector("video"))return;
-            const label=((btn.getAttribute("aria-label")||"")+" "+(btn.title||"")+" "+(btn.innerText||"")).trim();
+            const label=((btn.getAttribute("aria-label")||"")+" "+(btn.title||"")+" "+(btn.className||"")+" "+(btn.innerText||"")).trim();
             if (/fullscreen|full.screen|ملء الشاشة|تكبير/i.test(label)) {
               const ok=window.__xstvEnterTheater();
               if(ok){e.preventDefault();e.stopImmediatePropagation();}
             }
           },true);
           let autoClicked = false;
+          let episodeChosen = false;
           let count=0;
+          function selectEpisodeIfVisible() {
+            if(desiredEpisode===null || episodeChosen || window.top!==window)return false;
+            const candidates=Array.from(document.querySelectorAll(
+              '[data-episode], [class*="pisode"], button, a, [role="button"]'
+            )).filter(el=>el.getBoundingClientRect().width>40);
+            const target=candidates.find(el=>{
+              const data=el.getAttribute("data-episode");
+              if(data!==null && Number(data)===desiredEpisode)return true;
+              const label=(el.getAttribute("aria-label")||"")+" "+(el.innerText||"");
+              const compact=label.trim();
+              return new RegExp("^E\\\\s*"+desiredEpisode+"(?:\\\\b|\\\\s)", "i").test(compact)
+                || new RegExp("^Episode\\\\s*"+desiredEpisode+"(?:\\\\b|\\\\s)", "i").test(compact)
+                || new RegExp("^حلقة\\\\s*"+desiredEpisode+"(?:\\\\b|\\\\s)").test(compact);
+            });
+            if(!target)return false;
+            episodeChosen=true;
+            autoClicked=true;
+            post("autoplayAttempted",0);
+            target.click();
+            return true;
+          }
           function findPlay() {
             if(autoClicked || window.top!==window)return;
+            if(desiredEpisode!==null){
+              selectEpisodeIfVisible();
+              return;
+            }
             if(document.querySelector('video[src],video source[src]'))return;
             const elements=Array.from(document.querySelectorAll("button,a,[role=button]"));
             const play=elements.find(el=>{
@@ -295,7 +343,7 @@ private struct XSETWatchVideoWebView: UIViewRepresentable {
           if(window.top===window){
             const timer=setInterval(function(){
               count++;findPlay();
-              if(autoClicked||count>25)clearInterval(timer);
+              if(autoClicked||count>30)clearInterval(timer);
             },400);
           }
           window.addEventListener("pagehide",function(){observer.disconnect();});
@@ -336,7 +384,13 @@ private struct XSETWatchVideoWebView: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         let state: XSETWatchPlaybackHealth
-        init(state: XSETWatchPlaybackHealth) { self.state = state }
+        let season: Int?
+        let episode: Int?
+        init(state: XSETWatchPlaybackHealth, season: Int?, episode: Int?) {
+            self.state = state
+            self.season = season
+            self.episode = episode
+        }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             state.pageLoaded = false
