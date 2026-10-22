@@ -194,8 +194,10 @@ final class XSCinemaNativeStore: ObservableObject {
 
     init() {
         favorites = Set(UserDefaults.standard.stringArray(forKey: favoriteKey) ?? [])
-        movies = restoreCache(movieCache)
-        series = restoreCache(seriesCache)
+        let cachedMovies = restoreCache(movieCache)
+        let cachedSeries = restoreCache(seriesCache)
+        movies = cachedMovies.isEmpty ? XSCinemaV25Seed.movies : cachedMovies
+        series = cachedSeries.isEmpty ? XSCinemaV25Seed.series : cachedSeries
         freeMovies = restoreCache(freeCache)
         skips[.movie] = movies.count
         skips[.series] = series.count
