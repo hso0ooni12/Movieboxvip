@@ -96,7 +96,8 @@ actor XSCinemaCatalogAPI {
     func catalog(_ kind: XSCinemaMediaKind, skip: Int = 0) async throws -> [XSCinemaMedia] {
         let extra = skip == 0 ? "" : "/skip=\(skip)"
         guard let url = URL(string: base + "/catalog/\(kind.rawValue)/top\(extra).json") else { return [] }
-        let value = try JSONDecoder().decode(XSCinemaCinemetaCatalog.self, from: data(url))
+        let bytes = try await data(url)
+        let value = try JSONDecoder().decode(XSCinemaCinemetaCatalog.self, from: bytes)
         return value.metas.map { media($0,kind:kind) }
     }
 
@@ -104,7 +105,8 @@ actor XSCinemaCatalogAPI {
         let trimmed = phrase.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
               let url = URL(string: base + "/catalog/\(kind.rawValue)/top/search=\(encoded).json") else { return [] }
-        let value = try JSONDecoder().decode(XSCinemaCinemetaCatalog.self, from: data(url))
+        let bytes = try await data(url)
+        let value = try JSONDecoder().decode(XSCinemaCinemetaCatalog.self, from: bytes)
         return value.metas.map { media($0,kind:kind) }
     }
 
