@@ -215,6 +215,8 @@ jobs:
           set -euo pipefail
           python3 scripts/app_v24_native_cinema.py
           python3 scripts/test_v24_native_cinema.py
+      - name: Apply animated native premium shell
+        run: python3 scripts/app_v25_premium_native_chrome.py
       - name: Build offline cinema bootstrap and validate V25
         shell: bash
         run: |
