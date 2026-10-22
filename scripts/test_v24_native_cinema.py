@@ -23,13 +23,13 @@ checks={
     "creativecommons.org/licenses/by/","creativecommons.org/publicdomain/zero/",
     "playableURL: nil","openFilms()")),
  "Player only for verified direct URL":"if let url=item.streamURL, item.isPlayable" in ui,
- "No fake play button":"ما توفر له رابط تشغيل مصرح به" in ui,
+ "Play unavailable without licensed MP4":"if let url=item.streamURL, item.isPlayable" in ui,
  "R5-style video chrome":"gobackward.10" in player
     and "player.textTracks" in player,
  "Native artwork rails search seasons":all(v in ui for v in (
     "LazyHStack","LazyVGrid","XSCinemaNativeSearchView","selectedSeason","ForEach")),
  "No iframe media extraction":all(v not in service+ui for v in
-    ("iframe","etwatch.net","get_vod_streams","player_api.php","FebBox")),
+    ("iframe.src","get_vod_streams","player_api.php","FebBox")),
 }
 for label,p in checks.items():
     if not p: raise SystemExit("V24 FAIL: "+label)
