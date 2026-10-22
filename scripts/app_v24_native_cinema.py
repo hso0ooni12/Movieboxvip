@@ -66,5 +66,7 @@ spec=spec.replace(anchor,anchor+"""
           - Services/XSVODService.swift
           - Services/XSVODRedirectResolver.swift""")
 # Keep original-style VLC player compiled, use native cinema's source-neutral selection.
+# The V23 bridge excluded VLC. V24 compiles it again for licensed streams.
+spec=spec.replace("          - Views/XSVODVLCPlayerView.swift\n","")
 project.write_text(spec,encoding="utf-8")
 print("V24: true native SwiftUI catalog, native source-owned VLC playback, unchanged R5 Sports.")
