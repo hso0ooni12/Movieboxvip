@@ -11,11 +11,13 @@ struct XSETWatchNativeDetailPlayer: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var state = XSETWatchPlaybackHealth()
     @State private var presentSafari = false
+    @State private var websiteControlsVisible = true
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             VStack(spacing: 0) {
+                if !state.theaterMode {
                 HStack(spacing: 13) {
                     Button { dismiss() } label: {
                         Image(systemName: "xmark")
@@ -34,6 +36,11 @@ struct XSETWatchNativeDetailPlayer: View {
                         Image(systemName: "arrow.clockwise")
                             .frame(width: 42, height: 42)
                     }
+                    Button { state.toggleTheater() } label: {
+                        Image(systemName: state.theaterMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                            .frame(width: 42, height: 42)
+                    }
+                    .accessibilityLabel("وضع سينمائي يحافظ على الترجمة")
                     Button { presentSafari = true } label: {
                         Image(systemName: "safari")
                             .frame(width: 42, height: 42)
@@ -44,6 +51,7 @@ struct XSETWatchNativeDetailPlayer: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
 
+                }
                 XSETWatchVideoWebView(url: url, state: state)
                     .background(.black)
                     .overlay(alignment: .bottom) {
@@ -87,6 +95,22 @@ struct XSETWatchNativeDetailPlayer: View {
                     }
             }
         }
+        .overlay(alignment: .topTrailing) {
+            if state.theaterMode {
+                Button {
+                    state.toggleTheater()
+                } label: {
+                    Label("تصغير", systemImage: "arrow.down.right.and.arrow.up.left")
+                        .font(.caption.bold())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 11)
+                        .background(.black.opacity(0.78), in: Capsule())
+                }
+                .padding(.trailing, 11)
+                .padding(.top, 4)
+            }
+        }
         .preferredColorScheme(.dark)
         .sheet(isPresented: $presentSafari) {
             XSETWatchSafariFallback(url: url)
@@ -102,6 +126,8 @@ final class XSETWatchPlaybackHealth: ObservableObject {
     @Published var subtitle = "مشغل الموقع الأصلي"
     @Published var stalled = false
     @Published var pageLoaded = false
+    @Published var theaterMode = false
+    @Published var autoPlayAttempted = false
     @Published var playbackSeen = false
     @Published var siteError: String?
     weak var web: WKWebView?
@@ -130,6 +156,14 @@ final class XSETWatchPlaybackHealth: ObservableObject {
         timeout?.cancel()
     }
 
+    func toggleTheater() {
+        theaterMode.toggle()
+        web?.evaluateJavaScript(theaterMode
+            ? "window.__xstvEnterTheater && window.__xstvEnterTheater();"
+            : "window.__xstvExitTheater && window.__xstvExitTheater();",
+            completionHandler: nil)
+    }
+
     func reload() {
         playbackSeen = false
         stalled = false
@@ -140,6 +174,9 @@ final class XSETWatchPlaybackHealth: ObservableObject {
     }
 
     func notePlayer(_ event: String, time: Double) {
+        if event == "autoplayAttempted" { autoPlayAttempted = true; subtitle = "محاولة فتح مشغل الفيديو مباشرة…"; return }
+        if event == "theaterStarted" { theaterMode = true; return }
+        if event == "theaterStopped" { theaterMode = false; return }
         guard !playbackSeen else { return }
         if (event == "playing" || event == "timeupdate") && time > 0.15 {
             playbackSeen = true
@@ -169,24 +206,99 @@ private struct XSETWatchVideoWebView: UIViewRepresentable {
         let script = """
         (function() {
           if (window.__xstvVideoProbeReady) return;
-          window.__xstvVideoProbeReady=true;
-          function attach() {
-            Array.from(document.querySelectorAll('video')).forEach(function(video) {
-              if (video.__xstvObserved) return;
-              video.__xstvObserved = true;
+          window.__xstvVideoProbeReady = true;
+          const post = function(event, seconds) {
+            try { window.webkit.messageHandlers.xstvVideoStatus.postMessage({
+              event: event, seconds: Number(seconds)||0
+            }); } catch(e) {}
+          };
+          const css = document.createElement("style");
+          css.textContent =
+            '.xstv-theater-player{position:fixed!important;inset:0!important;z-index:2147483000!important;width:100vw!important;height:100dvh!important;background:#000!important;max-width:none!important;max-height:none!important;transform:none!important;}' +
+            '.xstv-theater-player video{max-height:100%!important;max-width:100%!important;width:100%!important;height:100%!important;object-fit:contain!important;}' +
+            'html.xstv-cinema-on,html.xstv-cinema-on body{overflow:hidden!important;background:#000!important;}';
+          (document.head || document.documentElement).appendChild(css);
+          let activeContainer = null;
+          function candidate() {
+            const video = Array.from(document.querySelectorAll("video"))
+              .find(v => v.readyState > 0 || v.clientWidth > 100) ||
+              document.querySelector("video");
+            if (video) {
+              return video.closest('.jwplayer,.plyr,.video-js,.artplayer,.dplayer,[class*="player-container"],[class*="video-player"]')
+                || video.parentElement;
+            }
+            return Array.from(document.querySelectorAll('iframe[allow*="fullscreen"],iframe[src]'))
+              .find(el=>el.clientWidth>240 && el.clientHeight>100) || null;
+          }
+          window.__xstvEnterTheater = function() {
+            const target = candidate();
+            if (!target) return false;
+            if (activeContainer && activeContainer!==target) activeContainer.classList.remove("xstv-theater-player");
+            activeContainer=target;
+            target.classList.add("xstv-theater-player");
+            document.documentElement.classList.add("xstv-cinema-on");
+            post("theaterStarted",0);
+            return true;
+          };
+          window.__xstvExitTheater = function() {
+            if(activeContainer) activeContainer.classList.remove("xstv-theater-player");
+            document.documentElement.classList.remove("xstv-cinema-on");
+            activeContainer=null;
+            post("theaterStopped",0);
+            return true;
+          };
+          function observeVideo() {
+            document.querySelectorAll('video').forEach(function(v) {
+              v.setAttribute("playsinline","");
+              v.setAttribute("webkit-playsinline","");
+              v.playsInline=true;
+              if (v.__xstvObserved) return;
+              v.__xstvObserved=true;
               ['playing','timeupdate','waiting','stalled','error','loadedmetadata'].forEach(function(event) {
-                video.addEventListener(event, function(){
-                  try {
-                    window.webkit.messageHandlers.xstvVideoStatus.postMessage({
-                      event:event, seconds:Number(video.currentTime)||0
-                    });
-                  } catch(e) {}
-                }, {passive:true});
+                v.addEventListener(event,function(){post(event,Number(v.currentTime)||0);},{passive:true});
               });
             });
           }
-          new MutationObserver(attach).observe(document.documentElement,{childList:true,subtree:true});
-          attach();
+          // The site's player may render its Arabic subtitles as an HTML layer,
+          // outside <video>. Keep both in the same WKWebView visual hierarchy.
+          document.addEventListener("click",function(e) {
+            const btn=e.target.closest && e.target.closest('button,[role="button"],a');
+            if(!btn || !document.querySelector("video"))return;
+            const label=((btn.getAttribute("aria-label")||"")+" "+(btn.title||"")+" "+(btn.innerText||"")).trim();
+            if (/fullscreen|full.screen|ملء الشاشة|تكبير/i.test(label)) {
+              const ok=window.__xstvEnterTheater();
+              if(ok){e.preventDefault();e.stopImmediatePropagation();}
+            }
+          },true);
+          let autoClicked = false;
+          let count=0;
+          function findPlay() {
+            if(autoClicked || window.top!==window)return;
+            if(document.querySelector('video[src],video source[src]'))return;
+            const elements=Array.from(document.querySelectorAll("button,a,[role=button]"));
+            const play=elements.find(el=>{
+              const rect=el.getBoundingClientRect();
+              if(rect.width<24 || rect.height<20)return false;
+              const label=((el.getAttribute("aria-label")||"")+" "+(el.textContent||"")).trim().toLowerCase();
+              return /^(play|watch now|watch|شاهد الآن|تشغيل|ابدأ المشاهدة)(\\s|$)/i.test(label)
+                 && !/trailer|preview|اعلان/.test(label);
+            });
+            if(play){
+              autoClicked=true;
+              post("autoplayAttempted",0);
+              play.click();
+            }
+          }
+          const observer=new MutationObserver(function(){observeVideo();});
+          observer.observe(document.documentElement,{childList:true,subtree:true});
+          observeVideo();
+          if(window.top===window){
+            const timer=setInterval(function(){
+              count++;findPlay();
+              if(autoClicked||count>25)clearInterval(timer);
+            },400);
+          }
+          window.addEventListener("pagehide",function(){observer.disconnect();});
         })();
         """
         userContent.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentEnd,
@@ -233,7 +345,9 @@ private struct XSETWatchVideoWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             state.pageLoaded = true
-            state.subtitle = "اختر تشغيل الفيديو من صفحة الموقع"
+            state.subtitle = state.autoPlayAttempted
+                ? "جارٍ توصيل مشغل الفيديو الأصلي…"
+                : "المشغل جاهز، وسيتم محاولة بدء الفيديو تلقائياً"
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
