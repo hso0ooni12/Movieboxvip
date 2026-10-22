@@ -21,7 +21,7 @@ checks={
     "v3-cinemeta.strem.io","JSONDecoder().decode","/catalog/","/meta/")),
  "Only explicit open licensed movies playable": all(v in service for v in (
     "creativecommons.org/licenses/by/","creativecommons.org/publicdomain/zero/",
-    "playableURL:nil","openFilms()")),
+    "playableURL: nil","openFilms()")),
  "Player only for verified direct URL":"if let url=item.streamURL, item.isPlayable" in ui,
  "No fake play button":"ما توفر له رابط تشغيل مصرح به" in ui,
  "R5-style video chrome":"gobackward.10" in player
