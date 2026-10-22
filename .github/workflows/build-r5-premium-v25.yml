@@ -1,4 +1,4 @@
-name: Build XS TV V25 — Native Cinema Catalog + Site Player
+name: Build XS TV V25 — Native Catalog + ETWatch Watch Player + R5 Sports
 
 on:
   push:
@@ -217,12 +217,21 @@ jobs:
           python3 scripts/test_v24_native_cinema.py
       - name: Fetch real movie/series seed at build time
         run: python3 scripts/generate_v25_cinema_seed.py
-      - name: Apply V25 catalog repair and site-owned watch player
+      - name: Validate integrated V25 native catalog and original site player
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/app_v25_fix_boot_and_site_player.py
-          python3 scripts/test_v25_native_site_player.py
+          python3 scripts/test_v25_native_etwatch_player.py
+          python3 - <<'PY'
+          from pathlib import Path
+          seed = Path("FrameNative/Services/XSCinemaV25Seed.swift").read_text()
+          source = Path("FrameNative/Services/XSCinemaNativeSource.swift").read_text()
+          assert seed.count("kind:.movie") >= 10
+          assert seed.count("kind:.series") >= 10
+          assert "cachedMovies.isEmpty ? XSCinemaV25Seed.movies" in source
+          assert "cachedSeries.isEmpty ? XSCinemaV25Seed.series" in source
+          print("Native home: movies and TV metadata prepackaged and cached")
+          PY
 
       - name: Parse all active SwiftUI and playback sources
         shell: bash
