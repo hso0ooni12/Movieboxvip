@@ -213,7 +213,13 @@ final class XSCinemaNativeStore: ObservableObject {
     private let favoriteKey = "XSTV.NativeCinema.Favorites"
     private var skips: [XSCinemaMediaKind:Int] = [.movie:0, .series:0]
     private var loaded = false
-    init() { favorites = Set(UserDefaults.standard.stringArray(forKey: favoriteKey) ?? []) }
+    init() {
+        favorites = Set(UserDefaults.standard.stringArray(forKey: favoriteKey) ?? [])
+        // Compile-time catalog from verified public metadata. Populate Home
+        // instantly, independently of the network or licensed video sources.
+        movies = XSCinemaNativeSeed.movies
+        series = XSCinemaNativeSeed.series
+    }
 
     func list(_ kind: XSCinemaMediaKind) -> [XSCinemaMedia] {
         kind == .movie ? movies : series
@@ -232,14 +238,14 @@ final class XSCinemaNativeStore: ObservableObject {
         async let c = XSCinemaCatalogAPI.shared.openFilms()
         do {
             let m = try await a
-            movies = m
+            if !m.isEmpty { movies = m }
             skips[.movie] = m.count
         } catch {
             self.error = "تعذر تحميل الأفلام الآن."
         }
         do {
             let s = try await b
-            series = s
+            if !s.isEmpty { series = s }
             skips[.series] = s.count
         } catch {
             self.error = "تعذر تحميل المسلسلات الآن."
