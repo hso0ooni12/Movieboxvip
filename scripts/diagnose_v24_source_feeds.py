@@ -46,3 +46,33 @@ for url in ("https://www.etwatch.net/","https://www.etwatch.net/movies"):
         "video_word",doc.lower().count("video"),
         "api_word",doc.lower().count("/api/"))
  except Exception as e:print("ETWatch direct page",url,type(e).__name__)
+
+
+# Focused extra schema and route inspection. Still no video requests.
+def large(url):
+ req=urllib.request.Request(url,headers={"User-Agent":"XS-TV-ReadOnly-Diagnostic/1.0","Accept":"application/json,text/html"})
+ with urllib.request.urlopen(req,timeout=25) as resp:return resp.status,resp.read(4000000)
+for kind in ("movie","series"):
+ try:
+  status,body=large("https://v3-cinemeta.strem.io/catalog/"+kind+"/top.json")
+  data=json.loads(body)
+  metas=data.get("metas",[])
+  props=("id","name","poster","background","description","releaseInfo","imdbRating","videos")
+  irregular={}
+  for p in props:
+   values=[(i,type(meta.get(p)).__name__) for i,meta in enumerate(metas) if meta.get(p) is not None]
+   atypical=[z for z in values if z[1] not in (("list",) if p=="videos" else ("str",))]
+   if atypical:irregular[p]=atypical[:10]
+  print("full_catalog",kind,"bytes",len(body),"metas",len(metas),"irregular",json.dumps(irregular),
+        "first_entry_keys",list(metas[0])[:28] if metas else [],
+        "last_entry_keys",list(metas[-1])[:28] if metas else [])
+ except Exception as exc:print("full_catalog",kind,"FAILED",type(exc).__name__)
+for uri in ("/","/movies"):
+ try:
+  status,body=large("https://www.etwatch.net"+uri)
+  source=body.decode("utf-8","replace")
+  for pattern in ("slug(", "function slug","'/movie/'","'/series/'","/api/","tmdb","watch","/embed","iframe"):
+   indexes=[m.start() for m in re.finditer(re.escape(pattern),source,re.I)]
+   excerpts=[source[max(0,pos-95):pos+145].replace("\n"," ")[:235] for pos in indexes[:2]]
+   print("site_token",uri,pattern,"count",len(indexes),"sample",json.dumps(excerpts))
+ except Exception as exc:print("site_examine",uri,"FAILED",type(exc).__name__)
