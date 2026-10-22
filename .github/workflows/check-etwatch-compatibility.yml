@@ -1,0 +1,18 @@
+name: ETWatch site compatibility (read-only)
+on:
+  push:
+    branches: [probe-etwatch-site-20261022]
+    paths:
+      - scripts/check_etwatch_compatibility.py
+      - .github/workflows/check-etwatch-compatibility.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check user-provided site without scraping videos
+        run: python3 scripts/check_etwatch_compatibility.py
