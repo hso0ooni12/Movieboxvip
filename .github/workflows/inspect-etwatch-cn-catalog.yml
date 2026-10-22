@@ -1,0 +1,17 @@
+name: ETWatch CN Public API Catalog Inspection
+on:
+  push:
+    branches: [etwatch-cn-api-inspection-20261022]
+    paths:
+      - scripts/inspect_etwatch_cn_api_catalog.py
+      - .github/workflows/inspect-etwatch-cn-catalog.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/inspect_etwatch_cn_api_catalog.py
