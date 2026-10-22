@@ -18,12 +18,14 @@ checks={
     "- Services/XSVODRedirectResolver.swift")),
  "Sports player untouched":"XSSportsLiveViewV33()" in root and "XSVLCStableSurfaceView" in sport,
  "Native metadata catalog real not invented":all(v in service for v in (
-    "v3-cinemeta.strem.io","JSONDecoder().decode","/catalog/","/meta/")),
+    "v3-cinemeta.strem.io","decodeCatalog","/catalog/","/meta/")),
  "Only explicit open licensed movies playable": all(v in service for v in (
     "creativecommons.org/licenses/by/","creativecommons.org/publicdomain/zero/",
     "playableURL: nil","openFilms()")),
  "Player only for verified direct URL":"if let url=item.streamURL, item.isPlayable" in ui,
- "No fake play button":"ما توفر له رابط تشغيل مصرح به" in ui,
+ "No fake play button": ("تجربة مشغل ETWatch" in ui and
+    "تشغيله يعتمد على خوادم الموقع" in ui and
+    "if let url=item.streamURL, item.isPlayable" in ui),
  "R5-style video chrome":"gobackward.10" in player
     and "player.textTracks" in player,
  "Native artwork rails search seasons":all(v in ui for v in (
