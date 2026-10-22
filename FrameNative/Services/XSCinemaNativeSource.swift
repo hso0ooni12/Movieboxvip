@@ -232,6 +232,6 @@ final class XSCinemaNativeStore: ObservableObject {
             if kind == .movie { movies.append(contentsOf: unique) }
             else { series.append(contentsOf: unique) }
             skips[kind,default:0] += incoming.count
-        } catch { error = "تعذر تحميل المزيد حالياً." }
+        } catch { self.error = "تعذر تحميل المزيد حالياً." }
     }
 }
