@@ -22,6 +22,7 @@ struct XSCinemaMedia: Codable, Hashable, Identifiable, Sendable {
     var licenseURL: String?
     var imdbID: String?
     var episodes: [XSCinemaEpisode]
+    var tmdbID: Int? = nil
 
     var imageURL: URL? { poster.flatMap(URL.init(string:)) }
     var backdropURL: URL? { backdrop.flatMap(URL.init(string:)) ?? imageURL }
@@ -187,7 +188,29 @@ final class XSCinemaNativeStore: ObservableObject {
     private let favoriteKey = "XSTV.NativeCinema.Favorites"
     private var skips: [XSCinemaMediaKind:Int] = [.movie:0, .series:0]
     private var loaded = false
-    init() { favorites = Set(UserDefaults.standard.stringArray(forKey: favoriteKey) ?? []) }
+    private let movieCache = "XSTV.NativeCinema.movie.v25"
+    private let seriesCache = "XSTV.NativeCinema.series.v25"
+    private let freeCache = "XSTV.NativeCinema.free.v25"
+
+    init() {
+        favorites = Set(UserDefaults.standard.stringArray(forKey: favoriteKey) ?? [])
+        movies = restoreCache(movieCache)
+        series = restoreCache(seriesCache)
+        freeMovies = restoreCache(freeCache)
+        skips[.movie] = movies.count
+        skips[.series] = series.count
+    }
+
+    private func restoreCache(_ key: String) -> [XSCinemaMedia] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let values = try? JSONDecoder().decode([XSCinemaMedia].self, from: data) else { return [] }
+        return values
+    }
+
+    private func persist(_ values: [XSCinemaMedia], key: String) {
+        guard let data = try? JSONEncoder().encode(Array(values.prefix(250))) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
 
     func list(_ kind: XSCinemaMediaKind) -> [XSCinemaMedia] {
         kind == .movie ? movies : series
@@ -197,40 +220,57 @@ final class XSCinemaNativeStore: ObservableObject {
         if !favorites.insert(item.id).inserted { favorites.remove(item.id) }
         UserDefaults.standard.set(Array(favorites),forKey:favoriteKey)
     }
-    func boot() async {
-        guard !loaded && !loading else { return }
+    func boot(force: Bool = false) async {
+        guard !loading && (!loaded || force) else { return }
         loading = true
-        defer { loading = false }
-        async let a = XSCinemaCatalogAPI.shared.catalog(.movie)
-        async let b = XSCinemaCatalogAPI.shared.catalog(.series)
-        async let c = XSCinemaCatalogAPI.shared.openFilms()
+        error = nil
+        // Fetch both independently: a failed series request cannot blank films.
+        async let movieRequest = XSCinemaV25FlexibleCatalog.shared.catalog(.movie)
+        async let seriesRequest = XSCinemaV25FlexibleCatalog.shared.catalog(.series)
         do {
-            let m = try await a
-            movies = m
-            skips[.movie] = m.count
+            let values = try await movieRequest
+            if !values.isEmpty {
+                movies = values
+                skips[.movie] = values.count
+                persist(values, key: movieCache)
+            }
         } catch {
-            self.error = "تعذر تحميل الأفلام الآن."
+            if movies.isEmpty { self.error = "تعذر تحديث الأفلام. حاول السحب للتحديث." }
         }
         do {
-            let s = try await b
-            series = s
-            skips[.series] = s.count
+            let values = try await seriesRequest
+            if !values.isEmpty {
+                series = values
+                skips[.series] = values.count
+                persist(values, key: seriesCache)
+            }
         } catch {
-            self.error = "تعذر تحميل المسلسلات الآن."
+            if series.isEmpty { self.error = "تعذر تحديث المسلسلات. حاول السحب للتحديث." }
         }
-        freeMovies = await c
-        loaded = !movies.isEmpty || !series.isEmpty || !freeMovies.isEmpty
+        loaded = !movies.isEmpty || !series.isEmpty
+        loading = false
+
+        // Public-domain metadata can take minutes; it never blocks the
+        // primary movie and series catalogs or the app loading spinner.
+        if freeMovies.isEmpty || force {
+            Task { [weak self] in
+                let values = await XSCinemaCatalogAPI.shared.openFilms()
+                guard let self, !values.isEmpty else { return }
+                self.freeMovies = values
+                self.persist(values, key: self.freeCache)
+            }
+        }
     }
     func more(_ kind: XSCinemaMediaKind) async {
         guard !loadingMore.contains(kind) else { return }
         loadingMore.insert(kind)
         defer { loadingMore.remove(kind) }
         do {
-            let incoming = try await XSCinemaCatalogAPI.shared.catalog(kind,skip:skips[kind] ?? 0)
+            let incoming = try await XSCinemaV25FlexibleCatalog.shared.catalog(kind,skip:skips[kind] ?? 0)
             let old = Set(list(kind).map(\.id))
             let unique = incoming.filter { !old.contains($0.id) }
-            if kind == .movie { movies.append(contentsOf: unique) }
-            else { series.append(contentsOf: unique) }
+            if kind == .movie { movies.append(contentsOf: unique); persist(movies, key: movieCache) }
+            else { series.append(contentsOf: unique); persist(series, key: seriesCache) }
             skips[kind,default:0] += incoming.count
         } catch { self.error = "تعذر تحميل المزيد حالياً." }
     }
