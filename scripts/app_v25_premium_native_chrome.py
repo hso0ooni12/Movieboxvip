@@ -41,15 +41,19 @@ struct EnhancedRootView: View {
     private var mainTabs: some View {
         TabView(selection: $activeTab) {
             NavigationStack { XSCinemaNativeHomeView() }
+                .toolbar(.hidden, for: .tabBar)
                 .tabItem { Label("Home", systemImage: "house.fill") }
                 .tag(0)
             NavigationStack { XSCinemaNativeBrowseView(kind: .movie) }
+                .toolbar(.hidden, for: .tabBar)
                 .tabItem { Label("Movies", systemImage: "film.stack.fill") }
                 .tag(1)
             NavigationStack { XSCinemaNativeBrowseView(kind: .series) }
+                .toolbar(.hidden, for: .tabBar)
                 .tabItem { Label("Series", systemImage: "play.tv.fill") }
                 .tag(2)
             NavigationStack { XSSportsLiveViewV33() }
+                .toolbar(.hidden, for: .tabBar)
                 .tabItem { Label("الرياضة", systemImage: "sportscourt.fill") }
                 .tag(3)
         }
