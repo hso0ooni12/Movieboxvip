@@ -76,3 +76,14 @@ for uri in ("/","/movies"):
    excerpts=[source[max(0,pos-95):pos+145].replace("\n"," ")[:235] for pos in indexes[:2]]
    print("site_token",uri,pattern,"count",len(indexes),"sample",json.dumps(excerpts))
  except Exception as exc:print("site_examine",uri,"FAILED",type(exc).__name__)
+
+
+for relative in ("/movie/603-the-matrix-1999","/series/1399-game-of-thrones-2011"):
+ try:
+  status,body=large("https://www.etwatch.net"+relative)
+  html=body.decode("utf-8","replace").lower()
+  print("etwatch_detail",relative,"status",status,"size",len(body),
+    "not_found_text",("404" in html[:3500] or "not found" in html[:3500]),
+    "play_widget_mentioned",("play" in html),
+    "title_keyword_present",("matrix" in html if "movie/" in relative else "thrones" in html))
+ except Exception as ex:print("etwatch_detail",relative,"FAIL",type(ex).__name__)
