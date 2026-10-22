@@ -190,6 +190,7 @@ private struct XSETWatchWebView: UIViewRepresentable {
         let section: XSETWatchSection
         let state: XSETWatchBrowserState
         private var sectionDiscoveryAttempted = false
+        private var seriesHubAttempted = false
 
         init(section: XSETWatchSection, state: XSETWatchBrowserState) {
             self.section = section
@@ -237,10 +238,10 @@ private struct XSETWatchWebView: UIViewRepresentable {
                   const links=Array.from(document.querySelectorAll('a[href]'));
                   const candidates=links.filter(a=>{
                     const s=(a.innerText+' '+a.getAttribute('href')).toLowerCase();
-                    return (/series|tv.show|مسلسل|مسلسلات/.test(s) &&
+                    return (/series|tv.show|shows|مسلسل|مسلسلات/.test(s) &&
                            !/anime|انمي|أنمي|episode|حلقة/.test(s));
                   });
-                  const link=candidates.find(a => /series|مسلسل/.test((a.innerText||'').toLowerCase())) || candidates[0];
+                  const link=candidates.find(a => /series|shows|مسلسل/.test((a.innerText||'').toLowerCase())) || candidates[0];
                   return link ? link.href : null;
                 })()
                 """
@@ -248,15 +249,38 @@ private struct XSETWatchWebView: UIViewRepresentable {
             }
             webView.evaluateJavaScript(script) { [weak self, weak webView] value, error in
                 guard let self, let webView else { return }
-                guard error == nil, let text = value as? String,
-                      let result = URL(string: text),
-                      ["http", "https"].contains(result.scheme?.lowercased() ?? ""),
-                      result.host == "etwatch.net" || result.host == "www.etwatch.net" else {
-                    self.state.missingSection = true
+                let result = (value as? String).flatMap(URL.init(string:))
+                let isSite = result.map { url in
+                    ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+                    && (url.host == "etwatch.net" || url.host == "www.etwatch.net")
+                } ?? false
+                if error == nil, let result, isSite {
+                    if result != webView.url { webView.load(URLRequest(url: result)) }
                     return
                 }
-                if result != webView.url {
-                    webView.load(URLRequest(url: result))
+                // Homepage currently exposes /movies, not a TV/Series anchor.
+                // Follow its real Movies link, then discover the Shows section
+                // within that page; never fabricate a /series endpoint.
+                if self.section == .series && !self.seriesHubAttempted {
+                    self.seriesHubAttempted = true
+                    self.sectionDiscoveryAttempted = false
+                    webView.evaluateJavaScript("""
+                        (function(){
+                           const a=Array.from(document.querySelectorAll('a[href]')).find(x=>
+                               (x.getAttribute('href')||'').replace(/\\/$/,'')==='/movies');
+                           return a ? a.href : null;
+                        })()
+                        """) { [weak self, weak webView] destination, _ in
+                            guard let self, let webView else { return }
+                            if let text = destination as? String, let url = URL(string: text),
+                               url.host == "www.etwatch.net" || url.host == "etwatch.net" {
+                                webView.load(URLRequest(url: url))
+                            } else {
+                                self.state.missingSection = true
+                            }
+                        }
+                } else {
+                    self.state.missingSection = true
                 }
             }
         }
