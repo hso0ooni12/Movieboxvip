@@ -47,12 +47,14 @@ for base in ("https://www.etwatch.net","https://etwatch.net"):
                 rules=data.decode("utf-8","replace")
                 print("robots presence: allow",bool(re.search(r"(?im)^Allow:",rules)),
                       "disallow",bool(re.search(r"(?im)^Disallow:",rules)))
+                print("robots user agent rules:",repr(rules[:300]))
             elif "html" in ctype:
                 p=Page();p.feed(data.decode("utf-8","replace"))
                 print("page: title",repr(html.unescape(p.title_content[:120])))
                 print("navigation: movie_hits",sum(bool(re.search(r"movie|film|افلام|أفلام",x,re.I)) for x in p.links),
                       "series_hits",sum(bool(re.search(r"tv|series|مسلسل",x,re.I)) for x in p.links),
                       "html_anchors",len(p.links))
+                print("navigation hrefs",repr([u[:100] for u in p.links[:25]]))
         except urllib.error.HTTPError as e:
             print("status:",base,endpoint,"HTTP",e.code)
         except Exception as e:
