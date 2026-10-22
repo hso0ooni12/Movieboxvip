@@ -129,7 +129,7 @@ private struct XSCinemaV25SiteWebView: UIViewRepresentable {
         func webView(_ view: WKWebView, decidePolicyFor response: WKNavigationResponse,
                      decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
             if let http = response.response as? HTTPURLResponse, http.statusCode >= 400,
-               http.response?.url?.host == "www.etwatch.net" {
+               http.url?.host == "www.etwatch.net" {
                 failed = true
             }
             decisionHandler(.allow)
