@@ -56,7 +56,7 @@ struct XSCinemaNativeHomeView: View {
                     VStack(alignment:.leading,spacing:7) {
                         Text("مكتبة مستقلة عن IPTV")
                             .font(.subheadline.bold())
-                        Text("هذي واجهة نيتيف لفهرس الأفلام والمسلسلات. الأعمال اللي لها حقوق تشغيل متاحة فقط يظهر لها زر مشاهدة. مصدر ETWatch ما زال يحتاج واجهة رسمية لربط مكتبته ومشغله.")
+                        Text("تصفح نيتيف سريع للأفلام والمسلسلات. المشاهدة تفتح صفحة العنوان في ETWatch فقط، بدون قوائم الموقع داخل XS TV. الترجمة والجودة تتبع سيرفر الفيديو الأصلي.")
                             .font(.caption)
                             .foregroundStyle(XSNativeCinemaColors.muted)
                     }
@@ -280,9 +280,9 @@ struct XSCinemaNativeSearchView:View {
         guard !search.isEmpty else { return [] }
         let originals=store.movies+store.series+store.freeMovies
         let local=originals.filter { $0.title.localizedStandardContains(search) }
-        var ids=Set(local.map(\.id))
-        return Array((local+remoteMovies+remoteSeries)
-            .filter { ids.insert($0.id).inserted == false ? local.contains($0) : true }
+        var ids = Set<String>()
+        return Array((local + remoteMovies + remoteSeries)
+            .filter { ids.insert($0.id).inserted }
             .prefix(120))
     }
 
@@ -343,6 +343,7 @@ struct XSCinemaNativeDetailView:View {
     @State private var details:XSCinemaMedia?
     @State private var selection:XSVODPlaybackSelection?
     @State private var selectedSeason=1
+    @State private var showWebsitePlayer=false
 
     private var item:XSCinemaMedia { details ?? media }
     private var seasons:[Int] { Array(Set(item.episodes.map(\.season))).sorted() }
@@ -378,6 +379,19 @@ struct XSCinemaNativeDetailView:View {
                             .buttonStyle(.borderedProminent)
                             .tint(XSNativeCinemaColors.accent)
                         }
+                        if let source=item.sourceURL, let url=URL(string:source),
+                           url.host=="www.etwatch.net" || url.host=="etwatch.net",
+                           !item.isPlayable {
+                            Button {
+                                showWebsitePlayer=true
+                            } label: {
+                                Label(item.kind == .movie ? "مشاهدة على ETWatch" : "فتح مشغل المسلسل",
+                                      systemImage:"play.fill")
+                                    .frame(maxWidth:.infinity,minHeight:45)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(XSNativeCinemaColors.accent)
+                        }
                         Button {
                             store.toggle(item)
                         } label: {
@@ -393,10 +407,12 @@ struct XSCinemaNativeDetailView:View {
                             .foregroundStyle(.white.opacity(0.79))
                     }
                     if !item.isPlayable {
-                        Label("هذا العنوان موجود في الفهرس فقط. ما توفر له رابط تشغيل مصرح به، ولا بنعرض زر تشغيل وهمي.",
+                        Label(item.sourceURL != nil
+                              ? "ينفتح مشغل الموقع الأصلي بشكل منفصل. توفر الفيديو والترجمة يعتمد على السيرفر، وبيظهر تنبيه إذا علّق التشغيل."
+                              : "هذا العنوان موجود في الفهرس، لكن ما عندنا له رابط مشاهدة مؤكد.",
                               systemImage:"info.circle")
                             .font(.caption)
-                            .foregroundStyle(.orange.opacity(0.95))
+                            .foregroundStyle(XSNativeCinemaColors.muted)
                     } else {
                         Text("تشغيل مباشر من مصدر مفتوح الترخيص. اختيار الترجمة يعتمد على المسارات التي يوفرها الملف.")
                             .font(.caption)
@@ -429,7 +445,7 @@ struct XSCinemaNativeDetailView:View {
                                     }
                                     .padding(.vertical,4)
                                 }
-                                Text("بيانات الحلقات متوفرة للفهرسة، وليس لدينا روابط مرخصة لتشغيلها.")
+                                Text("اختر الموسم والحلقة من مشغل الموقع عند فتح المسلسل؛ القائمة أعلاه لعرض التفاصيل فقط.")
                                     .font(.caption2)
                                     .foregroundStyle(XSNativeCinemaColors.muted)
                             } else {
@@ -441,7 +457,7 @@ struct XSCinemaNativeDetailView:View {
                         .padding(.top,10)
                     }
                     if let source=item.sourceURL, let url=URL(string:source) {
-                        Link("معلومات المصدر ورخصته",destination:url)
+                        Link(item.isPlayable ? "معلومات المصدر ورخصته" : "صفحة المشاهدة الأصلية",destination:url)
                             .font(.footnote)
                     }
                 }
@@ -460,6 +476,11 @@ struct XSCinemaNativeDetailView:View {
         }
         .fullScreenCover(item:$selection) { chosen in
             XSVODVLCPlayerView(source:chosen)
+        }
+        .fullScreenCover(isPresented:$showWebsitePlayer) {
+            if let source=item.sourceURL, let url=URL(string:source) {
+                XSETWatchNativeDetailPlayer(url:url,title:item.title)
+            }
         }
     }
 }
