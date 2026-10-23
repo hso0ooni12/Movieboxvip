@@ -41,7 +41,7 @@ struct XSETWatchNativeDetailPlayer: View {
                         Image(systemName: state.theaterMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                             .frame(width: 42, height: 42)
                     }
-                    .accessibilityLabel("وضع سينمائي يحافظ على الترجمة")
+                    .accessibilityLabel("وضع سينمائي اختياري")
                     Button { presentSafari = true } label: {
                         Image(systemName: "safari")
                             .frame(width: 42, height: 42)
@@ -158,11 +158,20 @@ final class XSETWatchPlaybackHealth: ObservableObject {
     }
 
     func toggleTheater() {
-        theaterMode.toggle()
-        web?.evaluateJavaScript(theaterMode
-            ? "window.__xstvEnterTheater && window.__xstvEnterTheater();"
-            : "window.__xstvExitTheater && window.__xstvExitTheater();",
-            completionHandler: nil)
+        let toEnter = !theaterMode
+        let js = toEnter
+            ? "window.__xstvEnterTheater ? window.__xstvEnterTheater() : false;"
+            : "window.__xstvExitTheater ? window.__xstvExitTheater() : false;"
+        web?.evaluateJavaScript(js) { [weak self] result, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if error == nil, (result as? Bool) == true {
+                    self.theaterMode = toEnter
+                } else if toEnter {
+                    self.subtitle = "وضع السينما غير متاح لهذا المشغل؛ استخدم عناصر المشغل الأصلية"
+                }
+            }
+        }
     }
 
     func reload() {
@@ -258,40 +267,21 @@ private struct XSETWatchVideoWebView: UIViewRepresentable {
           };
           function observeVideo() {
             document.querySelectorAll('video').forEach(function(v) {
-              v.setAttribute("playsinline","");
-              v.setAttribute("webkit-playsinline","");
-              v.playsInline=true;
               if (v.__xstvObserved) return;
               v.__xstvObserved=true;
               ['playing','timeupdate','waiting','stalled','error','loadedmetadata'].forEach(function(event) {
                 v.addEventListener(event,function(){
                   const seconds=Number(v.currentTime)||0;
                   post(event,seconds);
-                  if ((event==="playing" || event==="timeupdate") && seconds>0.2) {
-                    if(window.top===window)window.__xstvEnterTheater();
-                    else window.parent.postMessage({type:"xstv-player-played"},"*");
-                  }
                 },{passive:true});
               });
             });
           }
           // The site's player may render its Arabic subtitles as an HTML layer,
           // outside <video>. Keep both in the same WKWebView visual hierarchy.
-          window.addEventListener("message",function(e){
-            if(e.data && e.data.type==="xstv-player-played"){
-              if(window.top===window)window.__xstvEnterTheater();
-              else window.parent.postMessage({type:"xstv-player-played"},"*");
-            }
-          });
-          document.addEventListener("click",function(e) {
-            const btn=e.target.closest && e.target.closest('button,[role="button"],a');
-            if(!btn || !document.querySelector("video"))return;
-            const label=((btn.getAttribute("aria-label")||"")+" "+(btn.title||"")+" "+(btn.className||"")+" "+(btn.innerText||"")).trim();
-            if (/fullscreen|full.screen|ملء الشاشة|تكبير/i.test(label)) {
-              const ok=window.__xstvEnterTheater();
-              if(ok){e.preventDefault();e.stopImmediatePropagation();}
-            }
-          },true);
+          // Do not intercept the site's fullscreen controls, clicks or
+          // player lifecycle. Native cinema mode is exclusively opt-in
+          // using the XS TV theater control above.
           let autoClicked = false;
           let episodeChosen = false;
           let count=0;
