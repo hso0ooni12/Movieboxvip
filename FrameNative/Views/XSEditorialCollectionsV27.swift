@@ -68,6 +68,11 @@ struct XSEditorialCollectionsV27: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 33) {
+            if !store.shelves.isEmpty {
+                ForEach(store.shelves) { shelf in
+                    rail("", title: shelf.title, items: store.shelfItems(shelf))
+                }
+            } else {
             rail("TOP RATED", title: "الأفلام الأعلى تقييماً",
                  items: ratedMovies)
             rail("TRENDING SHOWS", title: "مسلسلات رائجة",
@@ -80,6 +85,7 @@ struct XSEditorialCollectionsV27: View {
                  items: recentSeries)
             rail("CINEMA CLASSICS", title: "كلاسيكيات السينما",
                  items: classicMovies)
+            }
         }
         .padding(.vertical, 6)
     }
@@ -91,10 +97,10 @@ struct XSEditorialCollectionsV27: View {
             VStack(alignment: .leading, spacing: 15) {
                 HStack(alignment: .bottom, spacing: 10) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(eyebrow)
-                            .font(.system(size: 10, weight: .bold))
-                            .tracking(2.3)
-                            .foregroundStyle(XSEditorialPalette27.mint)
+                        if !eyebrow.isEmpty {
+                            Text(eyebrow).font(.system(size: 10, weight: .bold))
+                                .tracking(2.3).foregroundStyle(XSEditorialPalette27.mint)
+                        }
                         Text(title)
                             .font(.system(size: 22, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)

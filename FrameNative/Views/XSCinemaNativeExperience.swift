@@ -12,7 +12,7 @@ struct XSVODPlaybackSelection: Identifiable {
 private enum XSNativeCinemaColors {
     static let background = Color(red:0.031,green:0.038,blue:0.060)
     static let tile = Color(red:0.088,green:0.104,blue:0.145)
-    static let accent = Color(red:0.99,green:0.27,blue:0.36)
+    static let accent = Color(red:0.50,green:0.77,blue:0.67)
     static let muted = Color.white.opacity(0.64)
 }
 
@@ -21,7 +21,9 @@ private enum XSNativeCinemaColors {
 struct XSCinemaNativeHomeView: View {
     @EnvironmentObject private var store: XSCinemaNativeStore
     @State private var revealed = false
-    private var featured: XSCinemaMedia? { store.movies.first ?? store.freeMovies.first }
+    @State private var resumeSelection: XSCinemaWatchRecord?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var featured: XSCinemaMedia? { store.movies.first(where: { $0.backdrop != nil }) ?? store.movies.first }
 
     var body: some View {
         ZStack {
@@ -41,8 +43,11 @@ struct XSCinemaNativeHomeView: View {
                         headerPlaceholder
                     }
 
-                    posterRail("أفلام تستحق المشاهدة", items: store.movies)
-                    posterRail("مسلسلات مختارة", items: store.series)
+                    continueWatching
+                    if store.shelves.isEmpty {
+                        posterRail("أفلام تستحق المشاهدة", items: store.movies)
+                        posterRail("مسلسلات مختارة", items: store.series)
+                    }
                     XSEditorialCollectionsV27()
                     if !store.favorites.isEmpty {
                         posterRail("قائمتي", items: (store.movies + store.series + store.freeMovies)
@@ -55,12 +60,57 @@ struct XSCinemaNativeHomeView: View {
                 .padding(.bottom, 35)
             }
             .scrollIndicators(.hidden)
-            .refreshable { await store.boot() }
+            .refreshable { await store.boot(force: true) }
         }
         .toolbar(.hidden, for: .navigationBar)
         .task { await store.boot() }
         .onAppear {
-            withAnimation(.easeOut(duration: 0.42)) { revealed = true }
+            withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.42)) { revealed = true }
+        }
+            .fullScreenCover(item: $resumeSelection) { record in
+                if let url = record.watchURL {
+                    XSETWatchNativeDetailPlayer(url: url, title: record.title,
+                        season: record.season, episode: record.episode,
+                        resumePosition: record.position,
+                        onProgress: { time, duration in
+                            store.saveProgress(record.media, season: record.season, episode: record.episode,
+                                               position: time, duration: duration)
+                        })
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var continueWatching: some View {
+        if !store.recents.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("أكمل المشاهدة").font(.title3.bold()).foregroundStyle(.white)
+                    .padding(.horizontal, 20)
+                ScrollView(.horizontal) {
+                    LazyHStack(spacing: 12) {
+                        ForEach(store.recents) { record in
+                            Button { resumeSelection = record } label: {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    XSCinemaNativeArtwork(media: record.media, landscape: true)
+                                        .frame(width: 240, height: 134)
+                                        .overlay {
+                                            Image(systemName: "play.circle.fill").font(.system(size: 34))
+                                                .foregroundStyle(.white).shadow(radius: 10)
+                                        }
+                                        .clipShape(RoundedRectangle(cornerRadius: 13))
+                                    ProgressView(value: record.progress).tint(XSNativeCinemaColors.accent)
+                                    Text(record.title).font(.caption.bold()).lineLimit(1).foregroundStyle(.white)
+                                }
+                                .frame(width: 240)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+                .scrollIndicators(.hidden)
+            }
+
         }
     }
 
@@ -242,20 +292,15 @@ struct XSCinemaNativeBrowseView: View {
                                 .buttonStyle(.plain)
                         }
                     }
-                    if !items.isEmpty && query.isEmpty && filter == 0 {
-                        Button {
-                            Task { await store.more(kind) }
-                        } label: {
-                            HStack(spacing:10) {
-                                if store.loadingMore.contains(kind) {
-                                    ProgressView().tint(.white)
-                                }
-                                Text("عرض المزيد")
-                            }
-                            .frame(maxWidth:.infinity,minHeight:47)
+                    if !items.isEmpty && query.isEmpty && filter == 0 && store.hasMore(kind) {
+                        if store.moreErrors.contains(kind) {
+                            Button("إعادة تحميل المزيد") { Task { await store.more(kind) } }
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        } else {
+                            ProgressView().tint(XSNativeCinemaColors.accent)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .task(id: items.count) { await store.more(kind) }
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(XSNativeCinemaColors.accent)
                     }
                     if items.isEmpty && !store.loading {
                         Text(store.error ?? "ما فيه نتائج")
@@ -273,7 +318,9 @@ struct XSCinemaNativeBrowseView: View {
         .navigationTitle(kind == .movie ? "Movies" : "Series")
         .navigationBarTitleDisplayMode(.inline)
         .task { await store.boot() }
+        .onDisappear { searchTask?.cancel() }
         .onChange(of:query) { value in
+            remote = []
             searchTask?.cancel()
             guard value.count >= 2 else { remote=[];return }
             searchTask=Task {
@@ -338,6 +385,7 @@ struct XSCinemaNativeSearchView:View {
         .searchable(text:$search,prompt:"بحث عالمي بالأفلام والمسلسلات")
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.inline)
+        .onDisappear { task?.cancel() }
         .onChange(of:search) { value in
             task?.cancel()
             remoteMovies=[];remoteSeries=[]
@@ -354,144 +402,135 @@ struct XSCinemaNativeSearchView:View {
     }
 }
 
-struct XSCinemaNativeDetailView:View {
-    let media:XSCinemaMedia
-    @EnvironmentObject private var store:XSCinemaNativeStore
-    @State private var details:XSCinemaMedia?
-    @State private var selection:XSVODPlaybackSelection?
-    @State private var selectedSeason=1
-    @State private var showWebsitePlayer=false
-    @State private var selectedWebsiteEpisode: XSCinemaEpisode?
+struct XSCinemaNativeDetailView: View {
+    let media: XSCinemaMedia
+    @EnvironmentObject private var store: XSCinemaNativeStore
+    @State private var details: XSCinemaMedia?
+    @State private var selection: XSVODPlaybackSelection?
+    @State private var watch: XSCinemaWatchRecord?
+    @State private var selectedSeason = 1
+    @State private var loadingDetails = true
+    @State private var expandedSummary = false
 
-    private var item:XSCinemaMedia { details ?? media }
-    private var seasons:[Int] { Array(Set(item.episodes.map(\.season))).sorted() }
+    private var item: XSCinemaMedia { details ?? media }
+    private var seasons: [Int] { Array(Set(item.episodes.map(\.season))).sorted() }
+    private var episodes: [XSCinemaEpisode] {
+        item.episodes.filter { $0.season == selectedSeason }.sorted { $0.number < $1.number }
+    }
+    private var canWatch: Bool {
+        guard let raw = item.sourceURL, let url = URL(string: raw) else { return false }
+        return XSETWatchRoutes.watchURL(source: url, isSeries: item.kind == .series) != nil
+    }
+    private func start(_ episode: XSCinemaEpisode? = nil) {
+        let season = item.kind == .series ? (episode?.season ?? selectedSeason) : nil
+        let number = item.kind == .series ? (episode?.number ?? episodes.first?.number ?? 1) : nil
+        watch = XSCinemaWatchRecord(media: item, season: season, episode: number,
+                                   position: store.resume(item, season: season, episode: number),
+                                   duration: 0, updated: Date())
+    }
 
-    var body:some View {
+    var body: some View {
         ZStack {
-            XSNativeCinemaColors.background.ignoresSafeArea()
+            XSAtmosphericCinemaBackdropV27()
             ScrollView {
-                VStack(alignment:.leading,spacing:17) {
-                    XSCinemaNativeArtwork(media:item,landscape:true)
-                        .frame(height:330)
-                        .clipShape(RoundedRectangle(cornerRadius:16))
-                    Text(item.title)
-                        .font(.system(size:28,weight:.bold))
-                        .foregroundStyle(.white)
-                    HStack(spacing:14) {
-                        Text(item.kind.label)
-                        if !item.year.isEmpty { Text(item.year) }
-                        if item.rating>0 {
-                            Label(String(format:"%.1f",item.rating),systemImage:"star.fill")
+                LazyVStack(alignment: .leading, spacing: 20) {
+                    ZStack(alignment: .bottomLeading) {
+                        XSCinemaNativeArtwork(media: item, landscape: true).frame(height: 350)
+                        LinearGradient(colors: [.clear, .black.opacity(0.85)], startPoint: .center, endPoint: .bottom)
+                        VStack(alignment: .leading, spacing: 9) {
+                            Text(item.kind.label.uppercased())
+                                .font(.caption2.bold()).tracking(2).foregroundStyle(XSNativeCinemaColors.accent)
+                            Text(item.title).font(.system(size: 30, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white).lineLimit(3)
                         }
+                        .padding(21)
                     }
-                    .font(.caption.bold())
-                    .foregroundStyle(XSNativeCinemaColors.muted)
-                    HStack(spacing:12) {
-                        if let url=item.streamURL, item.isPlayable {
-                            Button {
-                                selection=XSVODPlaybackSelection(url:url,title:item.title,fallbackURL:nil)
-                            } label: {
-                                Label("شاهد الآن",systemImage:"play.fill")
-                                    .frame(maxWidth:.infinity,minHeight:45)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(XSNativeCinemaColors.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: 22))
+                    HStack(spacing: 14) {
+                        if !item.year.isEmpty { Text(item.year) }
+                        if item.rating > 0 {
+                            Label(String(format: "%.1f", item.rating), systemImage: "star.fill")
                         }
-                        if let source=item.sourceURL, let url=URL(string:source),
-                           url.host=="www.etwatch.net" || url.host=="etwatch.net",
-                           !item.isPlayable {
+                        if !seasons.isEmpty { Text("\(seasons.count) مواسم") }
+                    }
+                    .font(.caption.bold()).foregroundStyle(.white.opacity(0.65))
+                    HStack(spacing: 12) {
+                        if let url = item.streamURL, item.isPlayable {
                             Button {
-                                selectedWebsiteEpisode = nil
-                                showWebsitePlayer=true
-                            } label: {
-                                Label(item.kind == .movie ? "مشاهدة على ETWatch" : "فتح مشغل المسلسل",
-                                      systemImage:"play.fill")
-                                    .frame(maxWidth:.infinity,minHeight:45)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(XSNativeCinemaColors.accent)
+                                selection = XSVODPlaybackSelection(url: url, title: item.title, fallbackURL: nil)
+                            } label: { playLabel }
+                            .buttonStyle(.borderedProminent).tint(XSNativeCinemaColors.accent)
+                        } else if canWatch {
+                            Button { start() } label: { playLabel }
+                                .buttonStyle(.borderedProminent).tint(XSNativeCinemaColors.accent)
+                        } else if loadingDetails {
+                            ProgressView().frame(maxWidth: .infinity, minHeight: 48)
+                        } else {
+                            Text("المشاهدة غير متاحة لهذا العنوان حالياً")
+                                .font(.caption).foregroundStyle(.white.opacity(0.65))
                         }
-                        Button {
-                            store.toggle(item)
-                        } label: {
-                            Label(store.favorite(item) ? "في قائمتي":"قائمتي",
-                                  systemImage:store.favorite(item) ? "checkmark":"plus")
-                                .frame(minHeight:45)
+                        Button { store.toggle(item) } label: {
+                            Image(systemName: store.favorite(item) ? "checkmark" : "plus")
+                                .font(.system(size: 20, weight: .medium)).frame(width: 35, height: 36)
                         }
                         .buttonStyle(.bordered)
+                        .accessibilityLabel(store.favorite(item) ? "إزالة من قائمتي" : "أضف إلى قائمتي")
                     }
                     if !item.summary.isEmpty {
-                        Text(item.summary)
-                            .font(.subheadline)
-                            .foregroundStyle(.white.opacity(0.79))
-                    }
-                    if !item.isPlayable {
-                        Label(item.sourceURL != nil
-                              ? "ينفتح مشغل الموقع الأصلي بشكل منفصل. توفر الفيديو والترجمة يعتمد على السيرفر، وبيظهر تنبيه إذا علّق التشغيل."
-                              : "هذا العنوان موجود في الفهرس، لكن ما عندنا له رابط مشاهدة مؤكد.",
-                              systemImage:"info.circle")
-                            .font(.caption)
-                            .foregroundStyle(XSNativeCinemaColors.muted)
-                    } else {
-                        Text("تشغيل مباشر من مصدر مفتوح الترخيص. اختيار الترجمة يعتمد على المسارات التي يوفرها الملف.")
-                            .font(.caption)
-                            .foregroundStyle(XSNativeCinemaColors.muted)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(item.summary).font(.subheadline).lineSpacing(5)
+                                .foregroundStyle(.white.opacity(0.76)).lineLimit(expandedSummary ? nil : 4)
+                            Button(expandedSummary ? "عرض أقل" : "قراءة المزيد") { expandedSummary.toggle() }
+                                .font(.caption.bold()).tint(XSNativeCinemaColors.accent)
+                        }
                     }
                     if item.kind == .series {
-                        VStack(alignment:.leading,spacing:13) {
-                            Text("المواسم والحلقات").font(.title3.bold())
+                        VStack(alignment: .leading, spacing: 14) {
                             if !seasons.isEmpty {
                                 XSSeasonStripV27(seasons: seasons, selected: $selectedSeason)
-                                ForEach(item.episodes.filter{$0.season==selectedSeason}) { ep in
-                                    Button {
-                                        selectedWebsiteEpisode = ep
-                                        showWebsitePlayer = true
-                                    } label: {
-                                        XSEpisodePosterRowV27(episode: ep)
-                                    }
-                                    .buttonStyle(.plain)
+                                ForEach(episodes) { episode in
+                                    Button { start(episode) } label: { XSEpisodePosterRowV27(episode: episode) }
+                                        .buttonStyle(.plain).disabled(!canWatch)
                                 }
-                                Text("الضغط على الحلقة يحاول فتحها مباشرة من قائمة الموقع. إذا تغيّر الموقع قد تحتاج اختيارها من مشغله.")
-                                    .font(.caption2)
-                                    .foregroundStyle(XSNativeCinemaColors.muted)
+                            } else if loadingDetails {
+                                ProgressView("تحميل الحلقات…").tint(XSNativeCinemaColors.accent)
+                                    .frame(maxWidth: .infinity, minHeight: 60)
                             } else {
-                                Text("ما توفرت بيانات الحلقات لهذا العمل.")
-                                    .foregroundStyle(XSNativeCinemaColors.muted)
+                                Text("تعذر تحميل الحلقات حالياً").font(.subheadline)
+                                    .foregroundStyle(.white.opacity(0.65))
                             }
                         }
-                        .foregroundStyle(.white)
-                        .padding(.top,10)
-                    }
-                    if let source=item.sourceURL, let url=URL(string:source) {
-                        Link(item.isPlayable ? "معلومات المصدر ورخصته" : "صفحة المشاهدة الأصلية",destination:url)
-                            .font(.footnote)
                     }
                 }
-                .padding(.horizontal,17)
-                .padding(.bottom,45)
+                .padding(.horizontal, 17).padding(.bottom, 40)
             }
             .scrollIndicators(.hidden)
         }
-        .navigationTitle(item.title)
-        .navigationBarTitleDisplayMode(.inline)
-        .task(id:media.id) {
-            if media.kind == .series {
-                details=await XSCinemaCatalogAPI.shared.detail(media)
-                selectedSeason=seasons.first ?? 1
+        .navigationTitle(item.title).navigationBarTitleDisplayMode(.inline)
+        .task(id: media.id) {
+            loadingDetails = true
+            let refreshed = await XSCinemaCatalogAPI.shared.detail(media)
+            guard !Task.isCancelled else { return }
+            details = refreshed
+            selectedSeason = seasons.first ?? 1
+            loadingDetails = false
+        }
+        .fullScreenCover(item: $selection) { chosen in XSVODVLCPlayerView(source: chosen) }
+        .fullScreenCover(item: $watch) { chosen in
+            if let url = chosen.watchURL {
+                XSETWatchNativeDetailPlayer(url: url, title: chosen.title,
+                    season: chosen.season, episode: chosen.episode, resumePosition: chosen.position,
+                    onProgress: { time, duration in
+                        store.saveProgress(chosen.media, season: chosen.season, episode: chosen.episode,
+                                           position: time, duration: duration)
+                    })
             }
         }
-        .fullScreenCover(item:$selection) { chosen in
-            XSVODVLCPlayerView(source:chosen)
-        }
-        .fullScreenCover(isPresented:$showWebsitePlayer) {
-            if let source=item.sourceURL, let url=URL(string:source) {
-                XSETWatchNativeDetailPlayer(
-                    url: url,
-                    title: selectedWebsiteEpisode.map { "\(item.title)  S\($0.season) E\($0.number)" } ?? item.title,
-                    season: selectedWebsiteEpisode?.season,
-                    episode: selectedWebsiteEpisode?.number)
-            }
-        }
+    }
+    private var playLabel: some View {
+        Label("شاهد الآن", systemImage: "play.fill")
+            .font(.subheadline.bold()).foregroundStyle(.black)
+            .frame(maxWidth: .infinity, minHeight: 42)
     }
 }
 
@@ -537,15 +576,7 @@ private struct XSCinemaNativeArtwork:View {
                                        XSNativeCinemaColors.background],
                                startPoint:.topLeading,endPoint:.bottomTrailing)
                 if let url=landscape ? media.backdropURL : media.imageURL {
-                    AsyncImage(url:url,transaction:Transaction(animation:nil)) { phase in
-                        if case .success(let image)=phase {
-                            image.resizable().scaledToFill()
-                        } else {
-                            Image(systemName:media.kind == .movie ? "film.stack":"play.tv")
-                                .font(.system(size:36,weight:.thin))
-                                .foregroundStyle(.white.opacity(0.24))
-                        }
-                    }
+                    XSCinemaImage(url: url, maxDimension: landscape ? 1200 : 500)
                 } else {
                     Image(systemName:media.kind == .movie ? "film.stack":"play.tv")
                         .font(.system(size:40,weight:.thin))

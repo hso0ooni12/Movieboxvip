@@ -2,204 +2,189 @@ import SwiftUI
 import WebKit
 import SafariServices
 
-/// Opens an individual ETWatch detail page, never embeds the website's
-/// Home/Movies navigation into the native XS TV interface. Playback remains
-/// completely owned by the website: no token interception or HLS extraction.
+/// Presents the source's dedicated watch page. The same WKWebView remains
+/// mounted when the player expands, so HTML captions never leave the video.
 struct XSETWatchNativeDetailPlayer: View {
     let url: URL
     let title: String
     var season: Int? = nil
     var episode: Int? = nil
+    var resumePosition: Double = 0
+    var onProgress: ((Double, Double) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var state = XSETWatchPlaybackHealth()
     @State private var presentSafari = false
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
-            VStack(spacing: 0) {
-                if !state.theaterMode {
-                HStack(spacing: 13) {
+            // Stable identity: expanding changes padding only, not hierarchy.
+            XSETWatchVideoWebView(url: url, state: state, resumePosition: resumePosition)
+                .padding(.top, state.theaterMode ? 0 : 58)
+                .overlay(alignment: .bottom) {
+                    if state.stalled { recoveryCard.padding(18) }
+                }
+            if !state.theaterMode {
+                HStack(spacing: 12) {
                     Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                            .frame(width: 43, height: 42)
-                            .background(.white.opacity(0.11), in: Circle())
+                        Image(systemName: "xmark").frame(width: 44, height: 44)
                     }
-                    VStack(alignment: .leading, spacing: 4) {
+                    .accessibilityLabel("إغلاق المشغل")
+                    VStack(alignment: .leading, spacing: 3) {
                         Text(title).font(.subheadline.bold()).lineLimit(1)
-                        Text(state.subtitle)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.white.opacity(0.62))
-                            .lineLimit(1)
+                        Text(state.subtitle).font(.system(size: 10))
+                            .foregroundStyle(.white.opacity(0.62)).lineLimit(1)
                     }
                     Spacer(minLength: 0)
-                    Button { state.reload() } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .frame(width: 42, height: 42)
-                    }
                     Button { state.toggleTheater() } label: {
-                        Image(systemName: state.theaterMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                            .frame(width: 42, height: 42)
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .frame(width: 44, height: 44)
                     }
-                    .accessibilityLabel("وضع سينمائي اختياري")
-                    Button { presentSafari = true } label: {
-                        Image(systemName: "safari")
-                            .frame(width: 42, height: 42)
+                    .accessibilityLabel("تكبير مع الترجمة")
+                    Menu {
+                        Button { state.reload() } label: { Label("إعادة الاتصال", systemImage: "arrow.clockwise") }
+                        Button { presentSafari = true } label: { Label("فتح في Safari", systemImage: "safari") }
+                        Button { UIPasteboard.general.string = state.safeDiagnostic } label: {
+                            Label("نسخ تقرير التشخيص", systemImage: "doc.on.doc")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis").frame(width: 40, height: 44)
                     }
-                    .accessibilityLabel("فتح في Safari")
+                    .accessibilityLabel("خيارات المشغل")
                 }
                 .foregroundStyle(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-
-                }
-                XSETWatchVideoWebView(url: url, state: state, season: season, episode: episode)
-                    .background(.black)
-                    .overlay(alignment: .bottom) {
-                        if state.stalled {
-                            VStack(alignment: .leading, spacing: 11) {
-                                Label("تعليق في تشغيل الفيديو", systemImage: "exclamationmark.triangle.fill")
-                                    .font(.subheadline.bold())
-                                    .foregroundStyle(.yellow)
-                                Text("صفحة المصدر فتحت، لكن ما وصلنا تأكيد أن الفيديو بدأ. قد يكون السيرفر أو الاتصال بالمشغل محجوباً على هذه الشبكة.")
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.78))
-                                    .fixedSize(horizontal: false, vertical: true)
-                                HStack(spacing: 8) {
-                                    Button {
-                                        state.reload()
-                                    } label: {
-                                        Label("إعادة المحاولة", systemImage: "arrow.clockwise")
-                                            .frame(maxWidth: .infinity, minHeight: 39)
-                                    }
-                                    .buttonStyle(.bordered)
-                                    Button {
-                                        presentSafari = true
-                                    } label: {
-                                        Label("Safari", systemImage: "safari")
-                                            .frame(maxWidth: .infinity, minHeight: 39)
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                }
-                                .tint(Color(red: 1.0, green: 0.29, blue: 0.40))
-                                Button("نسخ تقرير التشخيص") {
-                                    UIPasteboard.general.string = state.safeDiagnostic
-                                }
-                                .font(.caption)
-                                .foregroundStyle(.white.opacity(0.65))
-                            }
-                            .padding(18)
-                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 22)
-                        }
+                .padding(.horizontal, 8).frame(height: 58)
+                .background(.black)
+            } else {
+                HStack {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark").frame(width: 44, height: 44)
                     }
-            }
-        }
-        .overlay(alignment: .topTrailing) {
-            if state.theaterMode {
-                Button {
-                    state.toggleTheater()
-                } label: {
-                    Label("تصغير", systemImage: "arrow.down.right.and.arrow.up.left")
-                        .font(.caption.bold())
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 11)
-                        .background(.black.opacity(0.78), in: Capsule())
+                    .accessibilityLabel("إغلاق المشغل")
+                    Spacer()
+                    Button { state.toggleTheater() } label: {
+                        Image(systemName: "arrow.down.right.and.arrow.up.left")
+                            .frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("تصغير")
                 }
-                .padding(.trailing, 11)
-                .padding(.top, 4)
+                .foregroundStyle(.white.opacity(0.8))
+                .padding(.horizontal, 10)
+                .background(LinearGradient(colors: [.black.opacity(0.45), .clear],
+                                           startPoint: .top, endPoint: .bottom))
             }
         }
         .preferredColorScheme(.dark)
+        .statusBarHidden(state.theaterMode)
         .sheet(isPresented: $presentSafari) {
-            XSETWatchSafariFallback(url: url)
-                .ignoresSafeArea()
+            XSETWatchSafariFallback(url: url).ignoresSafeArea()
         }
-        .onAppear { state.beginWatch() }
+        .onAppear { state.onProgress = onProgress; state.beginWatch() }
         .onDisappear { state.endWatch() }
+        .onChange(of: scenePhase) { phase in
+            if phase == .background { state.pause() }
+        }
+    }
+
+    private var recoveryCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("تعذر بدء الفيديو", systemImage: "exclamationmark.triangle")
+                .font(.subheadline.bold()).foregroundStyle(.yellow)
+            Text("جرّب سيرفراً آخر من زر Servers داخل المشغل، أو أعد الاتصال.")
+                .font(.caption).foregroundStyle(.white.opacity(0.8))
+            HStack {
+                Button("إعادة الاتصال") { state.reload() }
+                    .buttonStyle(.borderedProminent)
+                Button("إخفاء التنبيه") { state.stalled = false }
+                    .buttonStyle(.bordered)
+            }
+            .tint(Color(red: 0.50, green: 0.77, blue: 0.67))
+        }
+        .padding(18)
+        .frame(maxWidth: 450, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
     }
 }
 
 @MainActor
 final class XSETWatchPlaybackHealth: ObservableObject {
-    @Published var subtitle = "مشغل الموقع الأصلي"
+    @Published var subtitle = "جاري فتح صفحة المشاهدة…"
     @Published var stalled = false
     @Published var pageLoaded = false
     @Published var theaterMode = false
-    @Published var autoPlayAttempted = false
     @Published var playbackSeen = false
     @Published var siteError: String?
     weak var web: WKWebView?
+    var onProgress: ((Double, Double) -> Void)?
     private var timeout: Task<Void, Never>?
-    private var generation = 0
+    private var lastActivity = Date()
+    private var paused = false
+    private var lastPosition: Double = 0
+    private var duration: Double = 0
 
     var safeDiagnostic: String {
-        "XS TV ETWatch playback | pageLoaded=\(pageLoaded) | playbackDetected=\(playbackSeen) | stalled=\(stalled) | diagnostic=\(siteError ?? "none") | iOS WebKit"
+        "XS TV V27 | pageLoaded=\(pageLoaded) | playbackDetected=\(playbackSeen) | stalled=\(stalled) | diagnostic=\(siteError ?? "none") | iOS WebKit"
     }
 
     func beginWatch() {
-        generation += 1
-        let active = generation
+        lastActivity = Date()
         timeout?.cancel()
         timeout = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 35_000_000_000)
-            guard !Task.isCancelled, let self, active == self.generation,
-                  !self.playbackSeen else { return }
-            self.stalled = true
-            self.subtitle = "لم يبدأ تشغيل الفيديو"
-        }
-    }
-
-    func endWatch() {
-        generation += 1
-        timeout?.cancel()
-    }
-
-    func toggleTheater() {
-        let toEnter = !theaterMode
-        let js = toEnter
-            ? "window.__xstvEnterTheater ? window.__xstvEnterTheater() : false;"
-            : "window.__xstvExitTheater ? window.__xstvExitTheater() : false;"
-        web?.evaluateJavaScript(js) { [weak self] result, error in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                if error == nil, (result as? Bool) == true {
-                    self.theaterMode = toEnter
-                } else if toEnter {
-                    self.subtitle = "وضع السينما غير متاح لهذا المشغل؛ استخدم عناصر المشغل الأصلية"
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                guard !Task.isCancelled, let self else { return }
+                if !self.paused && Date().timeIntervalSince(self.lastActivity) >= 35 {
+                    self.stalled = true
+                    self.subtitle = self.playbackSeen ? "توقف وصول الفيديو" : "لم يبدأ تشغيل الفيديو"
                 }
             }
         }
     }
-
+    func pause() {
+        paused = true
+        web?.evaluateJavaScript("window.__xstvPause && window.__xstvPause();", completionHandler: nil)
+        if lastPosition > 5 { onProgress?(lastPosition, duration) }
+    }
+    func endWatch() { pause(); timeout?.cancel(); timeout = nil }
+    func toggleTheater() {
+        let enter = !theaterMode
+        let function = enter ? "__xstvEnterTheater" : "__xstvExitTheater"
+        web?.evaluateJavaScript("window.\(function) ? window.\(function)() : false;") { [weak self] result, _ in
+            guard let self else { return }
+            if (result as? Bool) == true { self.theaterMode = enter }
+            else { self.subtitle = "انتظر حتى يظهر مشغل الفيديو ثم جرّب التكبير" }
+        }
+    }
     func reload() {
-        playbackSeen = false
-        stalled = false
-        siteError = nil
+        playbackSeen = false; stalled = false; pageLoaded = false
+        siteError = nil; paused = false; theaterMode = false
         subtitle = "إعادة الاتصال بالمشغل…"
         web?.reload()
         beginWatch()
     }
-
-    func notePlayer(_ event: String, time: Double) {
-        if event == "autoplayAttempted" { autoPlayAttempted = true; subtitle = "محاولة فتح مشغل الفيديو مباشرة…"; return }
+    func notePlayer(_ event: String, time: Double, total: Double) {
         if event == "theaterStarted" { theaterMode = true; return }
         if event == "theaterStopped" { theaterMode = false; return }
-        guard !playbackSeen else { return }
-        if (event == "playing" || event == "timeupdate") && time > 0.15 {
-            playbackSeen = true
-            stalled = false
+        if event == "pause" || event == "ended" {
+            paused = true
+            if time > 5 { onProgress?(time, total) }
+            return
+        }
+        if event == "playing" || event == "timeupdate" {
+            guard time > 0.15 else { return }
+            playbackSeen = true; stalled = false; paused = false
+            lastActivity = Date(); lastPosition = time; duration = total
             subtitle = "الفيديو قيد التشغيل"
-            timeout?.cancel()
+            onProgress?(time, total)
         } else if event == "error" {
-            siteError = "html_video_error"
+            siteError = "html_video_error"; stalled = true
             subtitle = "حدث خطأ في مشغل الفيديو"
-            stalled = true
         } else if event == "waiting" || event == "stalled" {
-            subtitle = "المشغل ينتظر وصول بيانات الفيديو…"
+            paused = false
+            subtitle = "جارٍ تحميل الفيديو…"
         } else if event == "loadedmetadata" {
+            lastActivity = Date()
             subtitle = "تم العثور على بيانات الفيديو"
         }
     }
@@ -208,225 +193,78 @@ final class XSETWatchPlaybackHealth: ObservableObject {
 private struct XSETWatchVideoWebView: UIViewRepresentable {
     let url: URL
     @ObservedObject var state: XSETWatchPlaybackHealth
-    let season: Int?
-    let episode: Int?
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(state: state, season: season, episode: episode)
-    }
-
+    let resumePosition: Double
+    func makeCoordinator() -> Coordinator { Coordinator(state: state) }
     func makeUIView(context: Context) -> WKWebView {
-        let userContent = WKUserContentController()
-        let desiredEpisode = episode.map(String.init) ?? "null"
-        let desiredSeason = season.map(String.init) ?? "null"
-        let script = """
-        (function() {
-          if (window.__xstvVideoProbeReady) return;
-          window.__xstvVideoProbeReady = true;
-          const desiredSeason = \(desiredSeason);
-          const desiredEpisode = \(desiredEpisode);
-          const post = function(event, seconds) {
-            try { window.webkit.messageHandlers.xstvVideoStatus.postMessage({
-              event: event, seconds: Number(seconds)||0
-            }); } catch(e) {}
-          };
-          const css = document.createElement("style");
-          css.textContent =
-            '.xstv-theater-player{position:fixed!important;inset:0!important;z-index:2147483000!important;width:100vw!important;height:100dvh!important;background:#000!important;max-width:none!important;max-height:none!important;transform:none!important;}' +
-            '.xstv-theater-player video{max-height:100%!important;max-width:100%!important;width:100%!important;height:100%!important;object-fit:contain!important;}' +
-            'html.xstv-cinema-on,html.xstv-cinema-on body{overflow:hidden!important;background:#000!important;}';
-          (document.head || document.documentElement).appendChild(css);
-          let activeContainer = null;
-          function candidate() {
-            const video = Array.from(document.querySelectorAll("video"))
-              .find(v => v.readyState > 0 || v.clientWidth > 100) ||
-              document.querySelector("video");
-            if (video) {
-              return video.closest('.jwplayer,.plyr,.video-js,.artplayer,.dplayer,[class*="player-container"],[class*="video-player"]')
-                || video.parentElement;
-            }
-            return Array.from(document.querySelectorAll('iframe[allow*="fullscreen"],iframe[src]'))
-              .find(el=>el.clientWidth>240 && el.clientHeight>100) || null;
-          }
-          window.__xstvEnterTheater = function() {
-            const target = candidate();
-            if (!target) return false;
-            if (activeContainer && activeContainer!==target) activeContainer.classList.remove("xstv-theater-player");
-            activeContainer=target;
-            target.classList.add("xstv-theater-player");
-            document.documentElement.classList.add("xstv-cinema-on");
-            post("theaterStarted",0);
-            return true;
-          };
-          window.__xstvExitTheater = function() {
-            if(activeContainer) activeContainer.classList.remove("xstv-theater-player");
-            document.documentElement.classList.remove("xstv-cinema-on");
-            activeContainer=null;
-            post("theaterStopped",0);
-            return true;
-          };
-          function observeVideo() {
-            document.querySelectorAll('video').forEach(function(v) {
-              if (v.__xstvObserved) return;
-              v.__xstvObserved=true;
-              ['playing','timeupdate','waiting','stalled','error','loadedmetadata'].forEach(function(event) {
-                v.addEventListener(event,function(){
-                  const seconds=Number(v.currentTime)||0;
-                  post(event,seconds);
-                },{passive:true});
-              });
-            });
-          }
-          // The site's player may render its Arabic subtitles as an HTML layer,
-          // outside <video>. Keep both in the same WKWebView visual hierarchy.
-          // Do not intercept the site's fullscreen controls, clicks or
-          // player lifecycle. Native cinema mode is exclusively opt-in
-          // using the XS TV theater control above.
-          let autoClicked = false;
-          let episodeChosen = false;
-          let count=0;
-          function selectEpisodeIfVisible() {
-            if(desiredEpisode===null || episodeChosen || window.top!==window)return false;
-            const candidates=Array.from(document.querySelectorAll(
-              '[data-episode], [class*="pisode"], button, a, [role="button"]'
-            )).filter(el=>el.getBoundingClientRect().width>40);
-            const target=candidates.find(el=>{
-              const data=el.getAttribute("data-episode");
-              if(data!==null && Number(data)===desiredEpisode)return true;
-              const label=(el.getAttribute("aria-label")||"")+" "+(el.innerText||"");
-              const compact=label.trim();
-              return new RegExp("^E[ ]*"+desiredEpisode+"(?:[^0-9]|$)", "i").test(compact)
-                || new RegExp("^Episode[ ]*"+desiredEpisode+"(?:[^0-9]|$)", "i").test(compact)
-                || new RegExp("^حلقة[ ]*"+desiredEpisode+"(?:[^0-9]|$)").test(compact);
-            });
-            if(!target)return false;
-            episodeChosen=true;
-            autoClicked=true;
-            post("autoplayAttempted",0);
-            target.click();
-            return true;
-          }
-          function findPlay() {
-            if(autoClicked || window.top!==window)return;
-            if(desiredEpisode!==null){
-              selectEpisodeIfVisible();
-              return;
-            }
-            if(document.querySelector('video[src],video source[src]'))return;
-            const elements=Array.from(document.querySelectorAll("button,a,[role=button]"));
-            const play=elements.find(el=>{
-              const rect=el.getBoundingClientRect();
-              if(rect.width<24 || rect.height<20)return false;
-              const label=((el.getAttribute("aria-label")||"")+" "+(el.textContent||"")).trim().toLowerCase();
-              return /^(play|watch now|watch|شاهد الآن|تشغيل|ابدأ المشاهدة)(\\s|$)/i.test(label)
-                 && !/trailer|preview|اعلان/.test(label);
-            });
-            if(play){
-              autoClicked=true;
-              post("autoplayAttempted",0);
-              play.click();
-            }
-          }
-          const observer=new MutationObserver(function(){observeVideo();});
-          observer.observe(document.documentElement,{childList:true,subtree:true});
-          observeVideo();
-          if(window.top===window){
-            const timer=setInterval(function(){
-              count++;findPlay();
-              if(autoClicked||count>30)clearInterval(timer);
-            },400);
-          }
-          window.addEventListener("pagehide",function(){observer.disconnect();});
-        })();
-        """
-        userContent.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentEnd,
-                                             forMainFrameOnly: false))
-        userContent.add(context.coordinator, name: "xstvVideoStatus")
+        let content = WKUserContentController()
+        let position = resumePosition.isFinite ? max(0, resumePosition) : 0
+        let config = "window.__xstvPlaybackConfig={resumePosition:\(position)};\n"
+        if let path = Bundle.main.url(forResource: "xstv-cinema", withExtension: "js"),
+           let source = try? String(contentsOf: path, encoding: .utf8) {
+            content.addUserScript(WKUserScript(source: config + source,
+                                              injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        }
+        content.add(context.coordinator, name: "xstvVideoStatus")
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
-        configuration.userContentController = userContent
+        configuration.userContentController = content
         configuration.allowsInlineMediaPlayback = true
         configuration.allowsAirPlayForMediaPlayback = true
         configuration.allowsPictureInPictureMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        let browser = WKWebView(frame: .zero, configuration: configuration)
-        browser.navigationDelegate = context.coordinator
-        browser.uiDelegate = context.coordinator
-        browser.isOpaque = false
-        browser.backgroundColor = .black
-        browser.scrollView.backgroundColor = .black
-        state.web = browser
-        browser.load(URLRequest(url: url, cachePolicy: .useProtocolCachePolicy,
-                                timeoutInterval: 25))
-        return browser
+        let web = WKWebView(frame: .zero, configuration: configuration)
+        web.navigationDelegate = context.coordinator
+        web.uiDelegate = context.coordinator
+        web.isOpaque = false; web.backgroundColor = .black
+        web.scrollView.backgroundColor = .black
+        web.scrollView.bounces = false
+        web.scrollView.contentInsetAdjustmentBehavior = .never
+        state.web = web
+        web.load(URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 25))
+        return web
     }
-
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
-
-    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
-        uiView.stopLoading()
-        uiView.configuration.userContentController.removeScriptMessageHandler(
-            forName: "xstvVideoStatus")
-        uiView.navigationDelegate = nil
-        uiView.uiDelegate = nil
+    func updateUIView(_ web: WKWebView, context: Context) {}
+    static func dismantleUIView(_ web: WKWebView, coordinator: Coordinator) {
+        web.evaluateJavaScript("window.__xstvPause && window.__xstvPause();", completionHandler: nil)
+        web.stopLoading()
+        web.configuration.userContentController.removeScriptMessageHandler(forName: "xstvVideoStatus")
+        web.navigationDelegate = nil; web.uiDelegate = nil
     }
-
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         let state: XSETWatchPlaybackHealth
-        let season: Int?
-        let episode: Int?
-        init(state: XSETWatchPlaybackHealth, season: Int?, episode: Int?) {
-            self.state = state
-            self.season = season
-            self.episode = episode
-        }
-
-        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        private var recoveredProcess = false
+        init(state: XSETWatchPlaybackHealth) { self.state = state }
+        func webView(_ web: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             state.pageLoaded = false
-            state.subtitle = "جاري فتح صفحة المشاهدة…"
         }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        func webView(_ web: WKWebView, didFinish navigation: WKNavigation!) {
             state.pageLoaded = true
-            state.subtitle = state.autoPlayAttempted
-                ? "جارٍ توصيل مشغل الفيديو الأصلي…"
-                : "المشغل جاهز، وسيتم محاولة بدء الفيديو تلقائياً"
+            if !state.playbackSeen { state.subtitle = "جارٍ توصيل مشغل الفيديو…" }
         }
-
-        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
-                     withError error: Error) {
-            state.siteError = "navigation_failed"
-            state.stalled = true
+        private func failed(_ error: Error) {
+            guard (error as NSError).code != NSURLErrorCancelled else { return }
+            state.siteError = "navigation_failed"; state.stalled = true
             state.subtitle = "فشل فتح صفحة المشاهدة"
         }
-
-        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!,
-                     withError error: Error) {
-            state.siteError = "navigation_interrupted"
-            state.stalled = true
+        func webView(_ web: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failed(error) }
+        func webView(_ web: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failed(error) }
+        func webViewWebContentProcessDidTerminate(_ web: WKWebView) {
+            if !recoveredProcess { recoveredProcess = true; state.reload() }
+            else { state.siteError = "web_process_terminated"; state.stalled = true }
         }
-
-        func userContentController(_ userContentController: WKUserContentController,
-                                   didReceive message: WKScriptMessage) {
-            guard message.name == "xstvVideoStatus",
-                  let body = message.body as? [String: Any],
+        func userContentController(_ content: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == "xstvVideoStatus", let body = message.body as? [String: Any],
                   let event = body["event"] as? String else { return }
-            let time = (body["seconds"] as? NSNumber)?.doubleValue ?? 0
-            state.notePlayer(event,time:time)
+            let seconds = (body["seconds"] as? NSNumber)?.doubleValue ?? 0
+            let total = (body["duration"] as? NSNumber)?.doubleValue ?? 0
+            guard seconds.isFinite, total.isFinite else { return }
+            state.notePlayer(event, time: seconds, total: total)
         }
-
-        // Open legitimate same-frame site navigation, not unsolicited new
-        // windows; provider popups remain external and under user's control.
-        func webView(_ webView: WKWebView,
-                     createWebViewWith configuration: WKWebViewConfiguration,
-                     for navigationAction: WKNavigationAction,
-                     windowFeatures: WKWindowFeatures) -> WKWebView? {
-            guard navigationAction.targetFrame == nil,
-                  navigationAction.navigationType == .linkActivated,
-                  let target = navigationAction.request.url,
-                  target.scheme == "https" else { return nil }
-            UIApplication.shared.open(target)
+        func webView(_ web: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                     for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+            guard action.targetFrame == nil, action.navigationType == .linkActivated,
+                  let target = action.request.url, target.scheme == "https" else { return nil }
+            if target.host == "www.etwatch.net" || target.host == "etwatch.net" { web.load(action.request) }
             return nil
         }
     }
@@ -434,8 +272,6 @@ private struct XSETWatchVideoWebView: UIViewRepresentable {
 
 private struct XSETWatchSafariFallback: UIViewControllerRepresentable {
     let url: URL
-    func makeUIViewController(context: Context) -> SFSafariViewController {
-        SFSafariViewController(url: url)
-    }
-    func updateUIViewController(_ viewController: SFSafariViewController, context: Context) {}
+    func makeUIViewController(context: Context) -> SFSafariViewController { SFSafariViewController(url: url) }
+    func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
 }

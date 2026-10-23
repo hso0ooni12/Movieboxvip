@@ -129,7 +129,7 @@ actor XSCinemaCatalogAPI {
 
     func search(_ phrase: String, kind: XSCinemaMediaKind) async throws -> [XSCinemaMedia] {
         let trimmed = phrase.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+        guard !trimmed.isEmpty, let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/&?#%"))),
               let url = URL(string: base + "/catalog/\(kind.rawValue)/top/search=\(encoded).json") else { return [] }
         let bytes = try await data(url)
         let value = try JSONDecoder().decode(XSCinemaCinemetaCatalog.self, from: bytes)
@@ -137,13 +137,32 @@ actor XSCinemaCatalogAPI {
     }
 
     func detail(_ item: XSCinemaMedia) async -> XSCinemaMedia {
-        guard let imdb = item.imdbID,
+        var resolved = item
+        if resolved.imdbID == nil,
+           let matches = try? await search(item.title, kind: item.kind),
+           let raw = item.sourceURL, let source = URL(string: raw) {
+            let identity = XSETWatchRoutes.watchURL(source: source, isSeries: false)
+            if let match = matches.first(where: { candidate in
+                guard let raw = candidate.sourceURL, let url = URL(string: raw) else { return false }
+                return XSETWatchRoutes.watchURL(source: url, isSeries: false) == identity
+            }) { resolved.imdbID = match.imdbID }
+        }
+        guard let imdb = resolved.imdbID,
               let url = URL(string: base + "/meta/\(item.kind.rawValue)/\(imdb).json"),
               let data = try? await data(url),
               let wrapper = try? JSONDecoder().decode(XSCinemaCinemetaDetail.self, from: data) else {
             return item
         }
-        return media(wrapper.meta, kind: item.kind)
+        let full = media(wrapper.meta, kind: item.kind)
+        // Keep the source identity stable for favourites, shelves and resume.
+        resolved.poster = full.poster ?? item.poster
+        resolved.backdrop = full.backdrop ?? item.backdrop
+        resolved.summary = full.summary
+        resolved.rating = full.rating > 0 ? full.rating : item.rating
+        resolved.year = full.year.isEmpty ? item.year : full.year
+        resolved.episodes = full.episodes
+        resolved.sourceURL = item.sourceURL ?? full.sourceURL
+        return resolved
     }
 
     // This separate collection includes only material with an explicit open
@@ -212,13 +231,74 @@ final class XSCinemaNativeStore: ObservableObject {
     @Published private(set) var favorites = Set<String>()
     private let favoriteKey = "XSTV.NativeCinema.Favorites"
     private var skips: [XSCinemaMediaKind:Int] = [.movie:0, .series:0]
+    @Published private(set) var shelves: [XSCinemaShelf] = []
+    @Published private(set) var recents: [XSCinemaWatchRecord] = []
+    @Published private(set) var moreErrors: Set<XSCinemaMediaKind> = []
+    private var exhausted: Set<XSCinemaMediaKind> = []
     private var loaded = false
+    private var openTask: Task<Void, Never>?
+    private let recentKey = "XSTV.NativeCinema.Recent.V27"
+    private var cacheURL: URL? {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("xstv-catalog-v27.json")
+    }
     init() {
         favorites = Set(UserDefaults.standard.stringArray(forKey: favoriteKey) ?? [])
         // Compile-time catalog from verified public metadata. Populate Home
         // instantly, independently of the network or licensed video sources.
         movies = XSCinemaNativeSeed.movies
         series = XSCinemaNativeSeed.series
+        if let snapshot = XSETWatchCatalogSnapshot.bundled {
+            movies = snapshot.items.filter { $0.kind == .movie }
+            series = snapshot.items.filter { $0.kind == .series }
+            shelves = snapshot.shelves
+        }
+        if let data = UserDefaults.standard.data(forKey: recentKey),
+           let saved = try? JSONDecoder().decode([XSCinemaWatchRecord].self, from: data) {
+            recents = saved
+        }
+        if let url = cacheURL, let data = try? Data(contentsOf: url),
+           let cached = try? JSONDecoder().decode([String:[XSCinemaMedia]].self, from: data) {
+            if let value = cached["movies"], !value.isEmpty { movies = value }
+            if let value = cached["series"], !value.isEmpty { series = value }
+        }
+    }
+    func saveProgress(_ media: XSCinemaMedia, season: Int?, episode: Int?,
+                      position: Double, duration: Double) {
+        guard position.isFinite, duration.isFinite, position > 5 else { return }
+        let record = XSCinemaWatchRecord(media: media, season: season, episode: episode,
+                                       position: position, duration: duration, updated: Date())
+        recents.removeAll { $0.id == record.id }
+        if duration <= 0 || position < duration - 25 { recents.insert(record, at: 0) }
+        recents = Array(recents.prefix(30))
+        if let data = try? JSONEncoder().encode(recents) {
+            UserDefaults.standard.set(data, forKey: recentKey)
+        }
+    }
+    func resume(_ media: XSCinemaMedia, season: Int?, episode: Int?) -> Double {
+        recents.first { $0.media.id == media.id && $0.season == season && $0.episode == episode }?.position ?? 0
+    }
+    func shelfItems(_ shelf: XSCinemaShelf) -> [XSCinemaMedia] {
+        var lookup: [String:XSCinemaMedia] = [:]
+        for media in movies + series { lookup[media.id] = media }
+        return shelf.itemIDs.compactMap { lookup[$0] }
+    }
+    private func combined(_ current: [XSCinemaMedia], _ incoming: [XSCinemaMedia]) -> [XSCinemaMedia] {
+        func key(_ item: XSCinemaMedia) -> String {
+            if let raw = item.sourceURL, let source = URL(string: raw),
+               let url = XSETWatchRoutes.watchURL(source: source, isSeries: item.kind == .series) {
+                return url.absoluteString
+            }
+            return item.id
+        }
+        var seen = Set<String>()
+        return (current + incoming).filter { seen.insert(key($0)).inserted }
+    }
+    func hasMore(_ kind: XSCinemaMediaKind) -> Bool { !exhausted.contains(kind) }
+    private func persistCatalog() {
+        guard let url = cacheURL,
+              let data = try? JSONEncoder().encode(["movies":movies,"series":series]) else { return }
+        try? data.write(to: url, options: .atomic)
     }
 
     func list(_ kind: XSCinemaMediaKind) -> [XSCinemaMedia] {
@@ -229,41 +309,51 @@ final class XSCinemaNativeStore: ObservableObject {
         if !favorites.insert(item.id).inserted { favorites.remove(item.id) }
         UserDefaults.standard.set(Array(favorites),forKey:favoriteKey)
     }
-    func boot() async {
-        guard !loaded && !loading else { return }
+    func boot(force: Bool = false) async {
+        guard !loading && (force || !loaded) else { return }
         loading = true
+        error = nil
         defer { loading = false }
         async let a = XSCinemaCatalogAPI.shared.catalog(.movie)
         async let b = XSCinemaCatalogAPI.shared.catalog(.series)
-        async let c = XSCinemaCatalogAPI.shared.openFilms()
+        var succeeded = false
         do {
-            let m = try await a
-            if !m.isEmpty { movies = m }
-            skips[.movie] = m.count
-        } catch {
-            self.error = "تعذر تحميل الأفلام الآن."
-        }
+            let value = try await a
+            if !value.isEmpty { movies = combined(movies, value); succeeded = true }
+            skips[.movie] = value.count
+        } catch { self.error = "تعذر تحديث الأفلام. المكتبة المحفوظة متاحة." }
         do {
-            let s = try await b
-            if !s.isEmpty { series = s }
-            skips[.series] = s.count
-        } catch {
-            self.error = "تعذر تحميل المسلسلات الآن."
+            let value = try await b
+            if !value.isEmpty { series = combined(series, value); succeeded = true }
+            skips[.series] = value.count
+        } catch { self.error = "تعذر تحديث المسلسلات. المكتبة المحفوظة متاحة." }
+        loaded = succeeded
+        exhausted = []; moreErrors = []
+        persistCatalog()
+        // Optional open films never hold up the primary movie/series library.
+        if openTask == nil && freeMovies.isEmpty {
+            openTask = Task { [weak self] in
+                let films = await XSCinemaCatalogAPI.shared.openFilms()
+                guard let self, !Task.isCancelled else { return }
+                self.freeMovies = films
+                self.openTask = nil
+            }
         }
-        freeMovies = await c
-        loaded = !movies.isEmpty || !series.isEmpty || !freeMovies.isEmpty
     }
     func more(_ kind: XSCinemaMediaKind) async {
-        guard !loadingMore.contains(kind) else { return }
+        guard !loadingMore.contains(kind), !exhausted.contains(kind) else { return }
+        moreErrors.remove(kind)
         loadingMore.insert(kind)
         defer { loadingMore.remove(kind) }
         do {
             let incoming = try await XSCinemaCatalogAPI.shared.catalog(kind,skip:skips[kind] ?? 0)
-            let old = Set(list(kind).map(\.id))
-            let unique = incoming.filter { !old.contains($0.id) }
-            if kind == .movie { movies.append(contentsOf: unique) }
-            else { series.append(contentsOf: unique) }
+            let previousCount = list(kind).count
+            if kind == .movie { movies = combined(movies, incoming) }
+            else { series = combined(series, incoming) }
             skips[kind,default:0] += incoming.count
-        } catch { self.error = "تعذر تحميل المزيد حالياً." }
+            if incoming.isEmpty { exhausted.insert(kind) }
+            _ = previousCount
+            persistCatalog()
+        } catch { moreErrors.insert(kind) }
     }
 }
