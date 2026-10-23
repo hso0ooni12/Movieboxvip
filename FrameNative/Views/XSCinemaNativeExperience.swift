@@ -25,7 +25,7 @@ struct XSCinemaNativeHomeView: View {
 
     var body: some View {
         ZStack {
-            XSNativeCinemaColors.background.ignoresSafeArea()
+            XSAtmosphericCinemaBackdropV27()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 28) {
                     topBar
@@ -43,6 +43,7 @@ struct XSCinemaNativeHomeView: View {
 
                     posterRail("أفلام تستحق المشاهدة", items: store.movies)
                     posterRail("مسلسلات مختارة", items: store.series)
+                    XSEditorialCollectionsV27()
                     if !store.favorites.isEmpty {
                         posterRail("قائمتي", items: (store.movies + store.series + store.freeMovies)
                             .filter { store.favorites.contains($0.id) })
@@ -440,35 +441,13 @@ struct XSCinemaNativeDetailView:View {
                         VStack(alignment:.leading,spacing:13) {
                             Text("المواسم والحلقات").font(.title3.bold())
                             if !seasons.isEmpty {
-                                Picker("الموسم",selection:$selectedSeason) {
-                                    ForEach(seasons,id:\.self) {
-                                        Text("الموسم \($0)").tag($0)
-                                    }
-                                }
-                                .pickerStyle(.menu)
+                                XSSeasonStripV27(seasons: seasons, selected: $selectedSeason)
                                 ForEach(item.episodes.filter{$0.season==selectedSeason}) { ep in
                                     Button {
                                         selectedWebsiteEpisode = ep
                                         showWebsitePlayer = true
                                     } label: {
-                                        HStack(spacing:12) {
-                                            Image(systemName:"play.rectangle.fill")
-                                                .frame(width:53,height:51)
-                                                .background(XSNativeCinemaColors.tile,
-                                                            in:RoundedRectangle(cornerRadius:11))
-                                            VStack(alignment:.leading,spacing:4) {
-                                                Text("\(ep.number). \(ep.title)")
-                                                    .font(.subheadline.bold())
-                                                Text("S\(ep.season) E\(ep.number)")
-                                                    .font(.caption2)
-                                                    .foregroundStyle(XSNativeCinemaColors.muted)
-                                            }
-                                            Spacer()
-                                            Image(systemName:"play.fill")
-                                                .foregroundStyle(XSNativeCinemaColors.accent)
-                                        }
-                                        .contentShape(Rectangle())
-                                        .padding(.vertical,4)
+                                        XSEpisodePosterRowV27(episode: ep)
                                     }
                                     .buttonStyle(.plain)
                                 }
