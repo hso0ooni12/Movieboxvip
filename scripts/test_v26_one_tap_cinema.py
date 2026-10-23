@@ -19,8 +19,9 @@ checks={
  "Cinema CSS contains HTML captions with video": all(x in web for x in
         ("xstv-theater-player", "document.documentElement.classList.add(\"xstv-cinema-on\")",
          "window.__xstvEnterTheater")),
- "Fullscreen button uses CSS theater, not video-only native": 'e.stopImmediatePropagation()' in web
-        and 'fullscreen|full.screen' in web,
+ "User-controlled theater avoids subtitle loss": 'window.__xstvEnterTheater' in web
+        and 'e.stopImmediatePropagation()' not in web
+        and 'postMessage({type:"xstv-player-played"}' not in web,
  "Automatic site Play attempt with fallback": all(x in web for x in
         ("autoplayAttempted", "play.click()", "count>30", "openOfficialSite" if False else "presentSafari")),
  "Clickable episode navigation": all(x in ui for x in
