@@ -30,6 +30,28 @@ struct XSWorldBackDrop: View {
     }
 }
 
+// Compatibility tokens required by the protected R5 sports view.
+// We keep just the palette/button primitive, not the obsolete media screens.
+enum XSV3 {
+    static let ink = XSCinemaStyle.background
+    static let lifted = XSCinemaStyle.surface
+    static let coral = XSCinemaStyle.accent
+    static let amber = XSCinemaStyle.gold
+    static let lilac = XSCinemaStyle.lavender
+    static let muted = XSCinemaStyle.secondary
+}
+
+struct XSV3PressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.975 : 1)
+            .opacity(configuration.isPressed ? 0.90 : 1)
+            .animation(reduceMotion ? nil : .spring(response: 0.24, dampingFraction: 0.78),
+                       value: configuration.isPressed)
+    }
+}
+
 struct XSWorldTapStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func makeBody(configuration: Configuration) -> some View {
