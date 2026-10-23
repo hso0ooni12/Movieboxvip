@@ -12,6 +12,7 @@ enum XSCinemaStyle {
     static let accent = Color(red: 0.99, green: 0.29, blue: 0.43)
     static let lavender = Color(red: 0.69, green: 0.46, blue: 1.0)
     static let gold = Color(red: 1.0, green: 0.79, blue: 0.52)
+    static let warm = gold
     static let secondary = Color.white.opacity(0.69)
 }
 
