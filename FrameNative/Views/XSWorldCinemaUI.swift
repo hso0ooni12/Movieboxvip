@@ -308,8 +308,8 @@ struct XSWorldRail: View {
                 .padding(.horizontal, 20)
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: ranking ? 20 : 13) {
-                        ForEach(Array(items.prefix(ranking ? 10 : 30).enumerated()),
-                                id: \.element.id) { index, item in
+                        ForEach(Array(0..<min(items.count, ranking ? 10 : 30)), id: \.self) { index in
+                            let item = items[index]
                             NavigationLink {
                                 XSWorldDetail(item: item)
                             } label: {
