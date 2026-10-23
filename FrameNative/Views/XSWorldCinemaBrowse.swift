@@ -25,124 +25,23 @@ struct XSWorldBrowse: View {
         ZStack {
             XSWorldBackDrop()
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 22) {
-                    VStack(alignment: .leading, spacing: 9) {
-                        Text(kind == .movie ? "THE MOVIE LIBRARY" : "DISCOVER SERIES")
-                            .font(.system(size: 10, weight: .black))
-                            .tracking(2.5)
-                            .foregroundStyle(XSCinemaStyle.accent)
-                        Text(kind == .movie ? "Movies" : "Series")
-                            .font(.system(size: 37, weight: .black, design: .rounded))
-                            .tracking(-0.8)
-                        Text("Discover stories worth watching")
+                LazyVStack(alignment: .leading, spacing: 23) {
+                    browseHeader
+                    featuredBanner
+                    filterBar
+                    posterGrid
+                    if items.isEmpty && !cinema.loading {
+                        Text(cinema.error ?? "No titles found")
                             .font(.subheadline)
                             .foregroundStyle(XSCinemaStyle.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 170)
                     }
-                    .foregroundStyle(.white)
-                    .padding(.top, 17)
-
-                    if let cover = items.first {
-                        NavigationLink {
-                            XSWorldDetail(item: cover)
-                        } label: {
-                            ZStack(alignment: .bottomLeading) {
-                                XSWorldPhoto(item: cover, backdrop: true)
-                                    .frame(height: 210)
-                                LinearGradient(colors: [.clear, .black.opacity(0.89)],
-                                               startPoint: .center, endPoint: .bottom)
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text("FEATURED COLLECTION")
-                                        .font(.system(size: 10, weight: .black))
-                                        .tracking(2)
-                                        .foregroundStyle(XSCinemaStyle.gold)
-                                    Text(cover.title)
-                                        .font(.title2.bold())
-                                        .lineLimit(2)
-                                    Label("View details", systemImage: "arrow.up.right")
-                                        .font(.caption.bold())
-                                }
-                                .foregroundStyle(.white)
-                                .padding(18)
-                            }
-                            .clipShape(RoundedRectangle(cornerRadius: 21))
-                            .overlay(RoundedRectangle(cornerRadius: 21)
-                                .stroke(.white.opacity(0.11)))
-                        }
-                        .buttonStyle(XSWorldTapStyle())
-                    }
-
-                    HStack(spacing: 10) {
-                        if kind == .movie {
-                            filterChip("All", selection: 0)
-                            filterChip("Free to watch", selection: 1)
-                        } else {
-                            Text("\(items.count) titles")
-                                .font(.subheadline.bold())
-                                .foregroundStyle(XSCinemaStyle.secondary)
-                        }
-                        Spacer(minLength: 0)
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                orderByRating.toggle()
-                            }
-                        } label: {
-                            Label(orderByRating ? "Top rated" : "Popular",
-                                  systemImage: "arrow.up.arrow.down")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 12)
-                                .frame(height: 36)
-                                .background(.white.opacity(0.095), in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    LazyVGrid(columns: [
-                        GridItem(.flexible(), spacing: 13),
-                        GridItem(.flexible(), spacing: 13)
-                    ], spacing: 23) {
-                        ForEach(items) { media in
-                            NavigationLink {
-                                XSWorldDetail(item: media)
-                            } label: {
-                                XSWorldBrowseCard(item: media)
-                            }
-                            .buttonStyle(XSWorldTapStyle())
-                        }
-                    }
-
-                    if items.isEmpty && !cinema.loading {
-                        VStack(spacing: 11) {
-                            Image(systemName: "film.stack")
-                                .font(.system(size: 31))
-                                .foregroundStyle(XSCinemaStyle.accent)
-                            Text(cinema.error ?? "No titles found")
-                                .font(.subheadline)
-                                .foregroundStyle(XSCinemaStyle.secondary)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 190)
-                    }
-
                     if query.isEmpty && selectedFilter == 0 && !items.isEmpty {
-                        Button {
-                            Task { await cinema.more(kind) }
-                        } label: {
-                            HStack(spacing: 10) {
-                                if cinema.loadingMore.contains(kind) {
-                                    ProgressView().tint(.white)
-                                }
-                                Text("Load more")
-                            }
-                            .font(.subheadline.bold())
-                            .frame(maxWidth: .infinity, minHeight: 48)
-                            .foregroundStyle(.white)
-                            .background(XSCinemaStyle.surface, in: RoundedRectangle(cornerRadius: 14))
-                        }
-                        .buttonStyle(XSWorldTapStyle())
+                        moreButton
                     }
                 }
                 .padding(.horizontal, 19)
-                .padding(.bottom, 60)
+                .padding(.bottom, 54)
             }
             .scrollIndicators(.hidden)
             .refreshable { await cinema.refresh() }
@@ -164,6 +63,115 @@ struct XSWorldBrowse: View {
             }
         }
         .task { await cinema.boot() }
+    }
+
+    private var browseHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(kind == .movie ? "THE MOVIE LIBRARY" : "DISCOVER SERIES")
+                .font(.system(size: 10, weight: .black))
+                .tracking(2.5)
+                .foregroundStyle(XSCinemaStyle.accent)
+            Text(kind == .movie ? "Movies" : "Series")
+                .font(.system(size: 37, weight: .black, design: .rounded))
+                .foregroundStyle(.white)
+            Text("Discover stories worth watching")
+                .font(.subheadline)
+                .foregroundStyle(XSCinemaStyle.secondary)
+        }
+        .padding(.top, 14)
+    }
+
+    @ViewBuilder
+    private var featuredBanner: some View {
+        if let cover = items.first {
+            NavigationLink {
+                XSWorldDetail(item: cover)
+            } label: {
+                ZStack(alignment: .bottomLeading) {
+                    XSWorldPhoto(item: cover, backdrop: true)
+                        .frame(height: 210)
+                    LinearGradient(colors: [.clear, .black.opacity(0.88)],
+                                   startPoint: .center, endPoint: .bottom)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("FEATURED COLLECTION")
+                            .font(.system(size: 10, weight: .black))
+                            .tracking(2.0)
+                            .foregroundStyle(XSCinemaStyle.gold)
+                        Text(cover.title)
+                            .font(.title2.bold())
+                            .lineLimit(2)
+                        Label("View details", systemImage: "arrow.up.right")
+                            .font(.caption.bold())
+                    }
+                    .foregroundStyle(.white)
+                    .padding(18)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 20))
+                .overlay(RoundedRectangle(cornerRadius: 20)
+                    .stroke(.white.opacity(0.10)))
+            }
+            .buttonStyle(XSWorldTapStyle())
+        }
+    }
+
+    private var filterBar: some View {
+        HStack(spacing: 10) {
+            if kind == .movie {
+                filterChip("All", selection: 0)
+                filterChip("Free to watch", selection: 1)
+            } else {
+                Text("\(items.count) titles")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(XSCinemaStyle.secondary)
+            }
+            Spacer(minLength: 0)
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { orderByRating.toggle() }
+            } label: {
+                Label(orderByRating ? "Top rated" : "Popular",
+                      systemImage: "arrow.up.arrow.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .frame(height: 36)
+                    .background(.white.opacity(0.095), in: Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var posterGrid: some View {
+        LazyVGrid(columns: [
+            GridItem(.flexible(), spacing: 13),
+            GridItem(.flexible(), spacing: 13)
+        ], spacing: 22) {
+            ForEach(items) { item in
+                NavigationLink {
+                    XSWorldDetail(item: item)
+                } label: {
+                    XSWorldBrowseCard(item: item)
+                }
+                .buttonStyle(XSWorldTapStyle())
+            }
+        }
+    }
+
+    private var moreButton: some View {
+        Button {
+            Task { await cinema.more(kind) }
+        } label: {
+            HStack(spacing: 10) {
+                if cinema.loadingMore.contains(kind) {
+                    ProgressView().tint(.white)
+                }
+                Text("Load more")
+            }
+            .font(.subheadline.bold())
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .foregroundStyle(.white)
+            .background(XSCinemaStyle.surface, in: RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(XSWorldTapStyle())
     }
 
     private func filterChip(_ title: String, selection: Int) -> some View {
