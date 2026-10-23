@@ -158,11 +158,18 @@ final class XSETWatchPlaybackHealth: ObservableObject {
     }
 
     func toggleTheater() {
-        theaterMode.toggle()
-        web?.evaluateJavaScript(theaterMode
-            ? "window.__xstvEnterTheater && window.__xstvEnterTheater();"
-            : "window.__xstvExitTheater && window.__xstvExitTheater();",
-            completionHandler: nil)
+        guard let web else { return }
+        let script = theaterMode
+            ? "window.__xstvExitTheater && window.__xstvExitTheater()"
+            : "window.__xstvEnterTheater && window.__xstvEnterTheater()"
+        web.evaluateJavaScript(script) { [weak self] result, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if error != nil || (result as? Bool) != true {
+                    self.subtitle = "وضع السينما غير مدعوم في هذا المشغل؛ خل الفيديو داخل الصفحة للحفاظ على الترجمة."
+                }
+            }
+        }
     }
 
     func reload() {
@@ -236,8 +243,7 @@ private struct XSETWatchVideoWebView: UIViewRepresentable {
               return video.closest('.jwplayer,.plyr,.video-js,.artplayer,.dplayer,[class*="player-container"],[class*="video-player"]')
                 || video.parentElement;
             }
-            return Array.from(document.querySelectorAll('iframe[allow*="fullscreen"],iframe[src]'))
-              .find(el=>el.clientWidth>240 && el.clientHeight>100) || null;
+            return null; // A cross-origin iframe cannot safely preserve captions.
           }
           window.__xstvEnterTheater = function() {
             const target = candidate();
@@ -267,31 +273,18 @@ private struct XSETWatchVideoWebView: UIViewRepresentable {
                 v.addEventListener(event,function(){
                   const seconds=Number(v.currentTime)||0;
                   post(event,seconds);
-                  if ((event==="playing" || event==="timeupdate") && seconds>0.2) {
-                    if(window.top===window)window.__xstvEnterTheater();
-                    else window.parent.postMessage({type:"xstv-player-played"},"*");
-                  }
+                  // Playback must NOT trigger DOM-wide layout changes.
+                  // Some providers paint captions in a sibling overlay that
+                  // disappears when their player container is reparented.
                 },{passive:true});
               });
             });
           }
           // The site's player may render its Arabic subtitles as an HTML layer,
           // outside <video>. Keep both in the same WKWebView visual hierarchy.
-          window.addEventListener("message",function(e){
-            if(e.data && e.data.type==="xstv-player-played"){
-              if(window.top===window)window.__xstvEnterTheater();
-              else window.parent.postMessage({type:"xstv-player-played"},"*");
-            }
-          });
-          document.addEventListener("click",function(e) {
-            const btn=e.target.closest && e.target.closest('button,[role="button"],a');
-            if(!btn || !document.querySelector("video"))return;
-            const label=((btn.getAttribute("aria-label")||"")+" "+(btn.title||"")+" "+(btn.className||"")+" "+(btn.innerText||"")).trim();
-            if (/fullscreen|full.screen|ملء الشاشة|تكبير/i.test(label)) {
-              const ok=window.__xstvEnterTheater();
-              if(ok){e.preventDefault();e.stopImmediatePropagation();}
-            }
-          },true);
+          // Do not hijack website controls. Native iOS fullscreen may
+          // separate video and HTML caption overlays; our explicit Cinema
+          // button stays the only opt-in layout transformation.
           let autoClicked = false;
           let episodeChosen = false;
           let count=0;
