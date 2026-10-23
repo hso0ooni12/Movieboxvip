@@ -26,7 +26,8 @@ assert actual==allow,(sorted(actual-allow),sorted(allow-actual))
 checks={
  "Only 12 active Swift files":len(actual)==12,
  "R5 sports fully preserved":"XSSportsLiveViewV33()" in root and
-      "XSVLCVideoSurface(player: model.player)" in sport,
+      "struct XSSportsPlayerV33: View" in sport and
+      "VLCMediaPlayer" in sport,
  "Sport credentials are live-only":"get_live_streams" in
       Path("FrameNative/Services/IPTVService.swift").read_text(),
  "No VOD streaming from Xtream":all(word not in root+world+browse+player for word in
