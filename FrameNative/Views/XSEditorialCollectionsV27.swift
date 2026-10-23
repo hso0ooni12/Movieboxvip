@@ -100,17 +100,15 @@ struct XSEditorialCollectionsV27: View {
                             .foregroundStyle(.white)
                     }
                     Spacer()
-                    if let first = items.first {
-                        NavigationLink {
-                            XSCinemaNativeDetailView(media: first)
-                        } label: {
-                            HStack(spacing: 5) {
-                                Text("استكشف")
-                                Image(systemName: "arrow.up.left")
-                            }
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(XSEditorialPalette27.soft)
+                    NavigationLink {
+                        XSEditorialCollectionBrowseV27(title: title, items: items)
+                    } label: {
+                        HStack(spacing: 5) {
+                            Text("عرض الكل")
+                            Image(systemName: "arrow.up.left")
                         }
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(XSEditorialPalette27.soft)
                     }
                 }
                 .padding(.horizontal, 21)
@@ -178,6 +176,68 @@ struct XSEditorialCollectionsV27: View {
             .foregroundStyle(XSEditorialPalette27.soft)
         }
         .frame(width: 158, alignment: .leading)
+    }
+}
+
+struct XSEditorialCollectionBrowseV27: View {
+    let title: String
+    let items: [XSCinemaMedia]
+
+    var body: some View {
+        ZStack {
+            XSAtmosphericCinemaBackdropV27()
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    Text("\(items.count) عنوان في هذه المجموعة")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.60))
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 13)],
+                              spacing: 24) {
+                        ForEach(items) { media in
+                            NavigationLink {
+                                XSCinemaNativeDetailView(media: media)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    GeometryReader { frame in
+                                        ZStack {
+                                            Color.white.opacity(0.07)
+                                            if let url = media.imageURL {
+                                                AsyncImage(url: url) { phase in
+                                                    if case .success(let image) = phase {
+                                                        image.resizable().scaledToFill()
+                                                    } else {
+                                                        Image(systemName: "film.stack")
+                                                            .foregroundStyle(.white.opacity(0.3))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        .frame(width: frame.size.width, height: frame.size.height)
+                                        .clipped()
+                                    }
+                                    .aspectRatio(0.70, contentMode: .fit)
+                                    .clipShape(RoundedRectangle(cornerRadius: 13))
+                                    Text(media.title)
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                        .lineLimit(2)
+                                    if media.rating > 0 {
+                                        Label(String(format: "%.1f", media.rating), systemImage: "star.fill")
+                                            .font(.caption2)
+                                            .foregroundStyle(.white.opacity(0.65))
+                                    }
+                                }
+                            }
+                            .buttonStyle(XSEditorialPressStyleV27())
+                        }
+                    }
+                }
+                .padding(.horizontal, 18)
+                .padding(.bottom, 50)
+            }
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
