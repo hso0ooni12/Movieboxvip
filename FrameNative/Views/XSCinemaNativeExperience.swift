@@ -16,162 +16,178 @@ private enum XSNativeCinemaColors {
     static let muted = Color.white.opacity(0.64)
 }
 
+// Editorial, native-first home: restrained typography, one hero and
+// compact poster carousels. No nested browser nav or marketing text cards.
 struct XSCinemaNativeHomeView: View {
     @EnvironmentObject private var store: XSCinemaNativeStore
+    @State private var revealed = false
     private var featured: XSCinemaMedia? { store.movies.first ?? store.freeMovies.first }
 
     var body: some View {
         ZStack {
             XSNativeCinemaColors.background.ignoresSafeArea()
             ScrollView {
-                LazyVStack(alignment:.leading,spacing:24) {
+                LazyVStack(alignment: .leading, spacing: 28) {
+                    topBar
+                        .padding(.horizontal, 20)
+                        .padding(.top, 6)
+
                     if let featured {
-                        NavigationLink {
-                            XSCinemaNativeDetailView(media: featured)
-                        } label: { featuredArtwork(featured) }
-                            .buttonStyle(.plain)
+                        featuredHero(featured)
+                            .padding(.horizontal, 15)
+                            .opacity(revealed ? 1 : 0)
+                            .offset(y: revealed ? 0 : 15)
                     } else {
                         headerPlaceholder
                     }
 
-                    HStack(spacing:13) {
-                        NavigationLink { XSCinemaNativeBrowseView(kind:.movie) }
-                            label: { navCard("الأفلام","film.stack.fill",count:store.movies.count) }
-                        NavigationLink { XSCinemaNativeBrowseView(kind:.series) }
-                            label: { navCard("المسلسلات","play.tv.fill",count:store.series.count) }
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal,18)
-
-                    posterRail("أفلام عالمية","POPULAR MOVIES",items:store.movies)
-                    posterRail("مسلسلات عالمية","TOP SERIES",items:store.series)
-                    if !store.freeMovies.isEmpty {
-                        posterRail("متاحة للمشاهدة مجاناً","OPEN LICENSE STREAMS",items:store.freeMovies)
-                    }
+                    posterRail("أفلام تستحق المشاهدة", items: store.movies)
+                    posterRail("مسلسلات مختارة", items: store.series)
                     if !store.favorites.isEmpty {
-                        posterRail("قائمتي","WATCHLIST",
-                            items:(store.movies + store.series + store.freeMovies)
-                                .filter { store.favorites.contains($0.id) })
+                        posterRail("قائمتي", items: (store.movies + store.series + store.freeMovies)
+                            .filter { store.favorites.contains($0.id) })
                     }
-                    VStack(alignment:.leading,spacing:7) {
-                        Text("مكتبة مستقلة عن IPTV")
-                            .font(.subheadline.bold())
-                        Text("تصفح نيتيف سريع للأفلام والمسلسلات. المشاهدة تفتح صفحة العنوان في ETWatch فقط، بدون قوائم الموقع داخل XS TV. الترجمة والجودة تتبع سيرفر الفيديو الأصلي.")
-                            .font(.caption)
-                            .foregroundStyle(XSNativeCinemaColors.muted)
+                    if !store.freeMovies.isEmpty {
+                        posterRail("مشاهدة مجانية", items: store.freeMovies)
                     }
-                    .padding(17)
-                    .frame(maxWidth:.infinity,alignment:.leading)
-                    .background(XSNativeCinemaColors.tile,
-                                in:RoundedRectangle(cornerRadius:15))
-                    .padding(.horizontal,18)
                 }
-                .padding(.bottom,45)
+                .padding(.bottom, 35)
             }
             .scrollIndicators(.hidden)
             .refreshable { await store.boot() }
         }
-        .overlay(alignment:.topTrailing) {
-            NavigationLink { XSCinemaNativeSearchView() } label: {
-                Image(systemName:"magnifyingglass")
-                    .font(.system(size:18,weight:.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width:47,height:47)
-                    .background(.black.opacity(0.65),in:Circle())
-            }
-            .padding(19)
-        }
-        .toolbar(.hidden,for:.navigationBar)
+        .toolbar(.hidden, for: .navigationBar)
         .task { await store.boot() }
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.42)) { revealed = true }
+        }
     }
 
-    private func featuredArtwork(_ item:XSCinemaMedia)->some View {
-        ZStack(alignment:.bottomLeading) {
-            XSCinemaNativeArtwork(media:item,landscape:true)
-                .frame(height:465)
-            LinearGradient(colors:[.clear,.black.opacity(0.38),
-                                   XSNativeCinemaColors.background],
-                           startPoint:.top,endPoint:.bottom)
-            VStack(alignment:.leading,spacing:11) {
-                Text("XS TV   ·   FEATURED")
-                    .font(.caption2.bold())
-                    .tracking(2.8)
-                    .foregroundStyle(XSNativeCinemaColors.accent)
-                Text(item.title)
-                    .font(.system(size:31,weight:.black,design:.rounded))
+    private var topBar: some View {
+        HStack(alignment: .center, spacing: 10) {
+            XSBrandMark(size: 35)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("XS TV")
+                    .font(.system(size: 21, weight: .heavy, design: .rounded))
+                    .tracking(-0.7)
                     .foregroundStyle(.white)
-                    .lineLimit(3)
-                HStack(spacing:10) {
-                    Image(systemName:item.isPlayable ? "play.fill":"info.circle.fill")
-                    Text(item.isPlayable ? "شاهد الآن" : "التفاصيل")
+                Text("CINEMA")
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(3.3)
+                    .foregroundStyle(XSNativeCinemaColors.muted)
+            }
+            Spacer()
+            NavigationLink {
+                XSCinemaNativeSearchView()
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(.white.opacity(0.075), in: Circle())
+                    .overlay(Circle().stroke(.white.opacity(0.1), lineWidth: 0.5))
+            }
+            .accessibilityLabel("البحث في السينما")
+        }
+    }
+
+    private func featuredHero(_ item: XSCinemaMedia) -> some View {
+        NavigationLink {
+            XSCinemaNativeDetailView(media: item)
+        } label: {
+            ZStack(alignment: .bottomLeading) {
+                XSCinemaNativeArtwork(media: item, landscape: true)
+                    .frame(height: 382)
+                LinearGradient(stops: [
+                    .init(color: .black.opacity(0.10), location: 0.0),
+                    .init(color: .clear, location: 0.34),
+                    .init(color: .black.opacity(0.64), location: 0.66),
+                    .init(color: .black.opacity(0.96), location: 1.0)
+                ], startPoint: .top, endPoint: .bottom)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("FEATURED")
+                        .font(.system(size: 10, weight: .bold))
+                        .tracking(2.9)
+                        .foregroundStyle(.white.opacity(0.78))
+                    Text(item.title)
+                        .font(.system(size: 29, weight: .bold, design: .rounded))
+                        .tracking(-0.6)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .foregroundStyle(.white)
+                    HStack(spacing: 11) {
+                        if !item.year.isEmpty {
+                            Text(item.year).lineLimit(1)
+                        }
+                        if item.rating > 0 {
+                            Label(String(format: "%.1f", item.rating), systemImage: "star.fill")
+                        }
+                        Text(item.kind.label)
+                    }
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.76))
+                    HStack(spacing: 7) {
+                        Image(systemName: "play.fill")
+                        Text("استكشف")
+                    }
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.black)
+                    .frame(width: 132, height: 43)
+                    .background(.white, in: Capsule())
+                    .padding(.top, 3)
                 }
-                .font(.subheadline.bold())
-                .frame(width:148,height:43)
-                .foregroundStyle(.black)
-                .background(.white,in:Capsule())
+                .padding(.horizontal, 22)
+                .padding(.bottom, 23)
             }
-            .padding(.horizontal,22)
-            .padding(.bottom,24)
+            .frame(height: 382)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(.white.opacity(0.10), lineWidth: 0.7))
         }
+        .buttonStyle(.plain)
     }
 
-    private var headerPlaceholder:some View {
-        VStack(alignment:.leading,spacing:13) {
-            XSBrandMark(size:95)
-            Text("السينما بين يديك")
-                .font(.largeTitle.bold())
+    private var headerPlaceholder: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            Text("عالم من الحكايات")
+                .font(.system(size: 32, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
             if store.loading {
-                ProgressView("نجلب أحدث الأفلام والمسلسلات")
-                    .tint(XSNativeCinemaColors.accent)
+                ProgressView().tint(XSNativeCinemaColors.accent)
             } else {
-                Text(store.error ?? "مكتبة المحتوى غير متوفرة الآن.")
+                Text(store.error ?? "ما قدرنا نحمّل الأفلام حالياً")
+                    .font(.subheadline)
                     .foregroundStyle(XSNativeCinemaColors.muted)
             }
         }
-        .frame(maxWidth:.infinity,minHeight:320,alignment:.bottomLeading)
-        .padding(22)
-    }
-
-    private func navCard(_ title:String,_ symbol:String,count:Int)->some View {
-        HStack(spacing:12) {
-            Image(systemName:symbol).font(.system(size:21))
-                .foregroundStyle(XSNativeCinemaColors.accent)
-            VStack(alignment:.leading,spacing:4) {
-                Text(title).font(.subheadline.bold())
-                Text("\(count) عنوان").font(.caption2)
-                    .foregroundStyle(XSNativeCinemaColors.muted)
-            }
-            Spacer(minLength:0)
-        }
-        .foregroundStyle(.white)
-        .padding(14)
-        .background(XSNativeCinemaColors.tile,
-                    in:RoundedRectangle(cornerRadius:15))
+        .frame(maxWidth: .infinity, minHeight: 220, alignment: .bottomLeading)
+        .padding(.horizontal, 22)
     }
 
     @ViewBuilder
-    private func posterRail(_ title:String,_ eyebrow:String,items:[XSCinemaMedia])->some View {
+    private func posterRail(_ title: String, items: [XSCinemaMedia]) -> some View {
         if !items.isEmpty {
-            VStack(alignment:.leading,spacing:12) {
-                VStack(alignment:.leading,spacing:5) {
-                    Text(eyebrow)
-                        .font(.system(size:10,weight:.bold))
-                        .tracking(2.3)
-                        .foregroundStyle(XSNativeCinemaColors.accent)
+            VStack(alignment: .leading, spacing: 13) {
+                HStack(alignment: .center) {
                     Text(title)
-                        .font(.title2.bold())
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
+                    Spacer()
                 }
-                .padding(.horizontal,19)
+                .padding(.horizontal, 21)
+
                 ScrollView(.horizontal) {
-                    LazyHStack(spacing:12) {
-                        ForEach(Array(items.prefix(30))) { item in
-                            NavigationLink { XSCinemaNativeDetailView(media:item) }
-                            label: { XSCinemaNativePoster(media:item,width:145) }
-                                .buttonStyle(.plain)
+                    LazyHStack(alignment: .top, spacing: 12) {
+                        ForEach(Array(items.prefix(24))) { item in
+                            NavigationLink {
+                                XSCinemaNativeDetailView(media: item)
+                            } label: {
+                                XSCinemaNativePoster(media: item, width: 143)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
-                    .padding(.horizontal,19)
+                    .padding(.horizontal, 18)
                 }
                 .scrollIndicators(.hidden)
             }
