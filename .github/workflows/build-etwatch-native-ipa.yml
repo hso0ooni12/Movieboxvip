@@ -1,0 +1,84 @@
+name: EtWatch Native - Build Unsigned IPA
+
+on:
+  push:
+    branches: ["etwatch-native-20261023"]
+    paths:
+      - "EtWatchNative/**"
+      - ".github/workflows/build-etwatch-native-ipa.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unsigned-ios:
+    runs-on: macos-15
+    timeout-minutes: 40
+    env:
+      NATIVE_FEED_URL: ${{ vars.ETWATCH_NATIVE_FEED_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate native project contract
+        run: python3 EtWatchNative/scripts/check_contract.py
+
+      - name: Generate app icon
+        run: |
+          swift EtWatchNative/scripts/make_icon.swift \
+            EtWatchNative/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+
+      - name: Configure licensed stream feed (optional)
+        if: env.NATIVE_FEED_URL != ''
+        shell: bash
+        run: |
+          case "$NATIVE_FEED_URL" in
+            https://*) ;;
+            *) echo "Only HTTPS manifest feeds are supported"; exit 1 ;;
+          esac
+          /usr/libexec/PlistBuddy -c "Add :NATIVE_FEED_URL string $NATIVE_FEED_URL" \
+            EtWatchNative/Resources/Info.plist
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Create native Xcode project
+        run: xcodegen generate --spec EtWatchNative/project.yml
+
+      - name: Build iPhone app without signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project EtWatchNative/EtWatchNative.xcodeproj \
+            -scheme EtWatchNative \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/EtWatchDerived" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            build
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/EtWatchDerived/Build/Products/Release-iphoneos/EtWatchNative.app"
+          test -d "$app"
+          test -s "$app/EtWatchNative"
+          mkdir -p "$RUNNER_TEMP/package/Payload" dist
+          ditto "$app" "$RUNNER_TEMP/package/Payload/EtWatchNative.app"
+          cd "$RUNNER_TEMP/package"
+          zip -qr "$GITHUB_WORKSPACE/dist/EtWatchNative-unsigned.ipa" Payload
+          unzip -tqq "$GITHUB_WORKSPACE/dist/EtWatchNative-unsigned.ipa"
+
+      - name: Upload IPA for eSign
+        uses: actions/upload-artifact@v4
+        with:
+          name: EtWatchNative-Unsigned-IPA
+          path: dist/EtWatchNative-unsigned.ipa
+          retention-days: 30
+          if-no-files-found: error
