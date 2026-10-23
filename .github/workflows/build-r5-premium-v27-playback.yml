@@ -51,6 +51,8 @@ jobs:
         run: |
           swiftc FrameNative/Core/XSETWatchRoutes.swift Tests/V27Routes/main.swift -o "$RUNNER_TEMP/v27-route-tests"
           "$RUNNER_TEMP/v27-route-tests"
+      - name: Verify real native series metadata and season resolution
+        run: python3 scripts/test_v27_catalog_metadata.py
 
       - name: Embed Sports IPTV credentials from GitHub Secrets
         shell: bash

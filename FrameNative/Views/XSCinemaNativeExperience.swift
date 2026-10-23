@@ -299,7 +299,7 @@ struct XSCinemaNativeBrowseView: View {
                         } else {
                             ProgressView().tint(XSNativeCinemaColors.accent)
                                 .frame(maxWidth: .infinity, minHeight: 44)
-                                .task(id: items.count) { await store.more(kind) }
+                                .task(id: "\(items.count):\(store.paginationRevision)") { await store.more(kind) }
                         }
                     }
                     if items.isEmpty && !store.loading {

@@ -142,10 +142,20 @@ actor XSCinemaCatalogAPI {
            let matches = try? await search(item.title, kind: item.kind),
            let raw = item.sourceURL, let source = URL(string: raw) {
             let identity = XSETWatchRoutes.watchURL(source: source, isSeries: false)
-            if let match = matches.first(where: { candidate in
-                guard let raw = candidate.sourceURL, let url = URL(string: raw) else { return false }
-                return XSETWatchRoutes.watchURL(source: url, isSeries: false) == identity
-            }) { resolved.imdbID = match.imdbID }
+            // Search summaries omit TMDB IDs. Validate full metadata before
+            // associating an IMDb title's seasons with the source title.
+            let exact = matches.filter { $0.title.localizedCaseInsensitiveCompare(item.title) == .orderedSame }
+            for candidate in (exact.isEmpty ? Array(matches.prefix(3)) : Array(exact.prefix(3))) {
+                guard !Task.isCancelled, let imdb = candidate.imdbID,
+                      let url = URL(string: base + "/meta/\(item.kind.rawValue)/\(imdb).json"),
+                      let bytes = try? await data(url),
+                      let wrapper = try? JSONDecoder().decode(XSCinemaCinemetaDetail.self, from: bytes),
+                      let candidateRaw = media(wrapper.meta, kind: item.kind).sourceURL,
+                      let candidateURL = URL(string: candidateRaw),
+                      XSETWatchRoutes.watchURL(source: candidateURL, isSeries: false) == identity else { continue }
+                resolved.imdbID = imdb
+                break
+            }
         }
         guard let imdb = resolved.imdbID,
               let url = URL(string: base + "/meta/\(item.kind.rawValue)/\(imdb).json"),
@@ -234,6 +244,8 @@ final class XSCinemaNativeStore: ObservableObject {
     @Published private(set) var shelves: [XSCinemaShelf] = []
     @Published private(set) var recents: [XSCinemaWatchRecord] = []
     @Published private(set) var moreErrors: Set<XSCinemaMediaKind> = []
+    @Published private(set) var paginationRevision = 0
+    private var previousPage: [XSCinemaMediaKind:[String]] = [:]
     private var exhausted: Set<XSCinemaMediaKind> = []
     private var loaded = false
     private var openTask: Task<Void, Never>?
@@ -328,7 +340,7 @@ final class XSCinemaNativeStore: ObservableObject {
             skips[.series] = value.count
         } catch { self.error = "تعذر تحديث المسلسلات. المكتبة المحفوظة متاحة." }
         loaded = succeeded
-        exhausted = []; moreErrors = []
+        exhausted = []; moreErrors = []; previousPage = [:]
         persistCatalog()
         // Optional open films never hold up the primary movie/series library.
         if openTask == nil && freeMovies.isEmpty {
@@ -347,12 +359,19 @@ final class XSCinemaNativeStore: ObservableObject {
         defer { loadingMore.remove(kind) }
         do {
             let incoming = try await XSCinemaCatalogAPI.shared.catalog(kind,skip:skips[kind] ?? 0)
+            let signature = incoming.map(\.id)
+            if previousPage[kind] == signature { exhausted.insert(kind); return }
+            previousPage[kind] = signature
             let previousCount = list(kind).count
             if kind == .movie { movies = combined(movies, incoming) }
             else { series = combined(series, incoming) }
             skips[kind,default:0] += incoming.count
             if incoming.isEmpty { exhausted.insert(kind) }
-            _ = previousCount
+            if list(kind).count == previousCount && incoming.count > 0 {
+                // All entries may already exist in the bundled source shelves.
+                // Advance one more page while the bottom loading row is visible.
+                paginationRevision += 1
+            }
             persistCatalog()
         } catch { moreErrors.insert(kind) }
     }
