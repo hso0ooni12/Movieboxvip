@@ -122,7 +122,7 @@ final class NativePlayerModel: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self, self.sourceGeneration == generation, self.player.currentItem === observed else { return }
                 if observed.status == .readyToPlay {
-                    if resume > 1 { self.player.seek(to: CMTime(seconds: resume, preferredTimescale: 600)) }
+                    if resume > 1 { await self.player.seek(to: CMTime(seconds: resume, preferredTimescale: 600)) }
                     self.player.play()
                     await self.loadEmbeddedCaptions(item, generation: generation)
                 } else if observed.status == .failed {
