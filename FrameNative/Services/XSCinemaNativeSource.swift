@@ -253,6 +253,12 @@ final class XSCinemaNativeStore: ObservableObject {
         freeMovies = await c
         loaded = !movies.isEmpty || !series.isEmpty || !freeMovies.isEmpty
     }
+    func refresh() async {
+        guard !loading else { return }
+        loaded = false
+        await boot()
+    }
+
     func more(_ kind: XSCinemaMediaKind) async {
         guard !loadingMore.contains(kind) else { return }
         loadingMore.insert(kind)
