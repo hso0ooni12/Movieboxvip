@@ -396,7 +396,7 @@ struct NativePlayerScreen: View {
             .foregroundStyle(.white)
             .clipped()
         }
-        .background(.black.ignoresSafeArea())
+        .background(Color.black.ignoresSafeArea())
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         .onAppear { PlayerOrientation.set(.landscape) }
