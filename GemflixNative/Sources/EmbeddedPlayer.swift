@@ -29,7 +29,7 @@ struct EmbeddedSelection: Identifiable {
         let link = EmbeddedServer(id: "vidlink", title: "VidLink", subtitle: "مشغّل احتياطي", url: URL(string: vidLink)!)
         // NetMirror was observed playing both movies and a TV episode; keep
         // automatic discovery and primary as one-tap fallbacks.
-        return [mirror, auto, primary, link]
+        return [mirror, link, auto, primary]
     }
 }
 
@@ -76,7 +76,9 @@ final class EmbeddedPlayerModel: ObservableObject {
     private var captionFrame: WKFrameInfo?
     private var captionFrameID: String?
     private var captionFrameLastSeen = Date.distantPast
-    private var automaticRetries = Set<Int>()
+    private var failedSources = Set<Int>()
+    private var fallbackTask: Task<Void, Never>?
+    private var sourceOpenedAt = Date()
 
     init(selection: EmbeddedSelection) {
         self.selection = selection
@@ -84,8 +86,12 @@ final class EmbeddedPlayerModel: ObservableObject {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
     }
 
-    func switchTo(_ index: Int) {
+    func switchTo(_ index: Int, automatically: Bool = false) {
         guard servers.indices.contains(index), index != sourceIndex else { return }
+        fallbackTask?.cancel()
+        fallbackTask = nil
+        if !automatically { failedSources.removeAll() }
+        sourceOpenedAt = Date()
         monitorTask?.cancel()
         subtitleFetchTask?.cancel()
         webView?.stopLoading()
@@ -117,8 +123,12 @@ final class EmbeddedPlayerModel: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 400_000_000)
                 guard let self, let view, self.webView === view else { break }
-                if self.captionFrameID == nil || Date().timeIntervalSince(self.captionFrameLastSeen) > 2 {
-                    await self.inspect(view)
+                // Always check the top document for a source error. A healthy
+                // subtitle iframe must not disable playback failure detection.
+                await self.inspect(view)
+                if !self.playing && self.playbackError == nil
+                    && Date().timeIntervalSince(self.sourceOpenedAt) > 25 {
+                    self.reportPlaybackFailure("انتهت مهلة تحميل السيرفر، جارٍ تجربة بديل.")
                 }
             }
         }
@@ -134,6 +144,12 @@ final class EmbeddedPlayerModel: ObservableObject {
         guard self.webView === webView,
               let id = data["frameID"] as? String,
               !id.isEmpty else { return }
+        if let failure = data["failure"] as? String, !failure.isEmpty {
+            if !playing {
+                reportPlaybackFailure("هذا السيرفر لم يوفر بثًا لهذا العنوان.")
+            }
+            return
+        }
         let time = (data["t"] as? NSNumber)?.doubleValue ?? 0
         let ready = (data["ready"] as? NSNumber)?.intValue ?? 0
         let paused = data["paused"] as? Bool ?? true
@@ -195,6 +211,11 @@ final class EmbeddedPlayerModel: ObservableObject {
     }
 
     func failed(_ message: String) {
+        reportPlaybackFailure(message)
+    }
+
+    private func reportPlaybackFailure(_ message: String) {
+        guard !playing else { return }
         pageLoaded = true
         playbackError = message
         tryAutomaticFallback()
@@ -280,10 +301,9 @@ final class EmbeddedPlayerModel: ObservableObject {
         if time > 0.2 && ready >= 2 {
             playing = !paused
             playbackError = nil
-        } else if error > 0 || body.contains("this title will not play") || body.contains("no source returned a stream") {
-            playing = false
-            playbackError = "هذا السيرفر ما قدر يشغّل العنوان. جرّب السيرفر التالي."
-            tryAutomaticFallback()
+        } else if error > 0 || body.contains("this title will not play") ||
+                    body.contains("no source returned a stream") {
+            reportPlaybackFailure("السيرفر الحالي لم يرجع فيديو لهذا العنوان.")
         }
         if let selected = effectiveSubtitleLanguage,
            selected == browserCaptionLanguage,
@@ -302,11 +322,24 @@ final class EmbeddedPlayerModel: ObservableObject {
 
     private func tryAutomaticFallback() {
         let previousIndex = sourceIndex
-        guard previousIndex < 2, automaticRetries.insert(previousIndex).inserted else { return }
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 1_200_000_000)
-            guard let self, self.sourceIndex == previousIndex, !self.playing else { return }
-            self.nextSource()
+        guard failedSources.insert(previousIndex).inserted else { return }
+        // A genuinely separate provider is preferable to retrying variants
+        // of a failed VidSrc page. Every source is tried at most once.
+        let remaining = servers.indices.filter { !failedSources.contains($0) }
+        let next = remaining.first {
+            servers[$0].url.host != servers[previousIndex].url.host
+        } ?? remaining.first
+        guard let next else {
+            playbackError = "لم نجد بثًا صالحًا لهذا العنوان لدى السيرفرات المتاحة. جرّب عنوانًا آخر."
+            return
+        }
+        playbackError = "السيرفر لم يوفر بثًا. يجري الانتقال إلى \(servers[next].title)…"
+        fallbackTask?.cancel()
+        fallbackTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled, let self,
+                  self.sourceIndex == previousIndex, !self.playing else { return }
+            self.switchTo(next, automatically: true)
         }
     }
 
@@ -419,6 +452,7 @@ final class EmbeddedPlayerModel: ObservableObject {
     }
 
     func stop() {
+        fallbackTask?.cancel()
         monitorTask?.cancel()
         subtitleFetchTask?.cancel()
         webView?.stopLoading()
@@ -472,7 +506,16 @@ private struct EmbeddedWebView: UIViewRepresentable {
               const allVideos = Array.from(document.querySelectorAll('video'));
               const video = allVideos.find(v => v.readyState >= 2 && !v.paused)
                        || allVideos.find(v => v.readyState >= 2) || allVideos[0];
-              if (!video) return;
+              const pageText = String(document.body?.innerText || '').slice(0,3000);
+              const failure = /this title will not play|no source returned a stream|something went wrong while finding a source/i.test(pageText);
+              if (!video) {
+                if (failure) {
+                  try {
+                    window.webkit.messageHandlers.gemflixCaption.postMessage({ frameID, failure:'no_stream' });
+                  } catch (e) {}
+                }
+                return;
+              }
               const tracks = Array.from(video.textTracks || []);
               const elements = Array.from(video.querySelectorAll('track'));
               const lang = (t, i) => String(t.language || elements[i]?.srclang ||
@@ -518,7 +561,8 @@ private struct EmbeddedWebView: UIViewRepresentable {
                 lang(selected,index) === String(el.srclang || '').toLowerCase() && !!el.src));
               try {
                 window.webkit.messageHandlers.gemflixCaption.postMessage({
-                  frameID, t, ready:video.readyState, paused:video.paused,
+                  frameID, failure: failure ? 'no_stream' : '',
+                  t, ready:video.readyState, paused:video.paused,
                   language:selectedLang, caption:caption.slice(0,800),
                   cueCount:cues?.length || 0, hasTrackSource, tracks:list
                 });
