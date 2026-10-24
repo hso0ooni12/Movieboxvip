@@ -1,18 +1,27 @@
-# Gemflix Native — iPhone / SwiftUI + MobileVLCKit
+# Gemflix — iPhone / SwiftUI + MobileVLCKit + In-App Playback
 
 SwiftUI-first browsing for **movies and series only**. Navigation, posters,
 discovery, search, favorites and episode screens are native iOS views. The
-player uses VideoLAN MobileVLCKit with native SwiftUI controls; **no WebView,
-iframe or browser is opened inside the app**.
+player uses VideoLAN MobileVLCKit when a provider supplies an authorized direct
+stream. For titles available only through third-party video embeds, a confined
+WKWebView displays **only the player inside the app**, without opening Safari.
+The movie, series, search and detail views remain native SwiftUI.
 
 ## Real content and playback — important distinction
 
 The app reads the public Gemflix homepage `home-seed` for featured movie
 *metadata* and Cinemeta for browse/search and TV episode metadata. Gemflix
-offers third-party HTML embed URLs such as `vidlink.pro/movie/{tmdbId}` for
-playback. These are webpage URLs, **not direct native video streams**. The app
-never sends those embeds to VLC or pretends they are playable media. If an
-entry has no direct media URL, it explains that the source is unavailable.
+offers third-party HTML embed URLs for playback. These are webpage URLs,
+**not direct native video streams**, and are never sent into the VLC decoder.
+Instead the title opens the player within iOS using VidSrc NetMirror, VidSrc
+Automatic/Primary, and VidLink as alternatives. Popup windows and unrelated
+top-level advertising redirects are blocked.
+
+Actual playback was verified in a browser with VidSrc NetMirror for the movie
+*Avengers: Endgame* (TMDB 299534) and *Breaking Bad* season 1 episode 1
+(TMDB 1396). This does not establish that each title will play on every iPhone:
+source availability and behavior are controlled by third-party providers. Ads
+inside the provider's own video surface cannot be guaranteed absent.
 
 MobileVLCKit supports HLS, MP4, MKV and other media formats given genuine,
 authorized stream URLs. This build includes the public Apple HLS sample **only
@@ -46,7 +55,11 @@ Do not put bearer tokens or secrets in a public URL or IPA.
 
 ## Player functions
 
-- Native VLC decoder and SwiftUI overlay, ±10s seeking, playback speed.
+- VLC decoder and SwiftUI overlay for direct playback, ±10s seeking, speed.
+- For embedded content: native full-screen presentation with a constrained
+  WKWebView, native exit and source switcher, automatic fallback on hard errors.
+- External subtitle files can be imported from the iPhone Files app, with
+  independent timing, size, position and opacity over the embedded player.
 - Source switching, 19-second startup timeout with failover, local resume.
 - External SRT/WebVTT subtitles: ±0.5/1/10/60s offsets, font size,
   positioning down to 1pt and working backdrop opacity.
