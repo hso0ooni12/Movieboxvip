@@ -79,6 +79,7 @@ final class EmbeddedPlayerModel: ObservableObject {
     private var failedSources = Set<Int>()
     private var fallbackTask: Task<Void, Never>?
     private var sourceOpenedAt = Date()
+    private var hasPlayedOnThisSource = false
 
     init(selection: EmbeddedSelection) {
         self.selection = selection
@@ -92,6 +93,7 @@ final class EmbeddedPlayerModel: ObservableObject {
         fallbackTask = nil
         if !automatically { failedSources.removeAll() }
         sourceOpenedAt = Date()
+        hasPlayedOnThisSource = false
         monitorTask?.cancel()
         subtitleFetchTask?.cancel()
         webView?.stopLoading()
@@ -126,7 +128,8 @@ final class EmbeddedPlayerModel: ObservableObject {
                 // Always check the top document for a source error. A healthy
                 // subtitle iframe must not disable playback failure detection.
                 await self.inspect(view)
-                if !self.playing && self.playbackError == nil
+                if !self.hasPlayedOnThisSource && !self.playing
+                    && self.playbackError == nil
                     && Date().timeIntervalSince(self.sourceOpenedAt) > 25 {
                     self.reportPlaybackFailure("انتهت مهلة تحميل السيرفر، جارٍ تجربة بديل.")
                 }
@@ -176,7 +179,10 @@ final class EmbeddedPlayerModel: ObservableObject {
         if freshTracks != availableSubtitles { availableSubtitles = freshTracks }
         currentTime = max(0, time)
         playing = ready >= 2 && !paused
-        if playing { playbackError = nil }
+        if playing {
+            hasPlayedOnThisSource = true
+            playbackError = nil
+        }
         browserCaption = data["caption"] as? String ?? ""
         browserCaptionLanguage = data["language"] as? String ?? ""
         let cueCount = (data["cueCount"] as? NSNumber)?.intValue ?? 0
@@ -288,6 +294,14 @@ final class EmbeddedPlayerModel: ObservableObject {
         let paused = data["paused"] as? Bool ?? true
         let error = (data["err"] as? NSNumber)?.intValue ?? 0
         let body = (data["text"] as? String ?? "").lowercased()
+        if error > 0 || body.contains("this title will not play") ||
+             body.contains("no source returned a stream") {
+            reportPlaybackFailure("السيرفر الحالي لم يرجع فيديو لهذا العنوان.")
+            return
+        }
+        // A separate iframe supplies accurate tracks/cues: the top-level
+        // document may have no video and must not erase those subtitles.
+        if captionFrameID != nil && Date().timeIntervalSince(captionFrameLastSeen) < 2 { return }
         let trackData = data["tracks"] as? [[String: Any]] ?? []
         let freshTracks = trackData.compactMap { info -> EmbeddedSubtitleTrack? in
             guard let lang = info["lang"] as? String, !lang.isEmpty else { return nil }
@@ -300,10 +314,10 @@ final class EmbeddedPlayerModel: ObservableObject {
         currentTime = max(0, time)
         if time > 0.2 && ready >= 2 {
             playing = !paused
-            playbackError = nil
-        } else if error > 0 || body.contains("this title will not play") ||
-                    body.contains("no source returned a stream") {
-            reportPlaybackFailure("السيرفر الحالي لم يرجع فيديو لهذا العنوان.")
+            if playing {
+                hasPlayedOnThisSource = true
+                playbackError = nil
+            }
         }
         if let selected = effectiveSubtitleLanguage,
            selected == browserCaptionLanguage,
