@@ -73,6 +73,9 @@ final class EmbeddedPlayerModel: ObservableObject {
     private var subtitleFetchTask: Task<Void, Never>?
     private var browserCaption = ""
     private var browserCaptionLanguage = ""
+    private var captionFrame: WKFrameInfo?
+    private var captionFrameID: String?
+    private var captionFrameLastSeen = Date.distantPast
     private var automaticRetries = Set<Int>()
 
     init(selection: EmbeddedSelection) {
@@ -95,6 +98,9 @@ final class EmbeddedPlayerModel: ObservableObject {
         captionText = ""
         browserCaption = ""
         browserCaptionLanguage = ""
+        captionFrame = nil
+        captionFrameID = nil
+        captionFrameLastSeen = .distantPast
         serverCues = []
         serverCueKey = nil
         subtitleFetchAttempts = []
@@ -111,12 +117,82 @@ final class EmbeddedPlayerModel: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 400_000_000)
                 guard let self, let view, self.webView === view else { break }
-                await self.inspect(view)
+                if self.captionFrameID == nil || Date().timeIntervalSince(self.captionFrameLastSeen) > 2 {
+                    await self.inspect(view)
+                }
             }
         }
     }
 
     func loaded() { pageLoaded = true }
+
+    // The actual HTML video frequently lives in a cross-origin iframe. Running
+    // JavaScript only in the top document misses its subtitle tracks entirely.
+    // Receive read-only caption probes from the user script installed in all
+    // frames, then select the active video frame for native caption rendering.
+    func receiveCaptionProbe(_ data: [String: Any], frame: WKFrameInfo, from webView: WKWebView) {
+        guard self.webView === webView,
+              let id = data["frameID"] as? String,
+              !id.isEmpty else { return }
+        let time = (data["t"] as? NSNumber)?.doubleValue ?? 0
+        let ready = (data["ready"] as? NSNumber)?.intValue ?? 0
+        let paused = data["paused"] as? Bool ?? true
+        if let oldID = captionFrameID, oldID != id {
+            // Prefer the established playing video; allow a fresh video to
+            // replace an inactive frame after a navigation or source change.
+            if Date().timeIntervalSince(captionFrameLastSeen) < 2 && playing {
+                return
+            }
+            guard (ready >= 2 && !paused) || Date().timeIntervalSince(captionFrameLastSeen) > 3 else {
+                return
+            }
+        }
+        let changedFrame = captionFrameID != id
+        captionFrame = frame
+        captionFrameID = id
+        captionFrameLastSeen = Date()
+        pageLoaded = true
+        let trackData = data["tracks"] as? [[String: Any]] ?? []
+        let freshTracks = trackData.compactMap { info -> EmbeddedSubtitleTrack? in
+            guard let lang = info["lang"] as? String, !lang.isEmpty else { return nil }
+            return EmbeddedSubtitleTrack(id: lang, label: info["label"] as? String ?? lang)
+        }
+        if freshTracks != availableSubtitles { availableSubtitles = freshTracks }
+        currentTime = max(0, time)
+        playing = ready >= 2 && !paused
+        if playing { playbackError = nil }
+        browserCaption = data["caption"] as? String ?? ""
+        browserCaptionLanguage = data["language"] as? String ?? ""
+        let cueCount = (data["cueCount"] as? NSNumber)?.intValue ?? 0
+        if changedFrame { applyCaptionPreferences() }
+        if let selected = effectiveSubtitleLanguage,
+           selected == browserCaptionLanguage,
+           cueCount == 0,
+           data["hasTrackSource"] as? Bool == true {
+            fetchProviderSubtitle(selected, from: webView)
+        } else if cueCount > 0,
+                  selectedSubtitleLanguage != nil,
+                  selectedSubtitleLanguage == browserCaptionLanguage,
+                  serverCues.isEmpty {
+            subtitleStatus = "ترجمة السيرفر جاهزة"
+        }
+        updateCaption()
+    }
+
+    private func applyCaptionPreferences() {
+        guard let view = webView, let frame = captionFrame else { return }
+        let language = selectedSubtitleLanguage ?? ""
+        let offset = captionDelay
+        Task { [weak self, weak view] in
+            guard let view, self?.webView === view else { return }
+            _ = try? await view.callAsyncJavaScript(
+                "window.__gemflixCaptionLanguage = String(language || ''); window.__gemflixCaptionOffset = Number(offset || 0); return true;",
+                arguments: ["language": language, "offset": offset],
+                in: frame,
+                contentWorld: .page
+            )
+        }
+    }
 
     func failed(_ message: String) {
         pageLoaded = true
@@ -253,6 +329,9 @@ final class EmbeddedPlayerModel: ObservableObject {
         } else {
             subtitleStatus = "متابعة اختيار المشغّل"
         }
+        serverCues = []
+        serverCueKey = nil
+        applyCaptionPreferences()
         updateCaption()
     }
 
@@ -287,7 +366,7 @@ final class EmbeddedPlayerModel: ObservableObject {
             }
             """
             let subtitle = try? await view.callAsyncJavaScript(
-                script, arguments: ["language": language], in: nil, contentWorld: .page
+                script, arguments: ["language": language], in: self.captionFrame, contentWorld: .page
             ) as? String
             guard !Task.isCancelled, self.webView === view, self.sourceIndex == source,
                   self.effectiveSubtitleLanguage == language else { return }
@@ -318,6 +397,7 @@ final class EmbeddedPlayerModel: ObservableObject {
 
     func shiftCaptions(_ seconds: Double) {
         captionDelay += seconds
+        applyCaptionPreferences()
         updateCaption()
     }
 
@@ -344,6 +424,8 @@ final class EmbeddedPlayerModel: ObservableObject {
         webView?.stopLoading()
         webView?.loadHTMLString("", baseURL: nil)
         webView = nil
+        captionFrame = nil
+        captionFrameID = nil
         try? AVAudioSession.sharedInstance().setActive(false)
     }
 }
@@ -376,6 +458,77 @@ private struct EmbeddedWebView: UIViewRepresentable {
           })();
           """, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
         configuration.userContentController.addUserScript(inlineScript)
+        // Observe video textTracks in every frame, including cross-origin
+        // player iframes. WKScriptMessage carries the originating WKFrameInfo.
+        configuration.userContentController.add(context.coordinator, name: "gemflixCaption")
+        let captionBridge = WKUserScript(source: """
+          (function () {
+            if (window.__gemflixCaptionBridge) return;
+            window.__gemflixCaptionBridge = true;
+            window.__gemflixCaptionLanguage = '';
+            window.__gemflixCaptionOffset = 0;
+            const frameID = String(Date.now()) + ':' + Math.random().toString(36).slice(2);
+            function capture() {
+              const allVideos = Array.from(document.querySelectorAll('video'));
+              const video = allVideos.find(v => v.readyState >= 2 && !v.paused)
+                       || allVideos.find(v => v.readyState >= 2) || allVideos[0];
+              if (!video) return;
+              const tracks = Array.from(video.textTracks || []);
+              const elements = Array.from(video.querySelectorAll('track'));
+              const lang = (t, i) => String(t.language || elements[i]?.srclang ||
+                 t.label || elements[i]?.label || '').toLowerCase().trim();
+              const chosen = String(window.__gemflixCaptionLanguage || '').toLowerCase();
+              if (chosen === '__off') {
+                tracks.forEach(t => { t.mode = 'disabled'; });
+              } else if (chosen) {
+                tracks.forEach((t,i) => {
+                  const key = lang(t,i);
+                  const matched = key === chosen || key.startsWith(chosen + '-') ||
+                      chosen.startsWith(key + '-');
+                  t.mode = matched ? 'hidden' : 'disabled';
+                });
+              }
+              let index = tracks.findIndex(t => t.mode === 'showing');
+              if (index < 0) index = tracks.findIndex(t => t.mode === 'hidden');
+              let selected = index >= 0 ? tracks[index] : null;
+              if (selected && selected.mode === 'showing') selected.mode = 'hidden';
+              const selectedLang = selected ? lang(selected,index) : '';
+              const t = Number(video.currentTime || 0);
+              const seekTime = t + Number(window.__gemflixCaptionOffset || 0);
+              const cues = selected?.cues || null;
+              let active = null;
+              if (cues?.length) {
+                let lo=0, hi=cues.length-1;
+                while(lo<=hi) {
+                  const mid=(lo+hi)>>1, cue=cues[mid];
+                  if(seekTime<cue.startTime) hi=mid-1;
+                  else if(seekTime>=cue.endTime) lo=mid+1;
+                  else { active=cue; break; }
+                }
+              } else if (seekTime === t && selected?.activeCues?.length) {
+                active = selected.activeCues[0];
+              }
+              const caption = active ? String(active.text || '').replace(/<[^>]+>/g,'') : '';
+              const list = tracks.map((track,i) => ({
+                lang: lang(track,i),
+                label: String(track.label || elements[i]?.label || track.language || ('Track ' + (i+1)))
+              })).filter(track => track.lang).filter((track,i,list) =>
+                list.findIndex(other => other.lang === track.lang) === i);
+              const hasTrackSource = !!(selected && elements.some(el =>
+                lang(selected,index) === String(el.srclang || '').toLowerCase() && !!el.src));
+              try {
+                window.webkit.messageHandlers.gemflixCaption.postMessage({
+                  frameID, t, ready:video.readyState, paused:video.paused,
+                  language:selectedLang, caption:caption.slice(0,800),
+                  cueCount:cues?.length || 0, hasTrackSource, tracks:list
+                });
+              } catch(e) {}
+            }
+            setInterval(capture, 400);
+            capture();
+          })();
+          """, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+        configuration.userContentController.addUserScript(captionBridge)
 
         let web = WKWebView(frame: .zero, configuration: configuration)
         web.navigationDelegate = context.coordinator
@@ -395,13 +548,22 @@ private struct EmbeddedWebView: UIViewRepresentable {
 
     static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
         uiView.stopLoading()
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "gemflixCaption")
         uiView.navigationDelegate = nil
         uiView.uiDelegate = nil
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         let model: EmbeddedPlayerModel
         init(model: EmbeddedPlayerModel) { self.model = model }
+
+        func userContentController(_ userContentController: WKUserContentController,
+                                   didReceive message: WKScriptMessage) {
+            guard message.name == "gemflixCaption",
+                  let info = message.body as? [String: Any],
+                  let view = model.webView else { return }
+            model.receiveCaptionProbe(info, frame: message.frameInfo, from: view)
+        }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             guard model.webView === webView else { return }
