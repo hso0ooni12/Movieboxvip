@@ -1,0 +1,90 @@
+name: Gemflix Native VLC - Build Unsigned IPA
+
+on:
+  push:
+    branches: ["gemflix-native-20261024"]
+    paths:
+      - "GemflixNative/**"
+      - ".github/workflows/build-gemflix-native-ipa.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unsigned-ipa:
+    runs-on: macos-15
+    timeout-minutes: 55
+    env:
+      STREAM_FEED_URL: ${{ vars.GEMFLIX_STREAM_FEED_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate native source and feed
+        run: python3 GemflixNative/scripts/check_contract.py
+
+      - name: Generate branded application icon
+        run: |
+          swift GemflixNative/scripts/make_icon.swift \
+            GemflixNative/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+
+      - name: Configure optional authorized source catalogue
+        if: env.STREAM_FEED_URL != ''
+        shell: bash
+        run: |
+          case "$STREAM_FEED_URL" in
+            https://*) ;;
+            *) echo "Stream feed must be HTTPS"; exit 1 ;;
+          esac
+          /usr/libexec/PlistBuddy -c "Add :NATIVE_FEED_URL string $STREAM_FEED_URL" \
+            GemflixNative/Resources/Info.plist
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec GemflixNative/project.yml
+
+      - name: Resolve VLC package
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project GemflixNative/GemflixNative.xcodeproj \
+            -scheme GemflixNative
+
+      - name: Build real device arm64 app without code signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project GemflixNative/GemflixNative.xcodeproj \
+            -scheme GemflixNative \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/GemflixDerived" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            build
+
+      - name: Package and verify unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/GemflixDerived/Build/Products/Release-iphoneos/GemflixNative.app"
+          test -d "$app"
+          test -s "$app/GemflixNative"
+          mkdir -p "$RUNNER_TEMP/gemflix-package/Payload" dist
+          ditto "$app" "$RUNNER_TEMP/gemflix-package/Payload/GemflixNative.app"
+          cd "$RUNNER_TEMP/gemflix-package"
+          zip -qr "$GITHUB_WORKSPACE/dist/GemflixNative-VLC-unsigned.ipa" Payload
+          unzip -tqq "$GITHUB_WORKSPACE/dist/GemflixNative-VLC-unsigned.ipa"
+
+      - name: Upload unsigned IPA for eSign
+        uses: actions/upload-artifact@v4
+        with:
+          name: GemflixNative-VLC-Unsigned-IPA
+          path: dist/GemflixNative-VLC-unsigned.ipa
+          retention-days: 30
+          if-no-files-found: error

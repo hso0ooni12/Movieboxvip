@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "entries": {
+    "demo:apple-hls": {
+      "sources": [
+        {
+          "id": "apple-hls",
+          "label": "Apple HLS Demo",
+          "quality": "Auto",
+          "url": "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8"
+        }
+      ],
+      "subtitles": []
+    }
+  }
+}
