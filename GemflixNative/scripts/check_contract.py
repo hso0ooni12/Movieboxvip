@@ -24,4 +24,7 @@ player = (root / "Sources/EmbeddedPlayer.swift").read_text()
 assert "WKWebView" in player and "WKNavigationDelegate" in player
 assert "vidsrc.pk" in player and "vidlink.pro" in player
 assert "EmbeddedPlayerScreen" in player
+assert "availableSubtitles" in player and "selectSubtitle" in player
+assert "callAsyncJavaScript" in player and "CaptionParser.parse" in player
+assert "captionDelay" in player and "captionBottom" in player
 print(f"PASS: {len(swift_sources)} native Swift sources, JSON feed, Info.plist")

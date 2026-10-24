@@ -58,6 +58,10 @@ Do not put bearer tokens or secrets in a public URL or IPA.
 - VLC decoder and SwiftUI overlay for direct playback, ±10s seeking, speed.
 - For embedded content: native full-screen presentation with a constrained
   WKWebView, native exit and source switcher, automatic fallback on hard errors.
+- Embedded player subtitle languages are discoverable in the native CC sheet.
+  The app reads accessible WebKit text tracks, with an SRT/WebVTT fallback for
+  same-origin track files, and displays captions in a persistent SwiftUI layer
+  with timing, size, vertical-position and background controls.
 - External subtitle files can be imported from the iPhone Files app, with
   independent timing, size, position and opacity over the embedded player.
 - Source switching, 19-second startup timeout with failover, local resume.

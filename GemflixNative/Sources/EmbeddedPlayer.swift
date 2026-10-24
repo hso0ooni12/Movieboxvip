@@ -40,25 +40,39 @@ struct EmbeddedServer: Identifiable, Equatable {
     let url: URL
 }
 
+struct EmbeddedSubtitleTrack: Identifiable, Equatable {
+    let id: String
+    let label: String
+}
+
 @MainActor
 final class EmbeddedPlayerModel: ObservableObject {
     let selection: EmbeddedSelection
     let servers: [EmbeddedServer]
     @Published var sourceIndex = 0
     @Published var pageLoaded = false
-    @Published var playing = false
+    var playing = false
     @Published var playbackError: String?
-    @Published var currentTime: Double = 0
+    var currentTime: Double = 0
     @Published var captionText = ""
     @Published var captionFileName: String?
     @Published var captionDelay: Double = 0
     @Published var captionSize: CGFloat = 22
     @Published var captionBottom: CGFloat = 10
     @Published var captionOpacity: Double = 0.5
+    @Published var availableSubtitles: [EmbeddedSubtitleTrack] = []
+    @Published var selectedSubtitleLanguage: String? = nil
+    @Published var subtitleStatus: String? = nil
 
     weak var webView: WKWebView?
     private var monitorTask: Task<Void, Never>?
     private var cues: [CaptionCue] = []
+    private var serverCues: [CaptionCue] = []
+    private var serverCueKey: String?
+    private var subtitleFetchAttempts = Set<String>()
+    private var subtitleFetchTask: Task<Void, Never>?
+    private var browserCaption = ""
+    private var browserCaptionLanguage = ""
     private var automaticRetries = Set<Int>()
 
     init(selection: EmbeddedSelection) {
@@ -70,6 +84,7 @@ final class EmbeddedPlayerModel: ObservableObject {
     func switchTo(_ index: Int) {
         guard servers.indices.contains(index), index != sourceIndex else { return }
         monitorTask?.cancel()
+        subtitleFetchTask?.cancel()
         webView?.stopLoading()
         webView = nil
         sourceIndex = index
@@ -78,6 +93,13 @@ final class EmbeddedPlayerModel: ObservableObject {
         playbackError = nil
         currentTime = 0
         captionText = ""
+        browserCaption = ""
+        browserCaptionLanguage = ""
+        serverCues = []
+        serverCueKey = nil
+        subtitleFetchAttempts = []
+        availableSubtitles = []
+        subtitleStatus = nil
     }
 
     func nextSource() { switchTo((sourceIndex + 1) % servers.count) }
@@ -87,7 +109,7 @@ final class EmbeddedPlayerModel: ObservableObject {
         monitorTask?.cancel()
         monitorTask = Task { [weak self, weak view] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 950_000_000)
+                try? await Task.sleep(nanoseconds: 400_000_000)
                 guard let self, let view, self.webView === view else { break }
                 await self.inspect(view)
             }
@@ -104,23 +126,80 @@ final class EmbeddedPlayerModel: ObservableObject {
 
     private func inspect(_ view: WKWebView) async {
         let script = """
-        (function () {
-          const videos = Array.from(document.querySelectorAll('video'));
-          const v = videos.find(x => x.readyState > 1) || videos[0];
-          return { t: v ? (v.currentTime || 0) : 0,
-                   ready: v ? v.readyState : 0,
-                   paused: v ? v.paused : true,
-                   err: v && v.error ? v.error.code : 0,
-                   text: (document.body ? document.body.innerText : '').slice(0, 2500) };
-        })()
+        const videos = Array.from(document.querySelectorAll('video'));
+        const v = videos.find(x => x.readyState > 1) || videos[0];
+        const tracks = v ? Array.from(v.textTracks || []) : [];
+        const elements = v ? Array.from(v.querySelectorAll('track')) : [];
+        const languageOf = (track, index) => String(track.language || elements[index]?.srclang || '').toLowerCase();
+        const available = tracks.map((track, index) => ({
+          lang: languageOf(track, index),
+          label: String(track.label || elements[index]?.label || track.language || ('Track ' + (index + 1)))
+        })).filter(track => track.lang)
+           .filter((track, index, all) => all.findIndex(other => other.lang === track.lang) === index);
+        const requested = String(requestedLanguage || '');
+        if (requested === '__off') {
+          tracks.forEach(track => { track.mode = 'disabled'; });
+        } else if (requested) {
+          tracks.forEach((track, index) => {
+            track.mode = languageOf(track, index) === requested ? 'hidden' : 'disabled';
+          });
+        }
+        let selectedIndex = tracks.findIndex(track => track.mode === 'showing');
+        if (selectedIndex < 0) selectedIndex = tracks.findIndex(track => track.mode === 'hidden');
+        const selected = selectedIndex >= 0 ? tracks[selectedIndex] : null;
+        if (selected && selected.mode === 'showing') selected.mode = 'hidden';
+        const language = selected ? languageOf(selected, selectedIndex) : '';
+        const offsetTime = v ? Number(v.currentTime || 0) + Number(subtitleOffset || 0) : 0;
+        const cues = selected && selected.cues ? selected.cues : null;
+        let active = !Number(subtitleOffset || 0) && selected && selected.activeCues?.length
+          ? selected.activeCues[0] : null;
+        if (!active && cues && cues.length) {
+          let low = 0, high = cues.length - 1;
+          while (low <= high) {
+            const mid = (low + high) >> 1;
+            const cue = cues[mid];
+            if (offsetTime < cue.startTime) high = mid - 1;
+            else if (offsetTime >= cue.endTime) low = mid + 1;
+            else { active = cue; break; }
+          }
+        }
+        const caption = active ? String(active.text || '').replace(/<[^>]+>/g, '') : '';
+        return {
+          t: v ? Number(v.currentTime || 0) : 0,
+          ready: v ? v.readyState : 0,
+          paused: v ? v.paused : true,
+          err: v && v.error ? v.error.code : 0,
+          text: (document.body ? document.body.textContent : '').slice(0, 2500),
+          tracks: available,
+          language: language,
+          caption: caption,
+          cueCount: cues ? cues.length : 0,
+          hasTrackSource: !!(selected && elements.some(el => String(el.srclang || '').toLowerCase() === language && el.src))
+        };
         """
-        guard let data = try? await view.evaluateJavaScript(script) as? [String: Any],
+        let selectedLanguage = selectedSubtitleLanguage ?? ""
+        let offset = captionDelay
+        guard let data = try? await view.callAsyncJavaScript(
+            script,
+            arguments: ["requestedLanguage": selectedLanguage, "subtitleOffset": offset],
+            in: nil,
+            contentWorld: .page
+        ) as? [String: Any],
               self.webView === view else { return }
         let time = (data["t"] as? NSNumber)?.doubleValue ?? 0
         let ready = (data["ready"] as? NSNumber)?.intValue ?? 0
         let paused = data["paused"] as? Bool ?? true
         let error = (data["err"] as? NSNumber)?.intValue ?? 0
         let body = (data["text"] as? String ?? "").lowercased()
+        let trackData = data["tracks"] as? [[String: Any]] ?? []
+        let freshTracks = trackData.compactMap { info -> EmbeddedSubtitleTrack? in
+            guard let lang = info["lang"] as? String, !lang.isEmpty else { return nil }
+            return EmbeddedSubtitleTrack(id: lang, label: info["label"] as? String ?? lang)
+        }
+        if freshTracks != availableSubtitles { availableSubtitles = freshTracks }
+        browserCaption = data["caption"] as? String ?? ""
+        browserCaptionLanguage = data["language"] as? String ?? ""
+        let cueCount = (data["cueCount"] as? NSNumber)?.intValue ?? 0
         currentTime = max(0, time)
         if time > 0.2 && ready >= 2 {
             playing = !paused
@@ -129,6 +208,18 @@ final class EmbeddedPlayerModel: ObservableObject {
             playing = false
             playbackError = "هذا السيرفر ما قدر يشغّل العنوان. جرّب السيرفر التالي."
             tryAutomaticFallback()
+        }
+        if let selected = effectiveSubtitleLanguage,
+           selected == browserCaptionLanguage,
+           cueCount == 0,
+           data["hasTrackSource"] as? Bool == true {
+            fetchProviderSubtitle(selected, from: view)
+        } else if cueCount > 0,
+                  selectedSubtitleLanguage != nil,
+                  selectedSubtitleLanguage == browserCaptionLanguage,
+                  serverCues.isEmpty,
+                  subtitleStatus != "ترجمة السيرفر جاهزة" {
+            subtitleStatus = "ترجمة السيرفر جاهزة"
         }
         updateCaption()
     }
@@ -143,6 +234,75 @@ final class EmbeddedPlayerModel: ObservableObject {
         }
     }
 
+    private var effectiveSubtitleLanguage: String? {
+        if selectedSubtitleLanguage == "__off" { return nil }
+        if let selectedSubtitleLanguage { return selectedSubtitleLanguage }
+        return browserCaptionLanguage.isEmpty ? nil : browserCaptionLanguage
+    }
+
+    func selectSubtitle(_ language: String?) {
+        selectedSubtitleLanguage = language
+        browserCaption = ""
+        browserCaptionLanguage = ""
+        captionText = ""
+        if language == "__off" {
+            subtitleStatus = "الترجمة متوقفة"
+        } else if let language {
+            subtitleFetchAttempts.remove("\(sourceIndex):\(language)")
+            subtitleStatus = "جارٍ تحميل ترجمة \(availableSubtitles.first(where: { $0.id == language })?.label ?? language)…"
+        } else {
+            subtitleStatus = "متابعة اختيار المشغّل"
+        }
+        updateCaption()
+    }
+
+    // Some providers serve SRT tracks that WebKit exposes in video.textTracks
+    // but does not decode. Read only the same-origin track chosen by the user;
+    // render it with SwiftUI above the video instead of opening another page.
+    private func fetchProviderSubtitle(_ language: String, from view: WKWebView) {
+        let key = "\(sourceIndex):\(language)"
+        guard subtitleFetchAttempts.insert(key).inserted else { return }
+        subtitleFetchTask?.cancel()
+        let source = sourceIndex
+        subtitleFetchTask = Task { [weak self, weak view] in
+            guard let self, let view else { return }
+            let script = """
+            const video = Array.from(document.querySelectorAll('video')).find(v => v.readyState > 1)
+                          || document.querySelector('video');
+            const tag = video ? Array.from(video.querySelectorAll('track')).find(
+              track => String(track.srclang || '').toLowerCase() === String(language || '').toLowerCase()
+            ) : null;
+            if (!tag || !tag.src) return null;
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 6500);
+            try {
+              const response = await fetch(tag.src, { credentials: 'same-origin', signal: controller.signal });
+              if (!response.ok) return null;
+              const content = await response.text();
+              return content.length <= 1250000 ? content : null;
+            } catch (_) {
+              return null;
+            } finally {
+              clearTimeout(timer);
+            }
+            """
+            let subtitle = try? await view.callAsyncJavaScript(
+                script, arguments: ["language": language], in: nil, contentWorld: .page
+            ) as? String
+            guard !Task.isCancelled, self.webView === view, self.sourceIndex == source,
+                  self.effectiveSubtitleLanguage == language else { return }
+            let parsed = subtitle.map(CaptionParser.parse) ?? []
+            if !parsed.isEmpty {
+                self.serverCueKey = key
+                self.serverCues = parsed
+                self.subtitleStatus = "تم تحميل الترجمة · \(parsed.count) سطر"
+                self.updateCaption()
+            } else if self.selectedSubtitleLanguage == language {
+                self.subtitleStatus = "لم تُحمَّل ترجمة هذا السيرفر؛ جرّب سيرفرًا آخر"
+            }
+        }
+    }
+
     func installCaptions(_ content: String, fileName: String) {
         cues = CaptionParser.parse(content)
         captionFileName = cues.isEmpty ? nil : fileName
@@ -153,7 +313,7 @@ final class EmbeddedPlayerModel: ObservableObject {
     func clearCaptions() {
         cues = []
         captionFileName = nil
-        captionText = ""
+        updateCaption()
     }
 
     func shiftCaptions(_ seconds: Double) {
@@ -163,11 +323,24 @@ final class EmbeddedPlayerModel: ObservableObject {
 
     private func updateCaption() {
         let target = currentTime + captionDelay
-        captionText = cues.first(where: { target >= $0.start && target < $0.end })?.text ?? ""
+        let newText: String
+        if !cues.isEmpty {
+            newText = cues.first(where: { target >= $0.start && target < $0.end })?.text ?? ""
+        } else if let selected = effectiveSubtitleLanguage,
+                  serverCueKey == "\(sourceIndex):\(selected)",
+                  !serverCues.isEmpty {
+            newText = serverCues.first(where: { target >= $0.start && target < $0.end })?.text ?? ""
+        } else if effectiveSubtitleLanguage == browserCaptionLanguage {
+            newText = browserCaption
+        } else {
+            newText = ""
+        }
+        if captionText != newText { captionText = newText }
     }
 
     func stop() {
         monitorTask?.cancel()
+        subtitleFetchTask?.cancel()
         webView?.stopLoading()
         webView?.loadHTMLString("", baseURL: nil)
         webView = nil
@@ -190,12 +363,17 @@ private struct EmbeddedWebView: UIViewRepresentable {
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         let inlineScript = WKUserScript(source: """
-          document.addEventListener('DOMContentLoaded', function() {
-            document.querySelectorAll('video').forEach(v => {
-              v.setAttribute('playsinline', '');
-              v.setAttribute('webkit-playsinline', '');
-            });
-          });
+          (function() {
+            function keepInline() {
+              document.querySelectorAll('video').forEach(function(video) {
+                video.setAttribute('playsinline', '');
+                video.setAttribute('webkit-playsinline', '');
+              });
+            }
+            document.addEventListener('DOMContentLoaded', keepInline);
+            keepInline();
+            new MutationObserver(keepInline).observe(document, { childList: true, subtree: true });
+          })();
           """, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
         configuration.userContentController.addUserScript(inlineScript)
 
@@ -226,10 +404,13 @@ private struct EmbeddedWebView: UIViewRepresentable {
         init(model: EmbeddedPlayerModel) { self.model = model }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard model.webView === webView else { return }
             model.loaded()
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            guard model.webView === webView,
+                  (error as NSError).code != NSURLErrorCancelled else { return }
             model.failed("تعذر الاتصال بالمشغّل. يمكنك تجربة سيرفر ثاني.")
         }
 
@@ -410,10 +591,49 @@ struct EmbeddedPlayerScreen: View {
                     VStack(alignment: .leading, spacing: 7) {
                         Text("الترجمة")
                             .font(.title3.bold())
-                        Text("اختر لغة الترجمة من زر CC الموجود في المشغّل. ولضبط التوقيت والحجم والموقع، أضف ملف SRT أو VTT من تطبيق الملفات.")
+                        Text("اختر اللغة هنا، وتظهر الترجمة فوق الفيديو حتى في وضع الشاشة الكاملة. تقدر تضبط التوقيت والشكل مباشرة.")
                             .font(.system(size: 12))
                             .foregroundStyle(CinemaPalette.secondary)
                     }
+                    VStack(alignment: .leading, spacing: 11) {
+                        Text("لغات السيرفر")
+                            .font(.system(size: 14, weight: .semibold))
+                        if model.availableSubtitles.isEmpty {
+                            HStack(spacing: 9) {
+                                ProgressView().tint(CinemaPalette.accent)
+                                Text("بانتظار اكتشاف الترجمات من المشغّل…")
+                            }
+                            .font(.system(size: 12))
+                            .foregroundStyle(CinemaPalette.secondary)
+                        } else {
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                                Button {
+                                    model.selectSubtitle("__off")
+                                } label: {
+                                    subtitleOption("إيقاف الترجمة", chosen: model.selectedSubtitleLanguage == "__off")
+                                }
+                                Button {
+                                    model.selectSubtitle(nil)
+                                } label: {
+                                    subtitleOption("اختيار المشغّل", chosen: model.selectedSubtitleLanguage == nil)
+                                }
+                                ForEach(model.availableSubtitles) { track in
+                                    Button {
+                                        model.selectSubtitle(track.id)
+                                    } label: {
+                                        subtitleOption(track.label, chosen: model.selectedSubtitleLanguage == track.id)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        if let status = model.subtitleStatus {
+                            Text(status)
+                                .font(.system(size: 12))
+                                .foregroundStyle(CinemaPalette.accent)
+                        }
+                    }
+                    Divider()
                     Button { fileImporter = true } label: {
                         Label("إضافة ملف ترجمة SRT / VTT", systemImage: "doc.badge.plus")
                             .font(.system(size: 14, weight: .bold))
@@ -452,7 +672,7 @@ struct EmbeddedPlayerScreen: View {
                     Slider(value: $model.captionBottom, in: 1...150, step: 1).tint(CinemaPalette.accent)
                     Text("خلفية الترجمة · \(Int(model.captionOpacity * 100))%")
                     Slider(value: $model.captionOpacity, in: 0...1).tint(CinemaPalette.accent)
-                    Text("إعدادات التوقيت والشكل تؤثر على ملف الترجمة الخارجي فقط. ترجمات السيرفر الأصلية يتحكم بها مشغّله.")
+                    Text("إذا ما ظهرت ترجمة السيرفر، جرّب اختيارها مرة ثانية أو اختر سيرفرًا ثانيًا. ملفات SRT وVTT الخارجية تأخذ الأولوية إذا أضفتها.")
                         .font(.system(size: 11))
                         .foregroundStyle(CinemaPalette.secondary)
                 }
@@ -469,5 +689,19 @@ struct EmbeddedPlayerScreen: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+
+    private func subtitleOption(_ title: String, chosen: Bool) -> some View {
+        HStack(spacing: 7) {
+            Text(title)
+                .font(.system(size: 12, weight: chosen ? .bold : .medium))
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if chosen { Image(systemName: "checkmark.circle.fill").foregroundStyle(CinemaPalette.accent) }
+        }
+        .padding(.horizontal, 11)
+        .frame(height: 43)
+        .background(chosen ? CinemaPalette.accent.opacity(0.18) : .white.opacity(0.08),
+                    in: RoundedRectangle(cornerRadius: 10))
     }
 }
