@@ -85,6 +85,18 @@ private struct GemflixHomepageTitle: Decodable {
 actor GemflixHomepageAPI {
     static let shared = GemflixHomepageAPI()
 
+    // Artwork and the first screen can paint without waiting for networking.
+    // The live homepage refresh replaces this bundled snapshot on completion.
+    static func bundledFeatured() -> [MediaTitle] {
+        guard let url = Bundle.main.url(forResource: "GemflixSeed", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let seed = try? JSONDecoder().decode(GemflixHomepage.self, from: data) else { return [] }
+        var seen = Set<Int>()
+        return (seed.topToday + seed.trending)
+            .filter { ($0.media_type ?? "movie") == "movie" && seen.insert($0.id).inserted }
+            .map { $0.asTitle() }
+    }
+
     func featured() async throws -> [MediaTitle] {
         do { return try await liveFeatured() }
         catch {
@@ -180,19 +192,24 @@ final class CinemaStore: ObservableObject {
         guard movies.isEmpty, series.isEmpty, !loading else { return }
         loading = true
         defer { loading = false }
-        do {
-            async let m = CinemetaAPI.shared.list(.movie)
-            async let s = CinemetaAPI.shared.list(.series)
-            movies = try await m
-            series = try await s
-        } catch {
+        gemflixFeatured = GemflixHomepageAPI.bundledFeatured()
+        // Independent requests start together. A slow or unavailable movie
+        // catalog must not hold back shows, the featured row, or playback.
+        async let moviesRequest: [MediaTitle]? = try? await CinemetaAPI.shared.list(.movie)
+        async let seriesRequest: [MediaTitle]? = try? await CinemetaAPI.shared.list(.series)
+        async let featuredRequest: [MediaTitle]? = try? await GemflixHomepageAPI.shared.featured()
+        async let feedRequest: PlaybackFeed? = try? await StreamFeedAPI.shared.load()
+
+        let (loadedMovies, loadedSeries, loadedFeatured, loadedFeed) =
+            await (moviesRequest, seriesRequest, featuredRequest, feedRequest)
+        movies = loadedMovies ?? []
+        series = loadedSeries ?? []
+        if let loadedFeatured, !loadedFeatured.isEmpty { gemflixFeatured = loadedFeatured }
+        feed = loadedFeed
+        if loadedMovies == nil && loadedSeries == nil && loadedFeatured == nil {
             errorMessage = "تعذّر تحديث المكتبة. اسحب الشاشة لإعادة المحاولة."
-        }
-        gemflixFeatured = (try? await GemflixHomepageAPI.shared.featured()) ?? []
-        do {
-            feed = try await StreamFeedAPI.shared.load()
-        } catch {
-            if errorMessage == nil { errorMessage = "تعذّر قراءة مصدر البث." }
+        } else {
+            errorMessage = nil
         }
     }
 
