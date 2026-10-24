@@ -340,36 +340,43 @@ struct TitleDetailScreen: View {
     @State private var item: MediaTitle
     @State private var selectedSeason = 1
     @State private var currentPlayer: PlayerSelection?
-    @State private var showUnavailable = false
+    @State private var embeddedPlayer: EmbeddedSelection?
 
     init(original: MediaTitle) { _item = State(initialValue: original) }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 19) {
-                ZStack(alignment: .bottomLeading) {
-                    PosterImage(url: item.backdropURL ?? item.posterURL)
-                        .frame(height: 355)
-                        .clipped()
-                    LinearGradient(colors: [.clear, CinemaPalette.base.opacity(0.95), CinemaPalette.base],
-                                   startPoint: .top, endPoint: .bottom)
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(item.kind == .movie ? "MOVIE" : "SERIES")
-                            .font(.system(size: 10, weight: .black))
-                            .tracking(3)
-                            .foregroundStyle(CinemaPalette.accent)
-                        Text(item.title)
-                            .font(.system(size: 33, weight: .black, design: .rounded))
-                            .lineLimit(3)
-                        HStack(spacing: 10) {
-                            Text(item.year)
-                            Image(systemName: "star.fill").foregroundStyle(.yellow)
-                            Text(item.rating)
+                GeometryReader { geometry in
+                    ZStack(alignment: .bottomLeading) {
+                        PosterImage(url: item.backdropURL ?? item.posterURL)
+                            .frame(width: geometry.size.width, height: 355)
+                            .clipped()
+                        LinearGradient(colors: [.clear, CinemaPalette.base.opacity(0.82), CinemaPalette.base],
+                                       startPoint: .top, endPoint: .bottom)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(item.kind == .movie ? "MOVIE" : "SERIES")
+                                .font(.system(size: 10, weight: .black))
+                                .tracking(3)
+                                .foregroundStyle(CinemaPalette.accent)
+                            Text(item.title)
+                                .font(.system(size: 31, weight: .black, design: .rounded))
+                                .lineLimit(3)
+                                .minimumScaleFactor(0.75)
+                            HStack(spacing: 10) {
+                                Text(item.year)
+                                if !item.rating.isEmpty {
+                                    Image(systemName: "star.fill").foregroundStyle(.yellow)
+                                    Text(item.rating)
+                                }
+                            }
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(CinemaPalette.secondary)
                         }
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(CinemaPalette.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(22)
                     }
-                    .padding(22)
+                    .frame(width: geometry.size.width, height: 355)
                 }
                 .frame(height: 355)
 
@@ -431,7 +438,7 @@ struct TitleDetailScreen: View {
                                             .font(.system(size: 13, weight: .bold))
                                             .foregroundStyle(.white)
                                             .lineLimit(2)
-                            Text("تفاصيل الحلقة ومصدر التشغيل")
+                                        Text("اضغط للمشاهدة")
                                             .font(.system(size: 11))
                                             .foregroundStyle(CinemaPalette.secondary)
                                     }
@@ -466,13 +473,11 @@ struct TitleDetailScreen: View {
             item = await store.detail(item)
             selectedSeason = item.seasons.first ?? 1
         }
-        .alert("رابط التشغيل غير متوفر", isPresented: $showUnavailable) {
-            Button("حسنًا", role: .cancel) {}
-        } message: {
-            Text("المصدر يوفّر بيانات هذا العنوان، لكنه لا يقدّم رابط HLS أو MP4 مباشرًا صالحًا للمشغّل الأصلي. يلزم ربط مصدر بث مصرح به.")
-        }
         .fullScreenCover(item: $currentPlayer) { value in
             NativePlayerScreen(title: value.title, entry: value.entry)
+        }
+        .fullScreenCover(item: $embeddedPlayer) { selection in
+            EmbeddedPlayerScreen(selection: selection)
         }
     }
 
@@ -481,12 +486,18 @@ struct TitleDetailScreen: View {
         let key: String = item.kind == .movie
             ? PlaybackKey.movie(item.id)
             : PlaybackKey.episode(item.id, season: selected?.season ?? 1, number: selected?.number ?? 1)
-        guard let entry = store.entry(for: key), !entry.sources.isEmpty else {
-            showUnavailable = true
-            return
-        }
         let title = selected.map { "\(item.title) · S\($0.season) E\($0.number)" } ?? item.title
-        currentPlayer = PlayerSelection(title: title, entry: entry)
+        if let entry = store.entry(for: key), !entry.sources.isEmpty {
+            currentPlayer = PlayerSelection(title: title, entry: entry)
+        } else {
+            embeddedPlayer = EmbeddedSelection(
+                title: title,
+                mediaID: item.id,
+                kind: item.kind,
+                season: selected?.season ?? 1,
+                episode: selected?.number ?? 1
+            )
+        }
     }
 }
 

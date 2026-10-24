@@ -19,6 +19,9 @@ swift_sources = list((root / "Sources").glob("*.swift"))
 assert len(swift_sources) >= 4
 for path in swift_sources:
     text = path.read_text()
-    assert "WKWebView" not in text and "import WebKit" not in text
     assert "http://" not in text
+player = (root / "Sources/EmbeddedPlayer.swift").read_text()
+assert "WKWebView" in player and "WKNavigationDelegate" in player
+assert "vidsrc.pk" in player and "vidlink.pro" in player
+assert "EmbeddedPlayerScreen" in player
 print(f"PASS: {len(swift_sources)} native Swift sources, JSON feed, Info.plist")

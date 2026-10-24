@@ -2,7 +2,6 @@ import SwiftUI
 
 struct GemflixHomeScreen: View {
     @EnvironmentObject private var store: CinemaStore
-    @State private var testPlayer: PlayerSelection?
 
     private var top: [MediaTitle] {
         store.gemflixFeatured.isEmpty ? Array(store.movies.prefix(12)) : store.gemflixFeatured
@@ -23,16 +22,12 @@ struct GemflixHomeScreen: View {
                     rail("أفلام مختارة", subtitle: "أكشن · دراما · إثارة", items: Array(store.movies.dropFirst(10).prefix(15)))
                 }
                 if !top.isEmpty { rail("الرائج الآن", subtitle: "من واجهة Gemflix", items: Array(top.reversed())) }
-                testCard
             }
             .padding(.bottom, 26)
         }
         .scrollIndicators(.hidden)
         .background(CinemaPalette.base)
         .refreshable { await store.reload() }
-        .fullScreenCover(item: $testPlayer) { selection in
-            NativePlayerScreen(title: selection.title, entry: selection.entry)
-        }
     }
 
     private var brandBar: some View {
@@ -67,10 +62,10 @@ struct GemflixHomeScreen: View {
 
     private func feature(_ item: MediaTitle) -> some View {
         NavigationLink(value: item) {
-            ZStack(alignment: .bottomLeading) {
+            GeometryReader { geometry in
+              ZStack(alignment: .bottomLeading) {
                 PosterImage(url: item.backdropURL ?? item.posterURL)
-                    .frame(height: 410)
-                    .frame(maxWidth: .infinity)
+                    .frame(width: geometry.size.width, height: 410)
                     .clipped()
                 LinearGradient(stops: [
                     .init(color: .black.opacity(0.08), location: 0),
@@ -115,6 +110,8 @@ struct GemflixHomeScreen: View {
                         .background(CinemaPalette.accent, in: Capsule())
                 }
                 .padding(22)
+              }
+              .frame(width: geometry.size.width, height: 410)
             }
             .frame(height: 410)
             .clipShape(RoundedRectangle(cornerRadius: 25))
@@ -184,33 +181,6 @@ struct GemflixHomeScreen: View {
         .padding(.horizontal, 22)
     }
 
-    private var testCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("فحص المشغّل الأصلي", systemImage: "checkmark.shield.fill")
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(.white)
-            Text("اختبر VLC بمقطع HLS مرخّص للاختبار. عرض الأفلام لا يعني توفر مصدر تشغيل لها؛ فقط الروابط المباشرة الصالحة تشتغل داخل VLC.")
-                .font(.system(size: 12))
-                .foregroundStyle(CinemaPalette.secondary)
-                .lineSpacing(4)
-            Button {
-                if let entry = store.entry(for: "demo:apple-hls") {
-                    testPlayer = PlayerSelection(title: "اختبار مشغّل VLC", entry: entry)
-                }
-            } label: {
-                Label("تشغيل المقطع التجريبي", systemImage: "play.fill")
-                    .font(.system(size: 13, weight: .bold))
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 12)
-                    .background(CinemaPalette.accent, in: Capsule())
-                    .foregroundStyle(.white)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(19)
-        .background(CinemaPalette.elevated, in: RoundedRectangle(cornerRadius: 19))
-        .padding(.horizontal, 20)
-    }
 }
 
 struct GemflixSavedScreen: View {

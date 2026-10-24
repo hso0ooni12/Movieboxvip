@@ -3,7 +3,7 @@ import UIKit
 import AVFoundation
 import VLCKitSPM
 
-private struct CaptionCue {
+struct CaptionCue {
     let start: Double
     let end: Double
     let text: String
@@ -11,7 +11,7 @@ private struct CaptionCue {
 
 // SRT and WebVTT are rendered above the native VLC surface, so they do not
 // disappear when the phone rotates or the transport controls are hidden.
-private enum CaptionParser {
+enum CaptionParser {
     static func parse(_ content: String) -> [CaptionCue] {
         let normalized = content.replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
@@ -317,7 +317,7 @@ private struct VLCVideoSurface: UIViewRepresentable {
     }
 }
 
-private enum PlayerOrientation {
+enum PlayerOrientation {
     static func set(_ mask: UIInterfaceOrientationMask) {
         guard let scene = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene }).first else { return }
