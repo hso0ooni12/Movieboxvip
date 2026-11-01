@@ -10,7 +10,7 @@ settings:
     IPHONEOS_DEPLOYMENT_TARGET: "17.0"
     CODE_SIGNING_ALLOWED: NO
     CODE_SIGNING_REQUIRED: NO
-    MARKETING_VERSION: "0.2.0"
+    MARKETING_VERSION: "1.1.0"
     CURRENT_PROJECT_VERSION: "1"
 targets:
   WatchedNative:
@@ -30,6 +30,8 @@ targets:
       path: WatchedNative/Info.plist
       properties:
         CFBundleDisplayName: Watched
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSRequiresIPhoneOS: true
         UILaunchScreen:
           UIColorName: LaunchBackground

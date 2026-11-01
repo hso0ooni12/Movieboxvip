@@ -136,6 +136,24 @@ struct FlightDocument {
         }
         throw WatchedError.malformed
     }
+
+    /// The watch route, unlike the browse route, serializes its initial stream alongside a progress target.
+    /// Match the exact title/episode and honor the server's clearance flag before accepting a stream.
+    func playback(title: MediaTitle, origin: URL, season: Int?, episode: Int?, resumeAt: Double) throws -> PlaybackDescriptor {
+        for props in dictionaries() {
+            guard let progress = resolve(props["progress"] ?? NSNull()) as? [String: Any],
+                  progress["tmdbId"] as? Int == title.tmdbID,
+                  progress["mediaType"] as? String == title.kind.rawValue else { continue }
+            if title.kind == .tv {
+                guard progress["season"] as? Int == season, progress["episode"] as? Int == episode else { continue }
+            }
+            if props["cleared"] as? Bool == false { throw WatchedError.verificationRequired }
+            guard let stream = resolve(props["stream"] ?? NSNull()) as? [String: Any] else { continue }
+            guard stream["placeholder"] as? Bool != true else { throw WatchedError.unavailable }
+            return try VODResponseDecoder.descriptor(stream, title: title, origin: origin, season: season, episode: episode, resumeAt: resumeAt)
+        }
+        throw WatchedError.malformed
+    }
 }
 
 enum HTMLFlightDecoder {

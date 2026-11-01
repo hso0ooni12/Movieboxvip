@@ -130,6 +130,10 @@ enum WatchedError: Error, LocalizedError {
     case unsupportedStream
     case rateLimited
     case unavailable
+    case verificationRequired
+    var offersSourceVerification: Bool {
+        switch self { case .verificationRequired, .blocked: return true; default: return false }
+    }
     var errorDescription: String? {
         switch self {
         case .blocked: return "المصدر رفض الطلب أو يحتاج تحققاً إضافياً. أعد المحاولة لاحقاً."
@@ -138,6 +142,7 @@ enum WatchedError: Error, LocalizedError {
         case .unsupportedStream: return "صيغة الفيديو غير مدعومة على هذا الجهاز."
         case .rateLimited: return "طلبات كثيرة خلال وقت قصير. انتظر قليلاً ثم جرّب مرة ثانية."
         case .unavailable: return "الفيديو غير متاح من المصدر حالياً. جرّب عنواناً آخر أو أعد المحاولة لاحقاً."
+        case .verificationRequired: return "المصدر يطلب تحققاً أمنياً قبل تشغيل الفيديو. أكمل التحقق ثم أعد المحاولة."
         }
     }
 }

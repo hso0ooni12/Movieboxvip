@@ -12,6 +12,7 @@ final class PlayerSession: ObservableObject {
     @Published var position = 0.0
     @Published var duration = 0.0
     @Published var error: String?
+    @Published var requiresSourceVerification = false
     @Published var sourceID: String?
     @Published var subtitleID: String?
     @Published var caption = ""
@@ -102,9 +103,9 @@ final class PlayerSession: ObservableObject {
         guard source.url.scheme == "https" else { error = WatchedError.unsupportedStream.localizedDescription; loading = false; return }
         startupTask?.cancel(); notifications.removeAll(); itemObservation = nil
         let identity = UUID(); generation = identity
-        sourceID = source.id; error = nil; loading = true; mediaOptions = [:]; embeddedTracks = []
+        sourceID = source.id; error = nil; requiresSourceVerification = false; loading = true; mediaOptions = [:]; embeddedTracks = []
         pendingResume = time
-        let item = AVPlayerItem(url: source.url)
+        let item = NativeMediaAsset.item(url: source.url)
         item.preferredForwardBufferDuration = 8
         if let bandwidth = source.bandwidth { item.preferredPeakBitRate = bandwidth }
         if let width = source.width, let height = source.height { item.preferredMaximumResolution = CGSize(width: CGFloat(width), height: CGFloat(height)) }
@@ -155,7 +156,7 @@ final class PlayerSession: ObservableObject {
                 guard let self else { return }
                 defer { self.fallbackInFlight = false }
                 do {
-                    let fallback = try await WatchedClient.shared.fallbackPlayback(title: self.descriptor.title, season: self.descriptor.season,
+                    let fallback = try await WatchedClient.shared.playback(title: self.descriptor.title, season: self.descriptor.season,
                                                                                  episode: self.descriptor.episode, resumeAt: self.pendingResume ?? self.position)
                     try Task.checkCancellation()
                     guard self.generation == identity else { return }
@@ -168,6 +169,7 @@ final class PlayerSession: ObservableObject {
                 catch {
                     guard self.generation == identity else { return }
                     self.loading = false; self.error = error.localizedDescription
+                    self.requiresSourceVerification = (error as? WatchedError)?.offersSourceVerification ?? false
                 }
             }
         } else {
@@ -278,14 +280,16 @@ struct VideoSurface: UIViewRepresentable {
 @MainActor
 struct NativePlayerScreen: View {
     let descriptor: PlaybackDescriptor
+    var onSourceVerification: (() -> Void)?
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
     @StateObject private var session: PlayerSession
     @State private var controlsVisible = true
     @State private var captionSettings = false
     @State private var scrubbing: Double?
-    init(descriptor: PlaybackDescriptor) {
+    init(descriptor: PlaybackDescriptor, onSourceVerification: (() -> Void)? = nil) {
         self.descriptor = descriptor
+        self.onSourceVerification = onSourceVerification
         _session = StateObject(wrappedValue: PlayerSession(descriptor: descriptor))
     }
     var body: some View {
@@ -306,6 +310,9 @@ struct NativePlayerScreen: View {
                     VStack(spacing: 16) {
                         Image(systemName: "exclamationmark.circle").font(.largeTitle)
                         Text(error).font(.subheadline).multilineTextAlignment(.center)
+                        if session.requiresSourceVerification, onSourceVerification != nil {
+                            Button(store.t("التحقق من المصدر", "Verify source")) { onSourceVerification?(); dismiss() }.buttonStyle(.borderedProminent)
+                        }
                         Button(store.t("إغلاق", "Close")) { dismiss() }.buttonStyle(.borderedProminent)
                     }.padding(25).background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 20)).padding(25)
                 }

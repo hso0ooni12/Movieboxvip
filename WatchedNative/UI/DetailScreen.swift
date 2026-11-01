@@ -13,6 +13,11 @@ struct DetailScreen: View {
     @State private var playback: PlaybackDescriptor?
     @State private var preparingPlayback = false
     @State private var playbackTask: Task<Void, Never>?
+    @State private var canVerifySource = false
+    @State private var verificationVisible = false
+    @State private var retryAfterVerification = false
+    @State private var verifyAfterPlayer = false
+    @State private var lastRequestedEpisode: MediaEpisode?
     private var title: MediaTitle { refreshed ?? item }
 
     var body: some View {
@@ -75,9 +80,21 @@ struct DetailScreen: View {
         .toolbarBackground(WatchedTheme.background, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
         .alert(store.t("المشاهدة", "Playback"), isPresented: Binding(get: { alertMessage != nil }, set: { if !$0 { alertMessage = nil } })) {
+            if canVerifySource {
+                Button(store.t("التحقق من المصدر", "Verify source")) { alertMessage = nil; verificationVisible = true }
+            }
             Button(store.t("حسناً", "OK"), role: .cancel) { alertMessage = nil }
         } message: { Text(alertMessage ?? "") }
-        .fullScreenCover(item: $playback) { descriptor in NativePlayerScreen(descriptor: descriptor) }
+        .fullScreenCover(item: $playback, onDismiss: {
+            if verifyAfterPlayer { verifyAfterPlayer = false; verificationVisible = true }
+        }) { descriptor in
+            NativePlayerScreen(descriptor: descriptor, onSourceVerification: { verifyAfterPlayer = true })
+        }
+        .sheet(isPresented: $verificationVisible, onDismiss: {
+            if retryAfterVerification { retryAfterVerification = false; play(episode: lastRequestedEpisode) }
+        }) {
+            SourceVerificationView { retryAfterVerification = true; verificationVisible = false }
+        }
         .onDisappear { playbackTask?.cancel() }
         .task {
             guard !store.isPreview else { return }
@@ -144,11 +161,15 @@ struct DetailScreen: View {
 
     private func play(episode selectedEpisode: MediaEpisode? = nil) {
         guard !preparingPlayback else { return }
+        canVerifySource = false
         if store.isPreview {
-            alertMessage = store.t("وضع معاينة الواجهة لا يجري طلبات تشغيل حية.", "UI preview mode does not make live playback requests.")
+            if ProcessInfo.processInfo.arguments.contains("-verification-ui-preview") {
+                canVerifySource = true; alertMessage = WatchedError.verificationRequired.localizedDescription
+            } else { alertMessage = store.t("وضع معاينة الواجهة لا يجري طلبات تشغيل حية.", "UI preview mode does not make live playback requests.") }
             return
         }
         let title = self.title
+        lastRequestedEpisode = selectedEpisode
         let saved = store.progress.first(where: { $0.id == title.id })
         let selectedSeason: Int? = title.kind == .tv ? (selectedEpisode != nil ? season : saved?.season ?? season) : nil
         let number: Int? = title.kind == .tv ? (selectedEpisode?.episode_number ?? saved?.episode ?? episodes.first?.episode_number ?? 1) : nil
@@ -162,7 +183,10 @@ struct DetailScreen: View {
                 try Task.checkCancellation()
                 playback = descriptor
             } catch is CancellationError { }
-            catch { alertMessage = error.localizedDescription }
+            catch {
+                canVerifySource = (error as? WatchedError)?.offersSourceVerification ?? false
+                alertMessage = error.localizedDescription
+            }
         }
     }
 }
@@ -187,7 +211,7 @@ struct SettingsScreen: View {
                     }
                 }
                 Section {
-                    HStack { Wordmark(); Spacer(); Text("Native · 0.2").font(.caption).foregroundStyle(.secondary) }
+                    HStack { Wordmark(); Spacer(); Text("Native · \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")").font(.caption).foregroundStyle(.secondary) }
                     Text(store.t("تطبيق أفلام ومسلسلات بمشغّل نيتف. توفر المحتوى والترجمة يعتمد على المصدر.", "Movies and shows with native playback. Content and subtitle availability depend on the source."))
                         .font(.footnote).foregroundStyle(.secondary)
                 }

@@ -18,6 +18,7 @@ final class AppStore: ObservableObject {
         language = UserDefaults.standard.string(forKey: "watched.language") ?? "ar"
         subtitleLanguage = UserDefaults.standard.string(forKey: "watched.subtitles") ?? "ar"
         isPreview = ProcessInfo.processInfo.arguments.contains("-ui-preview")
+            || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
         cacheURL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("watched-home.json")
         if let data = try? Data(contentsOf: cacheURL), let snapshot = try? JSONDecoder().decode(HomeSnapshot.self, from: data) {
             home = snapshot

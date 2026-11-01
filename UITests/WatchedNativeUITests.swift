@@ -29,4 +29,24 @@ final class WatchedNativeUITests: XCTestCase {
         attachment.name = name; attachment.lifetime = .keepAlways
         add(attachment)
     }
+
+    @MainActor
+    func testSourceVerificationIsExplicitAndCanBeCancelled() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-preview", "-verification-ui-preview"]
+        app.launch()
+        let details = app.buttons["hero-details-0"]
+        XCTAssertTrue(details.waitForExistence(timeout: 12))
+        details.tap()
+        let play = app.buttons["play-title"]
+        XCTAssertTrue(play.waitForExistence(timeout: 6)); play.tap()
+        let verify = app.alerts.buttons["التحقق من المصدر"]
+        XCTAssertTrue(verify.waitForExistence(timeout: 4)); verify.tap()
+        let complete = app.buttons["source-verification-complete"]
+        XCTAssertTrue(complete.waitForExistence(timeout: 8))
+        XCTAssertFalse(complete.isEnabled)
+        capture("03-native-source-verification-ui-preview")
+        app.navigationBars.buttons["إلغاء"].tap()
+        XCTAssertTrue(app.staticTexts["detail-title"].waitForExistence(timeout: 5))
+    }
 }

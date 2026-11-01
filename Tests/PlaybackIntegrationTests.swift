@@ -3,7 +3,7 @@ import XCTest
 @testable import WatchedNative
 
 private final class WatchedRequestStub: URLProtocol, @unchecked Sendable {
-    struct Reply { let status: Int; let body: Data }
+    struct Reply { let status: Int; let body: Data; var headers: [String: String] = ["Content-Type": "application/json"] }
     private static let lock = NSLock()
     private static var replies: [Reply] = []
     private static var recorded: [URLRequest] = []
@@ -15,6 +15,9 @@ private final class WatchedRequestStub: URLProtocol, @unchecked Sendable {
     static func requests() -> [URLRequest] {
         lock.lock(); defer { lock.unlock() }; return recorded
     }
+    static func setReplies(_ values: [Reply]) {
+        lock.lock(); defer { lock.unlock() }; replies = values; recorded = []
+    }
     override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "watched.cx" }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
@@ -22,7 +25,7 @@ private final class WatchedRequestStub: URLProtocol, @unchecked Sendable {
         Self.recorded.append(request)
         let reply = Self.replies.isEmpty ? nil : Self.replies.removeFirst()
         Self.lock.unlock()
-        guard let reply, let url = request.url, let response = HTTPURLResponse(url: url, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"]) else {
+        guard let reply, let url = request.url, let response = HTTPURLResponse(url: url, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: reply.headers) else {
             client?.urlProtocol(self, didFailWithError: URLError(.resourceUnavailable)); return
         }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
@@ -41,19 +44,19 @@ final class PlaybackIntegrationTests: XCTestCase {
     private var movie: MediaTitle { MediaTitle(site: ["id": 1400940, "title": "Clayface", "media_type": "movie"])! }
     private var stream: [String: Any] { ["stream": ["kind": "hls", "sources": [["url": "https://media.example.invalid/master.m3u8", "quality": "Auto", "kind": "hls"]]]] }
 
-    func testFilmUsesObservedJSONServerRequest() async throws {
-        try WatchedRequestStub.prepare([(200, stream)])
+    func testFilmReadsInitialWatchStreamWithoutCallingProtectedSwitchAPI() async throws {
+        WatchedRequestStub.setReplies([try htmlReply(kind: .movie, id: 1400940)])
         let descriptor = try await client().playback(title: movie, resumeAt: 42)
         let request = try XCTUnwrap(WatchedRequestStub.requests().first)
-        XCTAssertEqual(request.url?.path, "/api/vod/server")
-        XCTAssertEqual(request.httpMethod, "POST")
-        let body = try requestBody(request)
-        XCTAssertEqual(body["tmdbId"] as? Int, 1400940)
-        XCTAssertEqual(body["mediaType"] as? String, "movie")
-        XCTAssertEqual(body["server"] as? String, "jycdn")
-        XCTAssertNil(body["season"])
+        XCTAssertEqual(request.url?.path, "/movie/1400940")
+        XCTAssertEqual(request.httpMethod, "GET")
+        XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData)
+        XCTAssertEqual(WatchedRequestStub.requests().count, 1)
         XCTAssertEqual(descriptor.resumeAt, 42)
         XCTAssertEqual(descriptor.sources.count, 1)
+        XCTAssertEqual(descriptor.sources.first?.kind, "mp4")
+        XCTAssertEqual(descriptor.sources.first?.label, "1080p")
+        XCTAssertEqual(descriptor.sources.first?.url.absoluteString, "https://watched.cx/api/jycdn/media/fixture-stream")
     }
 
     func test403IsTerminalWithoutAlternateRouteOrCookieCopy() async throws {
@@ -66,11 +69,82 @@ final class PlaybackIntegrationTests: XCTestCase {
         XCTAssertNil(WatchedRequestStub.requests().first?.value(forHTTPHeaderField: "Cookie"))
     }
 
-    func testUnavailableSourceUsesObservedFallback() async throws {
-        try WatchedRequestStub.prepare([(404, ["error": "unavailable"]), (200, stream)])
+    func testClearedUnavailableInitialStreamCanUseObservedFallback() async throws {
+        WatchedRequestStub.setReplies([try htmlReply(kind: .movie, id: 1400940, placeholder: true),
+                                      .init(status: 404, body: try JSONSerialization.data(withJSONObject: ["error": "unavailable"])),
+                                      .init(status: 200, body: try JSONSerialization.data(withJSONObject: stream))])
         let result = try await client().playback(title: movie)
         XCTAssertEqual(result.title.tmdbID, 1400940)
-        XCTAssertEqual(WatchedRequestStub.requests().map { $0.url?.path }, ["/api/vod/server", "/api/vod/moviebox-fallback"])
+        XCTAssertEqual(WatchedRequestStub.requests().map { $0.url?.path }, ["/movie/1400940", "/api/vod/server", "/api/vod/moviebox-fallback"])
+    }
+
+    func testSiloReadsExactEpisodeProgressAndRelativeSubtitles() async throws {
+        let silo = try XCTUnwrap(MediaTitle(site: ["id": 125988, "name": "Silo", "media_type": "tv"]))
+        WatchedRequestStub.setReplies([try htmlReply(kind: .tv, id: 125988, season: 1, episode: 1)])
+        let descriptor = try await client().playback(title: silo, season: 1, episode: 1, resumeAt: 34)
+        let request = try XCTUnwrap(WatchedRequestStub.requests().first)
+        XCTAssertEqual(request.url?.path, "/tv/125988")
+        let query = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: true)?.queryItems
+        XCTAssertEqual(query?.first(where: { $0.name == "s" })?.value, "1")
+        XCTAssertEqual(query?.first(where: { $0.name == "e" })?.value, "1")
+        XCTAssertEqual(descriptor.resumeAt, 34)
+        XCTAssertEqual(descriptor.season, 1)
+        XCTAssertEqual(descriptor.episode, 1)
+        XCTAssertEqual(descriptor.subtitles.first?.url.absoluteString, "https://watched.cx/api/jycdn/media/fixture-english")
+    }
+
+    func testServerClearanceFalseRejectsEvenAnEmbeddedURLWithoutProbingAPI() async throws {
+        WatchedRequestStub.setReplies([try htmlReply(kind: .movie, id: 1400940, cleared: false)])
+        do { _ = try await client().playback(title: movie); XCTFail("Server verification must be honored") }
+        catch WatchedError.verificationRequired { }
+        XCTAssertEqual(WatchedRequestStub.requests().count, 1)
+    }
+
+    func testExplicitClearanceHeaderRequiresUserVerification() async throws {
+        WatchedRequestStub.setReplies([.init(status: 403, body: Data(), headers: ["x-clearance": "needed"])])
+        do { _ = try await client().playback(title: movie); XCTFail("Expected user verification") }
+        catch WatchedError.verificationRequired { }
+        XCTAssertEqual(WatchedRequestStub.requests().count, 1)
+    }
+
+    func testWrongEpisodeDoesNotReuseAnotherEpisodesStream() async throws {
+        let silo = try XCTUnwrap(MediaTitle(site: ["id": 125988, "name": "Silo", "media_type": "tv"]))
+        WatchedRequestStub.setReplies([try htmlReply(kind: .tv, id: 125988, season: 1, episode: 2)])
+        do { _ = try await client().playback(title: silo, season: 1, episode: 1); XCTFail("Expected exact episode match") }
+        catch WatchedError.malformed { }
+        XCTAssertEqual(WatchedRequestStub.requests().count, 1)
+    }
+
+    func testEveryPlayReadsAFreshLeaseInsteadOfReusingArchivedURL() async throws {
+        WatchedRequestStub.setReplies([try htmlReply(kind: .movie, id: 1400940, mediaPath: "/api/jycdn/media/lease-a"),
+                                      try htmlReply(kind: .movie, id: 1400940, mediaPath: "/api/jycdn/media/lease-b")])
+        let service = client()
+        let first = try await service.playback(title: movie)
+        let second = try await service.playback(title: movie)
+        XCTAssertNotEqual(first.sources.first?.url, second.sources.first?.url)
+        XCTAssertEqual(WatchedRequestStub.requests().count, 2)
+        XCTAssertTrue(WatchedRequestStub.requests().allSatisfy { $0.httpMethod == "GET" && $0.cachePolicy == .reloadIgnoringLocalCacheData })
+    }
+
+    func testVerificationCookiesAreRestrictedToTheFirstParty() {
+        XCTAssertTrue(SourceCookiePolicy.isFirstParty(domain: "watched.cx"))
+        XCTAssertTrue(SourceCookiePolicy.isFirstParty(domain: ".watched.cx"))
+        XCTAssertTrue(SourceCookiePolicy.isFirstParty(domain: "eu.watched.cx"))
+        XCTAssertFalse(SourceCookiePolicy.isFirstParty(domain: "evilwatched.cx"))
+        XCTAssertFalse(SourceCookiePolicy.isFirstParty(domain: "watched.cx.evil.invalid"))
+        XCTAssertFalse(SourceCookiePolicy.isFirstParty(domain: "unrelated.invalid"))
+    }
+
+    func testOnlyUserCompletedFirstPartySessionCanEnterNativeCookieStore() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [WatchedRequestStub.self]
+        let storage = try XCTUnwrap(configuration.httpCookieStorage)
+        let source = try XCTUnwrap(HTTPCookie(properties: [.domain: "watched.cx", .path: "/", .name: "fixture-session", .value: "test-only", .secure: "TRUE"]))
+        let unrelated = try XCTUnwrap(HTTPCookie(properties: [.domain: "unrelated.invalid", .path: "/", .name: "unrelated-session", .value: "test-only"]))
+        let service = WatchedClient(session: URLSession(configuration: configuration))
+        await service.acceptVerifiedSourceCookies([source, unrelated])
+        XCTAssertTrue(storage.cookies?.contains(where: { $0.name == "fixture-session" }) ?? false)
+        XCTAssertFalse(storage.cookies?.contains(where: { $0.name == "unrelated-session" }) ?? true)
     }
 
     func testSeriesSubtitlesPreserveEpisodeAndResolveSameSiteURL() async throws {
@@ -106,5 +180,28 @@ final class PlaybackIntegrationTests: XCTestCase {
             if count <= 0 { break }; data.append(buffer, count: count)
         }
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    /// Reproduces the supplied Silo watch-page shape, with all signed URLs/session values replaced.
+    /// Split script chunks also reproduce the streamed JSON boundary in the supplied page source.
+    private func htmlReply(kind: MediaKind, id: Int, season: Int? = nil, episode: Int? = nil, cleared: Bool = true,
+                           placeholder: Bool = false, mediaPath: String = "/api/jycdn/media/fixture-stream") throws -> WatchedRequestStub.Reply {
+        var progress: [String: Any] = ["tmdbId": id, "mediaType": kind.rawValue]
+        if let season { progress["season"] = season }
+        if let episode { progress["episode"] = episode }
+        let stream: [String: Any] = ["sources": [["url": mediaPath, "quality": "1080p", "name": "jyCDN", "kind": "mp4", "origin": "jycdn", "server": "jycdn"]],
+                                    "kind": "mp4", "placeholder": placeholder, "sessionId": "fixture-session",
+                                    "subtitles": [["id": "fixture-sub", "url": "/api/jycdn/media/fixture-english", "label": "English", "language": "en"]]]
+        let props: [String: Any] = ["title": kind == .tv ? "Silo" : "Clayface", "progress": progress, "cleared": cleared, "stream": stream]
+        let node: [Any] = ["$", "$L15", NSNull(), props]
+        let json = String(decoding: try JSONSerialization.data(withJSONObject: node, options: [.sortedKeys]), as: UTF8.self)
+        let payload = "15:I[71500,[],\"VodPlayer\"]\n14:\(json)\n"
+        let boundary = payload.index(payload.startIndex, offsetBy: payload.count / 2)
+        let fragments = [String(payload[..<boundary]), String(payload[boundary...])]
+        let scripts = try fragments.map { fragment -> String in
+            let array = String(decoding: try JSONSerialization.data(withJSONObject: [fragment]), as: UTF8.self)
+            return "<script>self.__next_f.push([1,\(array.dropFirst().dropLast())])</script>"
+        }.joined()
+        return .init(status: 200, body: Data("<html>\(scripts)</html>".utf8), headers: ["Content-Type": "text/html"])
     }
 }

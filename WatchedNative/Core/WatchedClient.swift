@@ -15,15 +15,17 @@ actor WatchedClient {
     init(session suppliedSession: URLSession? = nil) {
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 18
-        configuration.timeoutIntervalForResource = 30
+        configuration.timeoutIntervalForResource = 60
+        configuration.httpCookieStorage = .shared
         configuration.urlCache = URLCache(memoryCapacity: 16_000_000, diskCapacity: 64_000_000)
         session = suppliedSession ?? URLSession(configuration: configuration)
     }
 
-    private func get(_ path: String) async throws -> (Data, HTTPURLResponse) {
+    private func get(_ path: String, fresh: Bool = false) async throws -> (Data, HTTPURLResponse) {
         guard let url = URL(string: path, relativeTo: origin), url.host == origin.host else { throw WatchedError.malformed }
         var request = URLRequest(url: url)
         request.setValue("text/html,application/json", forHTTPHeaderField: "Accept")
+        if fresh { request.cachePolicy = .reloadIgnoringLocalCacheData; request.timeoutInterval = 45 }
         return try await perform(request)
     }
 
@@ -31,6 +33,7 @@ actor WatchedClient {
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
         guard let response = response as? HTTPURLResponse else { throw WatchedError.malformed }
+        if response.statusCode == 403, response.value(forHTTPHeaderField: "x-clearance")?.lowercased() == "needed" { throw WatchedError.verificationRequired }
         if response.statusCode == 401 || response.statusCode == 403 { throw WatchedError.blocked }
         if response.statusCode == 429 { throw WatchedError.rateLimited }
         guard (200..<300).contains(response.statusCode) else { throw WatchedError.server(response.statusCode) }
@@ -87,16 +90,34 @@ actor WatchedClient {
         return try JSONDecoder().decode(Response.self, from: data).episodes
     }
 
-    /// Uses the same JSON request and response fields observed in the supplied film watch-page script.
-    /// A clearance/authentication response is terminal; it is never worked around through another route.
+    /// Read the canonical watch page first. The supplied Silo source includes the initial stream here;
+    /// starting directly at the server-switch API loses the site's normal playback/clearance context.
     func playback(title: MediaTitle, season: Int? = nil, episode: Int? = nil, resumeAt: Double = 0) async throws -> PlaybackDescriptor {
+        let selectedSeason = title.kind == .tv ? season ?? 1 : nil
+        let selectedEpisode = title.kind == .tv ? episode ?? 1 : nil
+        var components = URLComponents()
+        components.path = title.kind == .movie ? "/movie/\(title.tmdbID)" : "/tv/\(title.tmdbID)"
+        if let selectedSeason, let selectedEpisode {
+            components.queryItems = [URLQueryItem(name: "s", value: String(selectedSeason)), URLQueryItem(name: "e", value: String(selectedEpisode))]
+        }
+        let (data, _) = try await get(components.string ?? components.path, fresh: true)
+        let document = try HTMLFlightDecoder.document(fromHTML: String(decoding: data, as: UTF8.self))
+        do {
+            return try document.playback(title: title, origin: origin, season: selectedSeason, episode: selectedEpisode, resumeAt: resumeAt)
+        } catch WatchedError.unavailable {
+            // Only a matched, cleared but unavailable initial stream may use the site's normal switch request.
+            return try await serverPlayback(title: title, season: selectedSeason, episode: selectedEpisode, resumeAt: resumeAt)
+        }
+    }
+
+    private func serverPlayback(title: MediaTitle, season: Int?, episode: Int?, resumeAt: Double) async throws -> PlaybackDescriptor {
         let target = target(title: title, season: season, episode: episode)
         do {
             let response = try await post("/api/vod/server", body: target.merging(["server": "jycdn"]) { _, new in new })
             return try VODResponseDecoder.descriptor(response, title: title, origin: origin, season: season, episode: episode, resumeAt: resumeAt)
         } catch let error as WatchedError {
             switch error {
-            case .blocked, .rateLimited: throw error
+            case .blocked, .verificationRequired, .rateLimited: throw error
             default: return try await fallbackPlayback(title: title, season: season, episode: episode, resumeAt: resumeAt)
             }
         }
@@ -116,6 +137,15 @@ actor WatchedClient {
 
     func releasePlayback(sessionID: String) async {
         _ = try? await post("/api/jycdn/session", body: ["sessionId": sessionID])
+    }
+
+    /// Receives only a session the user explicitly completed in the first-party verification sheet.
+    /// No archived cookie, clearance token, user agent or signed media URL is installed or fabricated.
+    func acceptVerifiedSourceCookies(_ cookies: [HTTPCookie]) {
+        let storage = session.configuration.httpCookieStorage ?? HTTPCookieStorage.shared
+        for cookie in cookies where SourceCookiePolicy.isFirstParty(domain: cookie.domain) {
+            storage.setCookie(cookie)
+        }
     }
 
     private func target(title: MediaTitle, season: Int?, episode: Int?) -> [String: Any] {
