@@ -37,6 +37,8 @@ jobs:
           selected = sorted(devices, key=lambda d: (not ('Pro' in d['name']), d['name']))[0]
           print('WATCHED_SIMULATOR_ID=' + selected['udid'])
           PY
+      - name: Start simulator while compiling
+        run: xcrun simctl boot "$WATCHED_SIMULATOR_ID" || true
       - name: Unit and native UI tests
         shell: bash
         run: |
@@ -46,6 +48,7 @@ jobs:
             -project WatchedNative.xcodeproj \
             -scheme WatchedNative \
             -destination "platform=iOS Simulator,id=$WATCHED_SIMULATOR_ID" \
+            -parallel-testing-enabled NO \
             -derivedDataPath build-watched/DerivedData \
             -resultBundlePath build-watched/Tests.xcresult \
             CODE_SIGNING_ALLOWED=NO \

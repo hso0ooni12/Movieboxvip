@@ -35,6 +35,7 @@ final class SafariPlaybackHost: UIViewController, SFSafariViewControllerDelegate
     private var currentID: UUID?
     private var pendingURL: URL?
     private var browser: SFSafariViewController?
+    private var dismissing = false
     private var onClosed: ((UUID) -> Void)?
     #if DEBUG
     private var fixture: SafariPlaybackFixtureServer?
@@ -82,9 +83,10 @@ final class SafariPlaybackHost: UIViewController, SFSafariViewControllerDelegate
     }
 
     func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
-        guard browser === controller else { return }
-        // Safari performs its own dismissal after this delegate callback.
-        finish()
+        guard browser === controller, !dismissing else { return }
+        dismissing = true
+        // Keep the presentation and its delegate alive until UIKit finishes closing.
+        controller.dismiss(animated: true) { [weak self] in self?.finish() }
     }
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
         guard presentationController.presentedViewController === browser else { return }
@@ -93,7 +95,7 @@ final class SafariPlaybackHost: UIViewController, SFSafariViewControllerDelegate
 
     private func finish() {
         guard let id = currentID else { return }
-        browser?.delegate = nil; browser = nil; currentID = nil; pendingURL = nil
+        browser?.delegate = nil; browser = nil; currentID = nil; pendingURL = nil; dismissing = false
         #if DEBUG
         fixture?.stop(); fixture = nil
         #endif
@@ -104,7 +106,7 @@ final class SafariPlaybackHost: UIViewController, SFSafariViewControllerDelegate
 
     func cancel() {
         let controller = browser
-        browser = nil; currentID = nil; pendingURL = nil; onClosed = nil
+        browser = nil; currentID = nil; pendingURL = nil; onClosed = nil; dismissing = false
         controller?.delegate = nil
         controller?.dismiss(animated: false)
         #if DEBUG
