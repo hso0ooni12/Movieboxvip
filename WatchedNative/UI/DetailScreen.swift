@@ -9,15 +9,8 @@ struct DetailScreen: View {
     @State private var episodes: [MediaEpisode] = []
     @State private var episodesLoading = false
     @State private var episodeError: String?
-    @State private var alertMessage: String?
-    @State private var playback: PlaybackDescriptor?
-    @State private var preparingPlayback = false
-    @State private var playbackTask: Task<Void, Never>?
-    @State private var canVerifySource = false
-    @State private var verificationVisible = false
-    @State private var retryAfterVerification = false
-    @State private var verifyAfterPlayer = false
-    @State private var lastRequestedEpisode: MediaEpisode?
+    @State private var playback: SitePlaybackRequest?
+    @State private var detailsLoaded = false
     private var title: MediaTitle { refreshed ?? item }
 
     var body: some View {
@@ -45,11 +38,10 @@ struct DetailScreen: View {
                     HStack(spacing: 10) {
                         Button { play() } label: {
                             HStack(spacing: 9) {
-                                if preparingPlayback { ProgressView().tint(.black) }
-                                else { Image(systemName: "play.fill") }
-                                Text(preparingPlayback ? store.t("جاري تجهيز الفيديو…", "Preparing video…") : store.t("مشاهدة الآن", "Play now"))
+                                Image(systemName: "play.fill")
+                                Text(store.t("مشاهدة الآن", "Play now"))
                             }
-                        }.buttonStyle(PrimaryAction()).disabled(preparingPlayback).accessibilityIdentifier("play-title")
+                        }.buttonStyle(PrimaryAction()).accessibilityIdentifier("play-title")
                         Button { store.toggleSaved(title) } label: {
                             Image(systemName: store.isSaved(title) ? "checkmark" : "plus")
                                 .font(.system(size: 20)).frame(width: 49, height: 49)
@@ -79,29 +71,26 @@ struct DetailScreen: View {
         .background(WatchedTheme.background).scrollIndicators(.hidden)
         .toolbarBackground(WatchedTheme.background, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
-        .alert(store.t("المشاهدة", "Playback"), isPresented: Binding(get: { alertMessage != nil }, set: { if !$0 { alertMessage = nil } })) {
-            if canVerifySource {
-                Button(store.t("التحقق من المصدر", "Verify source")) { alertMessage = nil; verificationVisible = true }
-            }
-            Button(store.t("حسناً", "OK"), role: .cancel) { alertMessage = nil }
-        } message: { Text(alertMessage ?? "") }
-        .fullScreenCover(item: $playback, onDismiss: {
-            if verifyAfterPlayer { verifyAfterPlayer = false; verificationVisible = true }
-        }) { descriptor in
-            NativePlayerScreen(descriptor: descriptor, onSourceVerification: { verifyAfterPlayer = true })
+        .fullScreenCover(item: $playback) { request in
+            SitePlayerScreen(request: request, preview: store.isPreview)
         }
-        .sheet(isPresented: $verificationVisible, onDismiss: {
-            if retryAfterVerification { retryAfterVerification = false; play(episode: lastRequestedEpisode) }
-        }) {
-            SourceVerificationView { retryAfterVerification = true; verificationVisible = false }
-        }
-        .onDisappear { playbackTask?.cancel() }
         .task {
-            guard !store.isPreview else { return }
+            guard !detailsLoaded else { return }
+            if store.isPreview {
+                #if DEBUG
+                if item.kind == .tv {
+                    let testEpisodes = (1...2).map { MediaEpisode(id: $0, name: "Episode \($0) · Navigation test", episode_number: $0) }
+                    seasons = [ShowSeason(number: 1, name: "Season 1", episodeCount: 2, episodes: testEpisodes)]
+                    episodes = testEpisodes
+                }
+                #endif
+                detailsLoaded = true
+                return
+            }
             if item.kind == .tv { episodesLoading = true }
             do {
                 let details = try await WatchedClient.shared.detail(item)
-                refreshed = details.title; seasons = details.seasons
+                refreshed = details.title; seasons = details.seasons; detailsLoaded = true
                 let first = details.seasons.first(where: { $0.number > 0 }) ?? details.seasons.first
                 season = details.activeSeason ?? first?.number ?? 1
                 await loadEpisodes()
@@ -139,7 +128,7 @@ struct DetailScreen: View {
                             if let overview = episode.overview, !overview.isEmpty { Text(overview).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(2) }
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
-                }.buttonStyle(.plain).disabled(preparingPlayback)
+                }.buttonStyle(.plain).accessibilityIdentifier("play-episode-\(season)-\(episode.episode_number)")
             }
         }
     }
@@ -160,34 +149,12 @@ struct DetailScreen: View {
     }
 
     private func play(episode selectedEpisode: MediaEpisode? = nil) {
-        guard !preparingPlayback else { return }
-        canVerifySource = false
-        if store.isPreview {
-            if ProcessInfo.processInfo.arguments.contains("-verification-ui-preview") {
-                canVerifySource = true; alertMessage = WatchedError.verificationRequired.localizedDescription
-            } else { alertMessage = store.t("وضع معاينة الواجهة لا يجري طلبات تشغيل حية.", "UI preview mode does not make live playback requests.") }
-            return
-        }
-        let title = self.title
-        lastRequestedEpisode = selectedEpisode
         let saved = store.progress.first(where: { $0.id == title.id })
         let selectedSeason: Int? = title.kind == .tv ? (selectedEpisode != nil ? season : saved?.season ?? season) : nil
         let number: Int? = title.kind == .tv ? (selectedEpisode?.episode_number ?? saved?.episode ?? episodes.first?.episode_number ?? 1) : nil
         let resume = saved?.season == selectedSeason && saved?.episode == number ? saved?.position ?? 0 : 0
-        preparingPlayback = true
-        playbackTask?.cancel()
-        playbackTask = Task {
-            defer { preparingPlayback = false }
-            do {
-                let descriptor = try await WatchedClient.shared.playback(title: title, season: selectedSeason, episode: number, resumeAt: resume)
-                try Task.checkCancellation()
-                playback = descriptor
-            } catch is CancellationError { }
-            catch {
-                canVerifySource = (error as? WatchedError)?.offersSourceVerification ?? false
-                alertMessage = error.localizedDescription
-            }
-        }
+        // Present immediately. The website owns its player/session; no native stream API is called.
+        playback = SitePlaybackRequest(title: title, season: selectedSeason, episode: number, resumeAt: resume)
     }
 }
 
@@ -204,15 +171,12 @@ struct SettingsScreen: View {
                     }
                 }
                 Section(store.t("المشاهدة", "Watching")) {
-                    Picker(store.t("لغة الترجمة المفضلة", "Preferred subtitle language"), selection: $store.subtitleLanguage) {
-                        Text("العربية").tag("ar")
-                        Text("English").tag("en")
-                        Text(store.t("إيقاف", "Off")).tag("off")
-                    }
+                    Text(store.t("تقدر تغيّر الجودة والترجمة من إعدادات مشغّل الموقع أثناء المشاهدة.", "Change quality and subtitles in the website player while watching."))
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section {
-                    HStack { Wordmark(); Spacer(); Text("Native · \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")").font(.caption).foregroundStyle(.secondary) }
-                    Text(store.t("تطبيق أفلام ومسلسلات بمشغّل نيتف. توفر المحتوى والترجمة يعتمد على المصدر.", "Movies and shows with native playback. Content and subtitle availability depend on the source."))
+                    HStack { Wordmark(); Spacer(); Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")").font(.caption).foregroundStyle(.secondary) }
+                    Text(store.t("تصفح أفلام ومسلسلات بواجهة نيتف، ومشاهدة بمشغّل الموقع داخل التطبيق.", "Native browsing with the website player inside the app."))
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }

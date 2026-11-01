@@ -1,28 +1,28 @@
-# Watched Native — iOS 17+
+# Watched — iOS 17+
 
-The supplied homepage, movie/show archives and Silo watch-page source were inspected locally. The Silo server-rendered payload identifies the initial stream, exact episode progress target, subtitles and server clearance status. The repository includes selected public metadata, compressed artwork and sanitized test fixtures; it excludes the original archives, account data, page scripts, captured tickets/cookies and signed media/subtitle URLs.
+Version 1.2.0 keeps SwiftUI browsing and replaces the active native-playback launch with the website's own player, as requested after native source access continued to fail on the user's phone.
 
-Implemented in this branch:
+## Playback and return
 
-- SwiftUI home, movies, shows, search, detail, watchlist and settings screens; Arabic/English and RTL.
-- Site colours and the homepage’s real featured titles and rows. No live channels screen or channel model.
-- A native URLSession adapter for the observed HTML/Flight serialization and catalogue actions.
-- A clearly identified saved homepage when network refresh fails. Search fallback is limited to that saved copy.
-- Film and episode buttons first GET their canonical `/movie/{id}` or `/tv/{id}?s={season}&e={episode}` watch page and read its initial stream. The exact progress target must match, relative URLs are resolved and `cleared: false` is respected. Cached/archived stream links are never reused. The previous release incorrectly started at a protected server-switch API.
-- Only a matched, cleared but unavailable initial stream can use the observed server-switch/fallback request. A denied request does not probe alternate routes. Expired playback can refresh its watch-page session once.
-- A single AVPlayer/AVPlayerLayer, fullscreen, seeking/resume, quality selection from actual source metadata/HLS master renditions, embedded/external SRT/VTT captions, Arabic preference and manual timing. HLS quality limits retain the master playlist so alternate audio tracks are not dropped by selecting isolated variant playlists.
-- Additional subtitles load from the observed `/api/vod/subtitles` request without delaying video. Allocated playback sessions are released on close. Temporary URLs/session values stay in memory.
+- Tapping a film or episode immediately presents one fullscreen WKWebView at `https://watched.cx/movie/{id}` or `/tv/{id}?s={season}&e={episode}`. No native stream-resolution request runs before presentation. Saved resume time is included only for the matching episode.
+- The website owns video playback, quality, subtitles, session refresh and any interactive verification. The persistent default WebKit data store retains its ordinary in-app website session. No Safari session, captured tickets, custom user agent, clearance fabrication or automated security check is used.
+- A native close button always returns to the original SwiftUI detail/episode list. The site's own Back button, regular links to browsing/home, Next.js history changes out of a watch route and the iPhone video fullscreen Done event also dismiss the player instead of opening the website catalogue.
+- Next-episode watch routes stay in the same web player. External windows cannot replace the app. Normal HTTPS provider/security subframes remain available.
+- Progress events contain only the watch-page target and playback timing. The app keeps matching-title progress; no media URLs, tokens, page contents or cookies are extracted by the player bridge.
+- Closing pauses and unloads the web document. Reopening creates a new player. Detail data and the selected season remain intact when the modal closes.
 
-## Source access
+## Browsing
 
-If the source asks for verification, an explicit native action opens a separate first-party verification sheet. WebKit is confined to this security step; no web film player is used by the app. The user completes the site's own check and chooses to return. Only that in-app first-party session is shared with the native client and AVFoundation using standard cookie APIs. No Safari cookies, archived tokens, fabricated clearance, automated challenge solving or browser/user-agent impersonation is used. If the site continues to reject the native request, its access failure remains visible.
+The home, movie/show catalogue, search, detail, watchlist and settings remain native SwiftUI, with Arabic/English and RTL. There is no channels tab. The metadata adapter still reads the supplied site's HTML/Flight data. A saved homepage is clearly identified when a live refresh fails. Original web archives, account data, captured tickets/cookies and signed media/subtitle URLs are not shipped.
 
-## Validation limits
+The earlier AVPlayer implementation and its parsing/decoder tests remain in the repository, but film/episode buttons no longer launch it. Subtitle and quality preferences now belong to the website player and the app settings explain where to change them.
 
-Tests reproduce the sanitized Silo payload across split script chunks and cover watch-page GETs, exact episode matching, relative stream/subtitle URLs, fresh leases, cleared-false handling, terminal access denial and first-party cookie boundaries. Native UI tests cover home/details and a cancellable, offline verification-sheet preview. A separate generated local MP4 smoke test requires AVPlayer to deliver real decoded frames. The test pattern is a test-target resource and is never substituted for a Watched title or shipped in the app.
+## Validation
 
-The GitHub workflow performs simulator unit/UI tests and builds/packages an unsigned iPhone/iPad app. A successful build does not validate live Watched playback. Live catalogue and playback remain unverified from the inspection network rejected by the site.
+Unit tests cover exact direct movie/episode URLs, fresh player identity, return-to-app routing, next-episode handling and external-window boundaries. Simulator UI tests use an explicitly labelled offline HTML navigation fixture to exercise native close, website Back, SPA Back, fullscreen Done, exact episode selection and reopening while preserving the episode list. The fixture is compiled only in DEBUG and does not ship in the release IPA. No sample film is substituted for site content.
+
+The GitHub workflow runs unit/UI checks and packages an unsigned arm64 iPhone/iPad IPA. Live Watched playback remains unverified from the inspection network rejected by the source. Device signing and the website's own normal access checks still apply.
 
 ## Build
 
-Run `xcodegen generate --spec project-watched.yml`, then build/test the `WatchedNative` scheme. Device builds are unsigned and need signing for installation. Version 1.1.0 fixes watch initialization and adds explicit source verification; live Watched playback still requires validation on a network the site accepts.
+Run `xcodegen generate --spec project-watched.yml`, then build/test the `WatchedNative` scheme. Version 1.2.0 uses the website player for playback and returns directly to the native app on close.
