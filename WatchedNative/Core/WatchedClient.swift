@@ -74,7 +74,7 @@ actor WatchedClient {
         throw WatchedError.malformed
     }
 
-    func detail(_ title: MediaTitle) async throws -> MediaTitle {
+    func detail(_ title: MediaTitle) async throws -> TitleDetails {
         let (data, _) = try await get(title.detailPath)
         return try HTMLFlightDecoder.document(fromHTML: String(decoding: data, as: UTF8.self)).detail(fallback: title)
     }

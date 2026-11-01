@@ -37,6 +37,18 @@ final class WatchedNativeTests: XCTestCase {
         XCTAssertThrowsError(try FlightDocument("0:{\"error\":\"blocked\"}\n").home())
     }
 
+    func testObservedDetailSchemaUsesActualSeasonsAndNormalizedArtwork() throws {
+        let fallback = try XCTUnwrap(MediaTitle(site: ["id": 1396, "name": "Breaking Bad", "media_type": "tv"]))
+        let value = "0:[\"$\",\"$Ldetail\",null,{\"activeSeason\":2,\"item\":{\"id\":1396,\"title\":\"Breaking Bad\",\"type\":\"tv\",\"poster\":\"/poster.jpg\",\"backdrop\":\"/back.jpg\",\"rating\":9.2,\"releaseDate\":\"2008-01-20\",\"genres\":[\"Drama\"],\"seasons\":[{\"number\":2,\"name\":\"Season 2\",\"episodeCount\":1,\"episodes\":[{\"id\":10,\"number\":1,\"name\":\"Seven Thirty-Seven\",\"still\":\"/still.jpg\"}]}]}}]\n"
+        let details = try FlightDocument(value).detail(fallback: fallback)
+        XCTAssertEqual(details.title.posterPath, "/poster.jpg")
+        XCTAssertEqual(details.title.year, "2008")
+        XCTAssertEqual(details.title.rating, 9.2)
+        XCTAssertEqual(details.activeSeason, 2)
+        XCTAssertEqual(details.seasons.map(\.number), [2])
+        XCTAssertEqual(details.seasons.first?.episodes.first?.episode_number, 1)
+    }
+
     func testSubtitlesPreserveArabicAndRespectDelayAndCueEnd() {
         let source = "WEBVTT\n\n00:00:01.000 --> 00:00:03.000 align:center\n<b>أهلاً يا حسن</b>\n\n00:00:04.000 --> 00:00:06.000\nSecond line\n"
         let cues = SubtitleParser.parse(source)

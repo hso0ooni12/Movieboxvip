@@ -15,6 +15,7 @@ final class PlayerSession: ObservableObject {
     @Published var sourceID: String?
     @Published var subtitleID: String?
     @Published var caption = ""
+    @Published var subtitleError: String?
     @Published var subtitleOffset = 0.0
     @Published var embeddedTracks: [(id: String, label: String)] = []
     private var captions: [SubtitleCue] = []
@@ -30,6 +31,7 @@ final class PlayerSession: ObservableObject {
     private var failedSources = Set<String>()
     private var hasStarted = false
     private var initialCaptionSelection = false
+    private var pendingResume: Double?
 
     init(descriptor: PlaybackDescriptor) { self.descriptor = descriptor }
 
@@ -69,6 +71,7 @@ final class PlayerSession: ObservableObject {
         startupTask?.cancel(); notifications.removeAll(); itemObservation = nil
         let identity = UUID(); generation = identity
         sourceID = source.id; error = nil; loading = true; mediaOptions = [:]; embeddedTracks = []
+        pendingResume = time
         let item = AVPlayerItem(url: source.url)
         item.preferredForwardBufferDuration = 8
         player.replaceCurrentItem(with: item)
@@ -79,6 +82,7 @@ final class PlayerSession: ObservableObject {
                 case .readyToPlay:
                     if time > 0 { _ = await self.player.seek(to: CMTime(seconds: time, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) }
                     guard self.generation == identity else { return }
+                    self.pendingResume = nil
                     self.player.play()
                     await self.loadEmbeddedTracks(item, identity: identity, preferredLanguage: preferredLanguage)
                 case .failed: self.failCurrentSource(preferredLanguage: preferredLanguage)
@@ -100,7 +104,7 @@ final class PlayerSession: ObservableObject {
     private func failCurrentSource(preferredLanguage: String) {
         if let sourceID { failedSources.insert(sourceID) }
         if let alternative = descriptor.sources.first(where: { !failedSources.contains($0.id) }) {
-            load(alternative, at: position, preferredLanguage: preferredLanguage)
+            load(alternative, at: pendingResume ?? position, preferredLanguage: preferredLanguage)
         } else {
             startupTask?.cancel(); player.pause(); loading = false
             error = "تعذّر تشغيل الفيديو من المصادر المتاحة / Couldn’t play the available sources"
@@ -131,7 +135,8 @@ final class PlayerSession: ObservableObject {
     }
 
     func selectSubtitle(_ id: String?) {
-        subtitleTask?.cancel(); subtitleID = id; captions = []; caption = ""
+        initialCaptionSelection = true
+        subtitleTask?.cancel(); subtitleID = id; captions = []; caption = ""; subtitleError = nil
         if let group = mediaGroup { player.currentItem?.select(id.flatMap { mediaOptions[$0] }, in: group) }
         guard let id, let track = descriptor.subtitles.first(where: { $0.id == id }) else { return }
         subtitleTask = Task { [weak self] in
@@ -142,9 +147,11 @@ final class PlayerSession: ObservableObject {
                 guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw WatchedError.malformed }
                 let source = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) ?? ""
                 guard self?.subtitleID == id else { return }
-                self?.captions = SubtitleParser.parse(source)
+                let parsed = SubtitleParser.parse(source)
+                guard !parsed.isEmpty else { throw WatchedError.malformed }
+                self?.captions = parsed
             } catch is CancellationError { }
-            catch { if self?.subtitleID == id { self?.caption = "تعذّر تحميل الترجمة / Subtitles unavailable" } }
+            catch { if self?.subtitleID == id { self?.subtitleError = "تعذّر تحميل الترجمة / Subtitles unavailable" } }
         }
     }
 
@@ -267,6 +274,7 @@ struct NativePlayerScreen: View {
                     ForEach(session.embeddedTracks, id: \.id) { Text($0.label).tag($0.id) }
                     ForEach(descriptor.subtitles) { Text($0.label).tag($0.id) }
                 }
+                if let message = session.subtitleError { Text(message).font(.footnote).foregroundStyle(WatchedTheme.accent) }
                 HStack {
                     Button("− 0.5 s") { session.subtitleOffset -= 0.5 }
                     Spacer()

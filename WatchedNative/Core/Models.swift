@@ -40,11 +40,11 @@ struct MediaTitle: Identifiable, Hashable, Codable, Sendable {
             ?? fallback ?? (value["title"] != nil ? .movie : .tv)
         self.name = name
         overview = value["overview"] as? String ?? ""
-        posterPath = value["poster_path"] as? String
-        backdropPath = value["backdrop_path"] as? String
-        releaseDate = (value["release_date"] as? String) ?? (value["first_air_date"] as? String)
-        rating = (value["vote_average"] as? NSNumber)?.doubleValue ?? 0
-        genres = (value["genres"] as? [[String: Any]])?.compactMap { $0["name"] as? String } ?? []
+        posterPath = (value["poster_path"] as? String) ?? (value["poster"] as? String)
+        backdropPath = (value["backdrop_path"] as? String) ?? (value["backdrop"] as? String)
+        releaseDate = (value["release_date"] as? String) ?? (value["first_air_date"] as? String) ?? (value["releaseDate"] as? String)
+        rating = (value["vote_average"] as? NSNumber)?.doubleValue ?? (value["rating"] as? NSNumber)?.doubleValue ?? 0
+        genres = (value["genres"] as? [[String: Any]])?.compactMap { $0["name"] as? String } ?? (value["genres"] as? [String]) ?? []
         runtime = (value["runtime"] as? NSNumber)?.intValue
     }
 }
@@ -96,6 +96,20 @@ struct MediaEpisode: Identifiable, Codable, Sendable {
     let episode_number: Int
     var still_path: String?
     var overview: String?
+}
+
+struct ShowSeason: Identifiable, Sendable {
+    let number: Int
+    let name: String
+    let episodeCount: Int
+    let episodes: [MediaEpisode]
+    var id: Int { number }
+}
+
+struct TitleDetails: Sendable {
+    let title: MediaTitle
+    var seasons: [ShowSeason] = []
+    var activeSeason: Int?
 }
 
 struct WatchProgress: Codable, Identifiable, Sendable {

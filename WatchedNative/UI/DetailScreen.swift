@@ -5,6 +5,7 @@ struct DetailScreen: View {
     @EnvironmentObject private var store: AppStore
     @State private var refreshed: MediaTitle?
     @State private var season = 1
+    @State private var seasons: [ShowSeason] = []
     @State private var episodes: [MediaEpisode] = []
     @State private var episodesLoading = false
     @State private var episodeError: String?
@@ -71,7 +72,15 @@ struct DetailScreen: View {
         } message: { Text(alertMessage ?? "") }
         .task {
             guard !store.isPreview else { return }
-            refreshed = try? await WatchedClient.shared.detail(item)
+            if item.kind == .tv { episodesLoading = true }
+            do {
+                let details = try await WatchedClient.shared.detail(item)
+                refreshed = details.title; seasons = details.seasons
+                let first = details.seasons.first(where: { $0.number > 0 }) ?? details.seasons.first
+                season = details.activeSeason ?? first?.number ?? 1
+                await loadEpisodes()
+            } catch is CancellationError { }
+            catch { episodeError = error.localizedDescription; episodesLoading = false }
         }
         .task(id: season) { await loadEpisodes() }
     }
@@ -81,9 +90,15 @@ struct DetailScreen: View {
             HStack {
                 Text(store.t("الحلقات", "Episodes")).font(.system(size: 18, weight: .bold))
                 Spacer()
-                Stepper(value: $season, in: 1...100) {
-                    Text(store.t("الموسم \(season)", "Season \(season)")).font(.system(size: 13, weight: .medium))
-                }.fixedSize()
+                if !seasons.isEmpty {
+                    Menu {
+                        ForEach(seasons) { option in
+                            Button(store.t("الموسم \(option.number) · \(option.episodeCount) حلقة", "Season \(option.number) · \(option.episodeCount) episodes")) { season = option.number }
+                        }
+                    } label: {
+                        Label(store.t("الموسم \(season)", "Season \(season)"), systemImage: "chevron.down").font(.system(size: 13, weight: .medium))
+                    }
+                }
             }
             if episodesLoading { ProgressView().frame(maxWidth: .infinity).padding() }
             else if let episodeError { Text(episodeError).font(.caption).foregroundStyle(.secondary) }
@@ -103,7 +118,8 @@ struct DetailScreen: View {
         }
     }
     private func loadEpisodes() async {
-        guard title.kind == .tv, !store.isPreview else { return }
+        guard title.kind == .tv, !store.isPreview, let selected = seasons.first(where: { $0.number == season }) else { return }
+        if !selected.episodes.isEmpty { episodes = selected.episodes; episodesLoading = false; episodeError = nil; return }
         let requestedSeason = season
         episodesLoading = true; episodeError = nil
         do {

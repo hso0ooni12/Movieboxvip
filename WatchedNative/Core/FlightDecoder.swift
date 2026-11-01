@@ -116,12 +116,25 @@ struct FlightDocument {
         throw WatchedError.malformed
     }
 
-    func detail(fallback: MediaTitle) -> MediaTitle {
+    func detail(fallback: MediaTitle) throws -> TitleDetails {
         for props in dictionaries() {
-            if let value = props["detail"] as? [String: Any],
-               let title = MediaTitle(site: value, kind: fallback.kind), title.tmdbID == fallback.tmdbID { return title }
+            // The inspected browse component receives {item, activeSeason}. Its item uses the site's normalized fields.
+            if let value = props["item"] as? [String: Any],
+               let title = MediaTitle(site: value, kind: fallback.kind), title.tmdbID == fallback.tmdbID {
+                let seasons = (value["seasons"] as? [[String: Any]] ?? []).compactMap { raw -> ShowSeason? in
+                    guard let number = raw["number"] as? Int, number >= 0 else { return nil }
+                    let episodes = (raw["episodes"] as? [[String: Any]] ?? []).compactMap { episode -> MediaEpisode? in
+                        guard let id = episode["id"] as? Int, let episodeNumber = episode["number"] as? Int,
+                              let name = episode["name"] as? String else { return nil }
+                        return MediaEpisode(id: id, name: name, episode_number: episodeNumber,
+                                            still_path: episode["still"] as? String, overview: episode["overview"] as? String)
+                    }
+                    return ShowSeason(number: number, name: raw["name"] as? String ?? "", episodeCount: raw["episodeCount"] as? Int ?? episodes.count, episodes: episodes)
+                }
+                return TitleDetails(title: title, seasons: seasons, activeSeason: props["activeSeason"] as? Int)
+            }
         }
-        return fallback
+        throw WatchedError.malformed
     }
 }
 

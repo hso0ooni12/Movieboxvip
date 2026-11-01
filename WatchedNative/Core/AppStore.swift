@@ -27,6 +27,7 @@ final class AppStore: ObservableObject {
         } else { home = HomeSnapshot(featured: [], rails: [], providers: [], capturedAt: nil) }
         if let data = defaults.data(forKey: "watched.saved"), let values = try? JSONDecoder().decode([MediaTitle].self, from: data) { saved = values }
         if let data = defaults.data(forKey: "watched.progress"), let values = try? JSONDecoder().decode([WatchProgress].self, from: data) { progress = values }
+        if isPreview { connectionMessage = t("نسخة تجريبية · بيانات محفوظة من الموقع", "Browsing preview · Saved site data") }
     }
 
     func t(_ arabic: String, _ english: String) -> String { language == "ar" ? arabic : english }
