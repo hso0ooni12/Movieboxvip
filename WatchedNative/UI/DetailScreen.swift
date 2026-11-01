@@ -8,6 +8,8 @@ struct DetailScreen: View {
     @State private var seasons: [ShowSeason] = []
     @State private var episodes: [MediaEpisode] = []
     @State private var episodesLoading = false
+    @State private var loadingEpisodeSeason: Int?
+    @State private var loadingEpisodeID: UUID?
     @State private var episodeError: String?
     @State private var playback: SitePlaybackRequest?
     @State private var detailsLoaded = false
@@ -132,27 +134,38 @@ struct DetailScreen: View {
     }
     private func loadEpisodes() async {
         guard title.kind == .tv, !store.isPreview, let selected = seasons.first(where: { $0.number == season }) else { return }
-        if !selected.episodes.isEmpty { episodes = selected.episodes; episodesLoading = false; episodeError = nil; return }
+        if !selected.episodes.isEmpty {
+            episodes = selected.episodes; episodesLoading = false; episodeError = nil
+            loadingEpisodeSeason = nil; loadingEpisodeID = nil
+            return
+        }
         let requestedSeason = season
+        guard loadingEpisodeSeason != requestedSeason else { return }
+        let requestID = UUID()
+        loadingEpisodeSeason = requestedSeason; loadingEpisodeID = requestID
         episodesLoading = true; episodeError = nil
+        episodes = []
         do {
             let values = try await WatchedClient.shared.episodes(tmdbID: title.tmdbID, season: requestedSeason)
-            guard season == requestedSeason else { return }
+            guard season == requestedSeason, loadingEpisodeID == requestID else { return }
             episodes = values; episodesLoading = false
-        } catch is CancellationError { }
+        } catch is CancellationError {
+            if loadingEpisodeID == requestID { episodesLoading = false }
+        }
         catch {
-            guard season == requestedSeason else { return }
+            guard season == requestedSeason, loadingEpisodeID == requestID else { return }
             episodeError = error.localizedDescription; episodes = []; episodesLoading = false
         }
+        if loadingEpisodeID == requestID { loadingEpisodeSeason = nil; loadingEpisodeID = nil }
     }
 
     private func play(episode selectedEpisode: MediaEpisode? = nil) {
         guard playback == nil else { return }
         let saved = store.progress.first(where: { $0.id == title.id })
-        let selectedSeason: Int? = title.kind == .tv ? (selectedEpisode != nil ? season : saved?.season ?? season) : nil
-        let number: Int? = title.kind == .tv ? (selectedEpisode?.episode_number ?? saved?.episode ?? episodes.first?.episode_number ?? 1) : nil
         // System Safari owns the live session and resume timing; do not inject stale native progress.
-        playback = SitePlaybackRequest(title: title, season: selectedSeason, episode: number)
+        playback = SitePlaybackRequest.selected(title: title, visibleSeason: season,
+                                                visibleEpisodes: episodes, tappedEpisode: selectedEpisode,
+                                                savedProgress: saved)
     }
 }
 

@@ -13,6 +13,22 @@ struct SitePlaybackRequest: Identifiable {
         self.episode = title.kind == .tv ? max(1, episode ?? 1) : nil
     }
 
+    /// Keep "Play now" in the season the viewer is looking at. An older native
+    /// progress entry must not silently jump to a different season; the website
+    /// itself remains responsible for resuming its playback session.
+    static func selected(
+        title: MediaTitle,
+        visibleSeason: Int,
+        visibleEpisodes: [MediaEpisode],
+        tappedEpisode: MediaEpisode?,
+        savedProgress: WatchProgress?
+    ) -> SitePlaybackRequest {
+        guard title.kind == .tv else { return SitePlaybackRequest(title: title) }
+        let resumeEpisode = savedProgress?.season == visibleSeason ? savedProgress?.episode : nil
+        let episode = tappedEpisode?.episode_number ?? resumeEpisode ?? visibleEpisodes.first?.episode_number ?? 1
+        return SitePlaybackRequest(title: title, season: visibleSeason, episode: episode)
+    }
+
     var url: URL {
         var components = URLComponents()
         components.scheme = "https"; components.host = "watched.cx"

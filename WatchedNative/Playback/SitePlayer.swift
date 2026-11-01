@@ -6,7 +6,9 @@ enum SystemSafariPlayerFactory {
     static func make(url: URL) -> SFSafariViewController {
         let configuration = SFSafariViewController.Configuration()
         configuration.entersReaderIfAvailable = false
-        configuration.barCollapsingEnabled = true
+        // The viewer must always be able to find Close, even after a long scroll
+        // or a website navigation that hides Safari's collapsible toolbar.
+        configuration.barCollapsingEnabled = false
         let browser = SFSafariViewController(url: url, configuration: configuration)
         browser.dismissButtonStyle = .close
         browser.overrideUserInterfaceStyle = .dark
