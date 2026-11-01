@@ -1,0 +1,97 @@
+name: Build Watched Native Preview
+
+on:
+  push:
+    branches: ["watched-native-*"]
+    paths:
+      - "WatchedNative/**"
+      - "Tests/**"
+      - "UITests/**"
+      - "project-watched.yml"
+      - ".github/workflows/build-watched-native.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-validation:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate native project
+        run: xcodegen generate --spec project-watched.yml
+      - name: Choose simulator
+        shell: bash
+        run: |
+          xcrun simctl list devices available -j > /tmp/watched-simulators.json
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json
+          data = json.load(open('/tmp/watched-simulators.json'))
+          devices = [d for key, group in data['devices'].items() if 'iOS' in key for d in group if d.get('isAvailable') and d['name'].startswith('iPhone')]
+          if not devices:
+              raise SystemExit('No available iPhone simulator')
+          selected = sorted(devices, key=lambda d: (not ('Pro' in d['name']), d['name']))[0]
+          print('WATCHED_SIMULATOR_ID=' + selected['udid'])
+          PY
+      - name: Unit and native UI tests
+        shell: bash
+        run: |
+          mkdir -p build-watched
+          set -o pipefail
+          xcodebuild test \
+            -project WatchedNative.xcodeproj \
+            -scheme WatchedNative \
+            -destination "platform=iOS Simulator,id=$WATCHED_SIMULATOR_ID" \
+            -derivedDataPath build-watched/DerivedData \
+            -resultBundlePath build-watched/Tests.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee build-watched/tests.log
+      - name: Export native screenshots
+        if: always()
+        shell: bash
+        run: |
+          if [ -d build-watched/Tests.xcresult ]; then
+            mkdir -p build-watched/screenshots
+            xcrun xcresulttool export attachments --path build-watched/Tests.xcresult --output-path build-watched/screenshots || true
+          fi
+      - name: Build unsigned device preview
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project WatchedNative.xcodeproj \
+            -scheme WatchedNative \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build-watched/Device \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            | tee build-watched/device.log
+      - name: Package browsing preview
+        shell: bash
+        run: |
+          mkdir -p build-watched/Package/Payload
+          ditto build-watched/Device/Build/Products/Release-iphoneos/WatchedNative.app build-watched/Package/Payload/WatchedNative.app
+          cd build-watched/Package
+          zip -qry ../Watched-Browse-Preview-unsigned.ipa Payload
+          cd ..
+          unzip -t Watched-Browse-Preview-unsigned.ipa
+          shasum -a 256 Watched-Browse-Preview-unsigned.ipa > SHA256.txt
+          printf '%s\n' 'SwiftUI native browsing preview. Watched VOD playback integration is pending the watch-page archive. Not a completed streaming release.' > PREVIEW-STATUS.txt
+      - name: Upload preview and validation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: watched-native-preview-validation
+          path: |
+            build-watched/*.ipa
+            build-watched/*.txt
+            build-watched/*.log
+            build-watched/screenshots
+          if-no-files-found: warn
+          retention-days: 14
