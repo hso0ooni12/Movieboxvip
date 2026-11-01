@@ -63,9 +63,15 @@ final class WatchedNativeUITests: XCTestCase {
     private func closeSafari(in app: XCUIApplication) {
         let predicate = NSPredicate(format: "label IN %@", ["Close", "Done", "Dismiss", "إغلاق", "تم"])
         let local = app.buttons.matching(predicate).firstMatch
-        if local.waitForExistence(timeout: 4) { local.tap(); return }
+        if local.waitForExistence(timeout: 4) {
+            // Safari's Address accessibility frame overlaps Close. XCTest's automatic hit point
+            // can land on the rounded button's corner; tap the visible control's centre.
+            local.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            return
+        }
         let system = XCUIApplication(bundleIdentifier: "com.apple.SafariViewService").buttons.matching(predicate).firstMatch
-        XCTAssertTrue(system.waitForExistence(timeout: 6)); system.tap()
+        XCTAssertTrue(system.waitForExistence(timeout: 6))
+        system.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
     @MainActor
