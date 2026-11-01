@@ -1,28 +1,27 @@
 # Watched — iOS 17+
 
-Version 1.2.0 keeps SwiftUI browsing and replaces the active native-playback launch with the website's own player, as requested after native source access continued to fail on the user's phone.
+Version 1.3.0 replaces the customized WKWebView player with Apple's genuine SFSafariViewController after the user demonstrated the same title/provider playing in Safari and remaining at Connecting in the app. Those screenshots establish a compatibility difference, not the precise failing request or cause.
 
-## Playback and return
+## Playback
 
-- Tapping a film or episode immediately presents one fullscreen WKWebView at `https://watched.cx/movie/{id}` or `/tv/{id}?s={season}&e={episode}`. No native stream-resolution request runs before presentation. Saved resume time is included only for the matching episode.
-- The website owns video playback, quality, subtitles, session refresh and any interactive verification. The persistent default WebKit data store retains its ordinary in-app website session. No Safari session, captured tickets, custom user agent, clearance fabrication or automated security check is used.
-- A native close button always returns to the original SwiftUI detail/episode list. The site's own Back button, regular links to browsing/home, Next.js history changes out of a watch route and the iPhone video fullscreen Done event also dismiss the player instead of opening the website catalogue.
-- Next-episode watch routes stay in the same web player. External windows cannot replace the app. Normal HTTPS provider/security subframes remain available.
-- Progress events contain only the watch-page target and playback timing. The app keeps matching-title progress; no media URLs, tokens, page contents or cookies are extracted by the player bridge.
-- Closing pauses and unloads the web document. Reopening creates a new player. Detail data and the selected season remain intact when the modal closes.
+- A film/episode tap directly builds the canonical HTTPS watch-page URL. No native stream-resolution request runs before opening it. The selected season/episode is preserved; stale native resume timing is no longer injected.
+- A small UIKit presentation host calls `present(_:animated:)` to display the real Safari controller modally. Safari is never embedded as a child, hidden behind another view or covered by a custom player toolbar.
+- There is no player script injection, navigation interception, history replacement, custom user agent, cookie transfer, certificate exception, provider proxy or custom content blocker. The source controls playback, subtitle/quality selection, verification and its own browsing session.
+- Safari's visible system Close (x) control dismisses directly to the original native detail/episode list. A single presentation guard handles repeated taps. Closing and reopening creates a fresh Safari controller while preserving native selection and scroll state.
+- Website Back and fullscreen controls now behave as the website/system defines them. Their navigation cannot be intercepted by this app in SFSafariViewController. Use the system Safari Close button to return to the native app. No claim is made that existing Safari app cookies are shared or that the screenshots' exact cause is proven.
 
 ## Browsing
 
-The home, movie/show catalogue, search, detail, watchlist and settings remain native SwiftUI, with Arabic/English and RTL. There is no channels tab. The metadata adapter still reads the supplied site's HTML/Flight data. A saved homepage is clearly identified when a live refresh fails. Original web archives, account data, captured tickets/cookies and signed media/subtitle URLs are not shipped.
+The home, movie/show catalogue, search, details, watchlist and settings remain native SwiftUI with Arabic/English and RTL. There is no channels tab. The earlier native decoder and source-verification implementations remain in the repository, but film/episode buttons do not launch them. The app does not inspect live Safari page content or track Safari playback progress.
 
-The earlier AVPlayer implementation and its parsing/decoder tests remain in the repository, but film/episode buttons no longer launch it. Subtitle and quality preferences now belong to the website player and the app settings explain where to change them.
+Original web archives, account data, captured tickets/cookies and signed media/subtitle URLs are not shipped.
 
 ## Validation
 
-Unit tests cover exact direct movie/episode URLs, fresh player identity, return-to-app routing, next-episode handling and external-window boundaries. Simulator UI tests use an explicitly labelled offline HTML navigation fixture to exercise native close, website Back, SPA Back, fullscreen Done, exact episode selection and reopening while preserving the episode list. The fixture is compiled only in DEBUG and does not ship in the release IPA. No sample film is substituted for site content.
+Unit checks validate direct movie/episode targets and instantiate Apple's actual Safari controller with its system Close control. Simulator UI checks open the real Safari service against a DEBUG-only loopback HTML fixture, then exercise closing, ordinary website navigation, exact episode selection and reopening. The fixture is explicitly labelled offline, contains no substitute film, binds only to loopback and is not compiled into the release IPA. No mock browser is used to stand in for Safari UI.
 
-The GitHub workflow runs unit/UI checks and packages an unsigned arm64 iPhone/iPad IPA. Live Watched playback remains unverified from the inspection network rejected by the source. Device signing and the website's own normal access checks still apply.
+Successful tests establish app presentation/return behavior. Live Watched playback and the user's specific Trojan stream remain unverified from the inspection network rejected by the source.
 
 ## Build
 
-Run `xcodegen generate --spec project-watched.yml`, then build/test the `WatchedNative` scheme. Version 1.2.0 uses the website player for playback and returns directly to the native app on close.
+Run `xcodegen generate --spec project-watched.yml`, then build/test the `WatchedNative` scheme. Version 1.3.0 is an unsigned arm64 iPhone/iPad app for iOS 17+, requiring signing for installation.

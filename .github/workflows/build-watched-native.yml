@@ -82,7 +82,7 @@ jobs:
           cd ..
           unzip -t Watched-Native-unsigned.ipa
           shasum -a 256 Watched-Native-unsigned.ipa > SHA256.txt
-          printf '%s\n' 'SwiftUI browsing + the website player in one fullscreen WKWebView. Film/episode buttons open the public watch route directly; closing returns to the native detail screen. Unit/UI checks use offline fixtures; live Watched playback is not verified from the inspection network. Unsigned device app; iOS 17+.' > BUILD-INFO.txt
+          printf '%s\n' 'SwiftUI browsing + Apple system Safari (SFSafariViewController), presented modally. Direct movie/episode watch URLs; system Close returns to native details. Real Safari UI checks use a DEBUG-only loopback HTML fixture. Live Watched/Trojan playback remains unverified. Unsigned iPhone/iPad app; iOS 17+.' > BUILD-INFO.txt
       - name: Upload native app and validation
         if: always()
         uses: actions/upload-artifact@v4

@@ -2,38 +2,37 @@ import XCTest
 
 final class WatchedNativeUITests: XCTestCase {
     @MainActor
-    func testNativeBrowseAndDetailScreens() {
+    func testSystemSafariCloseReturnsDirectlyToOriginalNativeDetails() {
         let app = launchPreview()
         openFirstMovie(app)
         capture("02-native-details")
-        XCTAssertTrue(app.buttons["play-title"].exists)
         app.buttons["play-title"].tap()
-        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 8))
-        XCTAssertTrue(app.webViews.staticTexts["/movie/1400940"].waitForExistence(timeout: 8))
+        XCTAssertTrue(browserText("/movie/1400940", in: app).waitForExistence(timeout: 12))
         XCTAssertFalse(app.alerts.firstMatch.exists)
-        capture("03-website-player-offline-navigation-test")
-        app.buttons["close-site-player"].tap()
-        XCTAssertTrue(app.staticTexts["detail-title"].waitForExistence(timeout: 5))
+        capture("03-real-system-safari-offline-fixture")
+        closeSafari(in: app)
+        XCTAssertTrue(app.staticTexts["detail-title"].waitForExistence(timeout: 8))
+        XCTAssertEqual(app.staticTexts["detail-title"].label, "Clayface")
         XCTAssertFalse(app.webViews.firstMatch.exists)
     }
 
     @MainActor
-    func testWebsiteBackSPAAndFullscreenDoneReturnToAppInsteadOfWebsite() {
+    func testWebsiteNavigationStillAllowsSystemCloseToReturnToApp() {
         let app = launchPreview()
         openFirstMovie(app)
-        for label in ["Back", "SPA Back", "Fullscreen Done"] {
-            app.buttons["play-title"].tap()
-            let button = app.webViews.buttons[label]
-            XCTAssertTrue(button.waitForExistence(timeout: 8), "Missing fixture control: \(label)")
-            button.tap()
-            XCTAssertTrue(app.staticTexts["detail-title"].waitForExistence(timeout: 6), "\(label) should dismiss into the original detail screen")
-            XCTAssertFalse(app.webViews.firstMatch.exists)
-            XCTAssertEqual(app.staticTexts["detail-title"].label, "Clayface")
-        }
+        app.buttons["play-title"].tap()
+        XCTAssertTrue(browserText("/movie/1400940", in: app).waitForExistence(timeout: 12))
+        let back = app.webViews.links["Website back"]
+        if back.waitForExistence(timeout: 3) { back.tap() }
+        else { XCUIApplication(bundleIdentifier: "com.apple.SafariViewService").webViews.links["Website back"].tap() }
+        XCTAssertTrue(browserText("Offline browser navigation fixture", in: app).waitForExistence(timeout: 10))
+        closeSafari(in: app)
+        XCTAssertTrue(app.staticTexts["detail-title"].waitForExistence(timeout: 8))
+        XCTAssertEqual(app.staticTexts["detail-title"].label, "Clayface")
     }
 
     @MainActor
-    func testEpisodeOpensExactWebsitePlayerAndClosePreservesEpisodeList() {
+    func testEpisodeOpensExactURLAndClosingPreservesListAndReopening() {
         let app = launchPreview()
         app.tabBars.buttons["المسلسلات"].tap()
         let show = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Lupin,")).firstMatch
@@ -44,15 +43,29 @@ final class WatchedNativeUITests: XCTestCase {
         let episode = app.buttons["play-episode-1-2"]
         for _ in 0..<4 { if episode.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(episode.isHittable)
-        episode.tap()
-        XCTAssertTrue(app.webViews.staticTexts["/tv/96677?s=1&e=2"].waitForExistence(timeout: 8))
-        app.buttons["close-site-player"].tap()
-        XCTAssertTrue(episode.waitForExistence(timeout: 6))
-        XCTAssertTrue(episode.isHittable)
-        XCTAssertFalse(app.webViews.firstMatch.exists)
-        episode.tap()
-        XCTAssertTrue(app.webViews.staticTexts["/tv/96677?s=1&e=2"].waitForExistence(timeout: 8))
-        app.buttons["close-site-player"].tap()
+        for _ in 0..<2 {
+            episode.tap()
+            XCTAssertTrue(browserText("/tv/96677?s=1&e=2", in: app).waitForExistence(timeout: 12))
+            closeSafari(in: app)
+            XCTAssertTrue(episode.waitForExistence(timeout: 8))
+            XCTAssertTrue(episode.isHittable)
+        }
+    }
+
+    @MainActor
+    private func browserText(_ label: String, in app: XCUIApplication) -> XCUIElement {
+        let local = app.webViews.staticTexts[label]
+        if local.waitForExistence(timeout: 3) { return local }
+        return XCUIApplication(bundleIdentifier: "com.apple.SafariViewService").webViews.staticTexts[label]
+    }
+
+    @MainActor
+    private func closeSafari(in app: XCUIApplication) {
+        let predicate = NSPredicate(format: "label IN %@", ["Close", "Done", "Dismiss", "إغلاق", "تم"])
+        let local = app.buttons.matching(predicate).firstMatch
+        if local.waitForExistence(timeout: 4) { local.tap(); return }
+        let system = XCUIApplication(bundleIdentifier: "com.apple.SafariViewService").buttons.matching(predicate).firstMatch
+        XCTAssertTrue(system.waitForExistence(timeout: 6)); system.tap()
     }
 
     @MainActor
@@ -70,7 +83,6 @@ final class WatchedNativeUITests: XCTestCase {
         XCTAssertTrue(details.waitForExistence(timeout: 12) || detailsLink.waitForExistence(timeout: 3))
         capture("01-native-home")
         XCTAssertEqual(app.tabBars.buttons.count, 5)
-        XCTAssertFalse(app.tabBars.buttons["Live TV"].exists)
         XCTAssertFalse(app.tabBars.buttons["القنوات"].exists)
         if details.exists { details.tap() } else { detailsLink.tap() }
         XCTAssertTrue(app.staticTexts["detail-title"].waitForExistence(timeout: 7))

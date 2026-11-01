@@ -71,9 +71,7 @@ struct DetailScreen: View {
         .background(WatchedTheme.background).scrollIndicators(.hidden)
         .toolbarBackground(WatchedTheme.background, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
-        .fullScreenCover(item: $playback) { request in
-            SitePlayerScreen(request: request, preview: store.isPreview)
-        }
+        .background(SafariPlayerPresenter(request: $playback, preview: store.isPreview).frame(width: 0, height: 0))
         .task {
             guard !detailsLoaded else { return }
             if store.isPreview {
@@ -149,12 +147,12 @@ struct DetailScreen: View {
     }
 
     private func play(episode selectedEpisode: MediaEpisode? = nil) {
+        guard playback == nil else { return }
         let saved = store.progress.first(where: { $0.id == title.id })
         let selectedSeason: Int? = title.kind == .tv ? (selectedEpisode != nil ? season : saved?.season ?? season) : nil
         let number: Int? = title.kind == .tv ? (selectedEpisode?.episode_number ?? saved?.episode ?? episodes.first?.episode_number ?? 1) : nil
-        let resume = saved?.season == selectedSeason && saved?.episode == number ? saved?.position ?? 0 : 0
-        // Present immediately. The website owns its player/session; no native stream API is called.
-        playback = SitePlaybackRequest(title: title, season: selectedSeason, episode: number, resumeAt: resume)
+        // System Safari owns the live session and resume timing; do not inject stale native progress.
+        playback = SitePlaybackRequest(title: title, season: selectedSeason, episode: number)
     }
 }
 
@@ -176,7 +174,7 @@ struct SettingsScreen: View {
                 }
                 Section {
                     HStack { Wordmark(); Spacer(); Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")").font(.caption).foregroundStyle(.secondary) }
-                    Text(store.t("تصفح أفلام ومسلسلات بواجهة نيتف، ومشاهدة بمشغّل الموقع داخل التطبيق.", "Native browsing with the website player inside the app."))
+                    Text(store.t("المشاهدة تفتح بنافذة سفاري داخل التطبيق. اضغط زر إغلاق سفاري للرجوع للحلقات.", "Playback opens in system Safari inside the app. Use Safari’s Close button to return to episodes."))
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
