@@ -13,10 +13,10 @@ actor ImageRepository {
     private let cache = NSCache<NSString, UIImage>()
     private let bundled: [String: String]
     init() {
-        cache.totalCostLimit = 32_000_000
         if let path = Bundle.main.url(forResource: "image-map", withExtension: "json"),
            let data = try? Data(contentsOf: path), let map = try? JSONDecoder().decode([String: String].self, from: data) { bundled = map }
         else { bundled = [:] }
+        cache.totalCostLimit = 32_000_000
     }
     func image(_ url: URL) async throws -> UIImage {
         let key = url.absoluteString as NSString

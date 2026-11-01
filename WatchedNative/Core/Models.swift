@@ -127,15 +127,17 @@ enum WatchedError: Error, LocalizedError {
     case blocked
     case server(Int)
     case malformed
-    case playbackIntegrationPending
     case unsupportedStream
+    case rateLimited
+    case unavailable
     var errorDescription: String? {
         switch self {
-        case .blocked: return "تعذّر الاتصال بالمصدر من هذه الشبكة. حاول لاحقاً."
+        case .blocked: return "المصدر رفض الطلب أو يحتاج تحققاً إضافياً. أعد المحاولة لاحقاً."
         case .server: return "المصدر غير متاح حالياً. حاول مرة ثانية."
         case .malformed: return "تعذّر تحميل بيانات هذا القسم."
-        case .playbackIntegrationPending: return "المشاهدة غير متاحة في هذه النسخة التجريبية بعد."
         case .unsupportedStream: return "صيغة الفيديو غير مدعومة على هذا الجهاز."
+        case .rateLimited: return "طلبات كثيرة خلال وقت قصير. انتظر قليلاً ثم جرّب مرة ثانية."
+        case .unavailable: return "الفيديو غير متاح من المصدر حالياً. جرّب عنواناً آخر أو أعد المحاولة لاحقاً."
         }
     }
 }

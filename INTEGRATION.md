@@ -1,6 +1,6 @@
-# Watched native integration — work in progress
+# Watched Native — iOS 17+
 
-The supplied `Home · watched.webarchive` was inspected locally. Its HTML and public JavaScript provide actual title metadata, catalogue actions, provider rows and episode-loading parameters. The repository includes only selected public title metadata and compressed artwork; it excludes the original archive, browser headers, cookies, page scripts and account data.
+The supplied homepage and Clayface Web Archives were inspected locally. Their public scripts provide title metadata, catalogue actions, provider rows, episode parameters, VOD request paths and response field usage. The repository includes only selected public metadata and compressed artwork; it excludes the original archives, browser state, account data, page scripts and signed media/subtitle URLs.
 
 Implemented in this branch:
 
@@ -8,20 +8,20 @@ Implemented in this branch:
 - Site colours and the homepage’s real featured titles and rows. No live channels screen or channel model.
 - A native URLSession adapter for the observed HTML/Flight serialization and catalogue actions; no website execution.
 - A clearly identified saved homepage when network refresh fails. Search fallback is limited to that saved copy.
-- A single AVPlayer/AVPlayerLayer implementation with source selection, embedded/external SRT/VTT captions, manual timing, resume state, cancellation and cleanup.
+- Film and episode buttons use the observed `/api/vod/server` JSON request with `server: jycdn`. Ordinary unavailable responses may use the observed `/api/vod/moviebox-fallback` request. A 401/403 or rate limit is terminal and is not worked around.
+- A single AVPlayer/AVPlayerLayer, fullscreen, seeking/resume, quality selection from actual source metadata/HLS master renditions, embedded/external SRT/VTT captions, Arabic preference and manual timing. HLS quality limits retain the master playlist so alternate audio tracks are not dropped by selecting isolated variant playlists.
+- Additional subtitles load from the observed `/api/vod/subtitles` request without delaying video. Allocated playback sessions are released on close. Temporary URLs/session values stay in memory.
 
-## Blocking dependency
+## Source access
 
-The homepage archive contains no VOD watch-page JavaScript, playback response, direct movie stream URL or subtitle response. The native player is therefore **not connected** to the movie buttons. The browsing preview displays an explicit pending-playback message and uses no sample video in place of the requested content.
-
-Required next input: a Web Archive of a film watch page, saved after playback starts. A series watch-page archive is also useful for confirming episode playback parameters.
-
-The observed clearance code uses `/api/vod/clearance` with Cloudflare Turnstile. This implementation does not fabricate clearance tokens, automate verification, copy browser session cookies or work around a 403. If native requests require web verification, a supported site API or an approved interactive authentication design will be needed.
+The observed clearance code uses `/api/vod/clearance` with Cloudflare Turnstile. This implementation does not fabricate clearance tokens, automate verification, copy browser session cookies or work around a 403. If native requests require web verification, a supported site API or an approved interactive authentication design will be needed. The app reports the access failure in that case.
 
 ## Validation limits
 
-Fixtures come from the supplied page’s public title data. The local environment has no Apple SDK. The GitHub workflow performs simulator unit/UI tests and an unsigned device build when repository workflow permissions permit it. A successful build does not validate live Watched playback. Live catalogue refresh also remains unverified from the blocked inspection network.
+Fixtures come from the supplied page's public title data. Tests cover Flight and normalized detail/season parsing, VOD request fields, terminal 403 behavior, subtitle URL resolution and caption/HLS parsing. Native UI tests capture home/details in an explicit offline mode; they do not substitute sample video for a Watched title.
+
+The GitHub workflow performs simulator unit/UI tests and builds/packages an unsigned iPhone/iPad app. A successful build does not validate live Watched playback. Live catalogue and playback remain unverified from the inspection network rejected by the site.
 
 ## Build
 
-Run `xcodegen generate --spec project-watched.yml`, then build or test the `WatchedNative` scheme. The deployment target is iOS 17. Device builds are unsigned and must be signed by the installer. Version 0.1 is a browsing preview, not a completed streaming release.
+Run `xcodegen generate --spec project-watched.yml`, then build/test the `WatchedNative` scheme. Device builds are unsigned and need signing for installation. Version 0.2.0 includes the observed playback integration but is not represented as live-stream verified.

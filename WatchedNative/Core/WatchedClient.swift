@@ -12,12 +12,12 @@ actor WatchedClient {
         "getProviderRowAction": "60b1ef9a1f0b2b5408dff2808552fc27fbc164b793"
     ]
 
-    init() {
+    init(session suppliedSession: URLSession? = nil) {
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 18
         configuration.timeoutIntervalForResource = 30
         configuration.urlCache = URLCache(memoryCapacity: 16_000_000, diskCapacity: 64_000_000)
-        session = URLSession(configuration: configuration)
+        session = suppliedSession ?? URLSession(configuration: configuration)
     }
 
     private func get(_ path: String) async throws -> (Data, HTTPURLResponse) {
@@ -32,6 +32,7 @@ actor WatchedClient {
         try Task.checkCancellation()
         guard let response = response as? HTTPURLResponse else { throw WatchedError.malformed }
         if response.statusCode == 401 || response.statusCode == 403 { throw WatchedError.blocked }
+        if response.statusCode == 429 { throw WatchedError.rateLimited }
         guard (200..<300).contains(response.statusCode) else { throw WatchedError.server(response.statusCode) }
         return (data, response)
     }
@@ -60,7 +61,8 @@ actor WatchedClient {
         }
         let suffix = kind == .movie ? "MoviesAction" : "ShowsAction"
         let name = (filters.query.isEmpty ? "discover" : "search") + suffix
-        let args: [Any] = [filters.query.isEmpty ? filters.actionValue : filters.query, page]
+        let firstArgument: Any = filters.query.isEmpty ? filters.actionValue as Any : filters.query as Any
+        let args: [Any] = [firstArgument, page]
         return try await action(name, route: "/\(kind.route)", arguments: args).catalog(kind: kind)
     }
 
@@ -83,6 +85,57 @@ actor WatchedClient {
         let (data, _) = try await get("/api/episodes?tmdbId=\(tmdbID)&season=\(season)")
         struct Response: Decodable { let episodes: [MediaEpisode] }
         return try JSONDecoder().decode(Response.self, from: data).episodes
+    }
+
+    /// Uses the same JSON request and response fields observed in the supplied film watch-page script.
+    /// A clearance/authentication response is terminal; it is never worked around through another route.
+    func playback(title: MediaTitle, season: Int? = nil, episode: Int? = nil, resumeAt: Double = 0) async throws -> PlaybackDescriptor {
+        let target = target(title: title, season: season, episode: episode)
+        do {
+            let response = try await post("/api/vod/server", body: target.merging(["server": "jycdn"]) { _, new in new })
+            return try VODResponseDecoder.descriptor(response, title: title, origin: origin, season: season, episode: episode, resumeAt: resumeAt)
+        } catch let error as WatchedError {
+            switch error {
+            case .blocked, .rateLimited: throw error
+            default: return try await fallbackPlayback(title: title, season: season, episode: episode, resumeAt: resumeAt)
+            }
+        }
+    }
+
+    func fallbackPlayback(title: MediaTitle, season: Int?, episode: Int?, resumeAt: Double) async throws -> PlaybackDescriptor {
+        let response = try await post("/api/vod/moviebox-fallback", body: target(title: title, season: season, episode: episode))
+        var descriptor = try VODResponseDecoder.descriptor(response, title: title, origin: origin, season: season, episode: episode, resumeAt: resumeAt)
+        descriptor.usedFallback = true
+        return descriptor
+    }
+
+    func subtitles(title: MediaTitle, season: Int?, episode: Int?) async throws -> [ExternalSubtitle] {
+        let response = try await post("/api/vod/subtitles", body: target(title: title, season: season, episode: episode))
+        return VODResponseDecoder.subtitles(response, origin: origin)
+    }
+
+    func releasePlayback(sessionID: String) async {
+        _ = try? await post("/api/jycdn/session", body: ["sessionId": sessionID])
+    }
+
+    private func target(title: MediaTitle, season: Int?, episode: Int?) -> [String: Any] {
+        var target: [String: Any] = ["tmdbId": title.tmdbID, "mediaType": title.kind.rawValue]
+        if let season { target["season"] = season }
+        if let episode { target["episode"] = episode }
+        return target
+    }
+
+    private func post(_ path: String, body: [String: Any]) async throws -> [String: Any] {
+        guard let url = URL(string: path, relativeTo: origin) else { throw WatchedError.malformed }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, _) = try await perform(request)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw WatchedError.malformed }
+        return object
     }
 
     private func action(_ name: String, route: String, arguments: [Any]) async throws -> FlightDocument {

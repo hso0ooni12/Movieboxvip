@@ -10,6 +10,9 @@ struct DetailScreen: View {
     @State private var episodesLoading = false
     @State private var episodeError: String?
     @State private var alertMessage: String?
+    @State private var playback: PlaybackDescriptor?
+    @State private var preparingPlayback = false
+    @State private var playbackTask: Task<Void, Never>?
     private var title: MediaTitle { refreshed ?? item }
 
     var body: some View {
@@ -35,9 +38,13 @@ struct DetailScreen: View {
                 }
                 VStack(alignment: .leading, spacing: 22) {
                     HStack(spacing: 10) {
-                        Button { alertMessage = WatchedError.playbackIntegrationPending.localizedDescription } label: {
-                            Label(store.t("مشاهدة الآن", "Play now"), systemImage: "play.fill")
-                        }.buttonStyle(PrimaryAction()).accessibilityIdentifier("play-title")
+                        Button { play() } label: {
+                            HStack(spacing: 9) {
+                                if preparingPlayback { ProgressView().tint(.black) }
+                                else { Image(systemName: "play.fill") }
+                                Text(preparingPlayback ? store.t("جاري تجهيز الفيديو…", "Preparing video…") : store.t("مشاهدة الآن", "Play now"))
+                            }
+                        }.buttonStyle(PrimaryAction()).disabled(preparingPlayback).accessibilityIdentifier("play-title")
                         Button { store.toggleSaved(title) } label: {
                             Image(systemName: store.isSaved(title) ? "checkmark" : "plus")
                                 .font(.system(size: 20)).frame(width: 49, height: 49)
@@ -70,6 +77,8 @@ struct DetailScreen: View {
         .alert(store.t("المشاهدة", "Playback"), isPresented: Binding(get: { alertMessage != nil }, set: { if !$0 { alertMessage = nil } })) {
             Button(store.t("حسناً", "OK"), role: .cancel) { alertMessage = nil }
         } message: { Text(alertMessage ?? "") }
+        .fullScreenCover(item: $playback) { descriptor in NativePlayerScreen(descriptor: descriptor) }
+        .onDisappear { playbackTask?.cancel() }
         .task {
             guard !store.isPreview else { return }
             if item.kind == .tv { episodesLoading = true }
@@ -104,7 +113,7 @@ struct DetailScreen: View {
             else if let episodeError { Text(episodeError).font(.caption).foregroundStyle(.secondary) }
             else if episodes.isEmpty { Text(store.t("لا توجد حلقات متاحة لهذا الموسم", "No episodes available for this season")).font(.caption).foregroundStyle(.secondary) }
             ForEach(episodes) { episode in
-                Button { alertMessage = WatchedError.playbackIntegrationPending.localizedDescription } label: {
+                Button { play(episode: episode) } label: {
                     HStack(spacing: 13) {
                         RemoteImage(url: title.imageURL(episode.still_path, size: "w500")).frame(width: 116, height: 65).clipShape(RoundedRectangle(cornerRadius: 9))
                             .overlay { Image(systemName: "play.fill").font(.system(size: 17)).shadow(radius: 5) }
@@ -113,7 +122,7 @@ struct DetailScreen: View {
                             if let overview = episode.overview, !overview.isEmpty { Text(overview).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(2) }
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
-                }.buttonStyle(.plain)
+                }.buttonStyle(.plain).disabled(preparingPlayback)
             }
         }
     }
@@ -130,6 +139,30 @@ struct DetailScreen: View {
         catch {
             guard season == requestedSeason else { return }
             episodeError = error.localizedDescription; episodes = []; episodesLoading = false
+        }
+    }
+
+    private func play(episode selectedEpisode: MediaEpisode? = nil) {
+        guard !preparingPlayback else { return }
+        if store.isPreview {
+            alertMessage = store.t("وضع معاينة الواجهة لا يجري طلبات تشغيل حية.", "UI preview mode does not make live playback requests.")
+            return
+        }
+        let title = self.title
+        let saved = store.progress.first(where: { $0.id == title.id })
+        let selectedSeason: Int? = title.kind == .tv ? (selectedEpisode != nil ? season : saved?.season ?? season) : nil
+        let number: Int? = title.kind == .tv ? (selectedEpisode?.episode_number ?? saved?.episode ?? episodes.first?.episode_number ?? 1) : nil
+        let resume = saved?.season == selectedSeason && saved?.episode == number ? saved?.position ?? 0 : 0
+        preparingPlayback = true
+        playbackTask?.cancel()
+        playbackTask = Task {
+            defer { preparingPlayback = false }
+            do {
+                let descriptor = try await WatchedClient.shared.playback(title: title, season: selectedSeason, episode: number, resumeAt: resume)
+                try Task.checkCancellation()
+                playback = descriptor
+            } catch is CancellationError { }
+            catch { alertMessage = error.localizedDescription }
         }
     }
 }
@@ -154,8 +187,8 @@ struct SettingsScreen: View {
                     }
                 }
                 Section {
-                    HStack { Wordmark(); Spacer(); Text("Native · 0.1").font(.caption).foregroundStyle(.secondary) }
-                    Text(store.t("نسخة تجريبية للتصفح. ربط تشغيل أفلام Watched لم يكتمل بعد.", "Browsing preview. Watched movie playback integration is still pending."))
+                    HStack { Wordmark(); Spacer(); Text("Native · 0.2").font(.caption).foregroundStyle(.secondary) }
+                    Text(store.t("تطبيق أفلام ومسلسلات بمشغّل نيتف. توفر المحتوى والترجمة يعتمد على المصدر.", "Movies and shows with native playback. Content and subtitle availability depend on the source."))
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }

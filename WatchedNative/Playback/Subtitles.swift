@@ -51,6 +51,9 @@ struct VideoSource: Identifiable, Hashable, Sendable {
     let label: String
     let url: URL
     var height: Int?
+    var kind: String = "hls"
+    var bandwidth: Double?
+    var width: Int?
 }
 
 struct ExternalSubtitle: Identifiable, Hashable, Sendable {
@@ -60,8 +63,6 @@ struct ExternalSubtitle: Identifiable, Hashable, Sendable {
     let url: URL
 }
 
-/// Populated only by the verified site's playback adapter once the watch-page archive is supplied.
-/// The homepage archive contains no movie stream URL or playback response schema.
 struct PlaybackDescriptor: Identifiable, Sendable {
     let id: String
     let title: MediaTitle
@@ -70,4 +71,65 @@ struct PlaybackDescriptor: Identifiable, Sendable {
     var resumeAt: Double = 0
     var season: Int?
     var episode: Int?
+    var sessionID: String?
+    var usedFallback = false
+}
+
+enum VODResponseDecoder {
+    static func descriptor(_ value: [String: Any], title: MediaTitle, origin: URL, season: Int?, episode: Int?, resumeAt: Double) throws -> PlaybackDescriptor {
+        let stream = value["stream"] as? [String: Any] ?? value
+        let rawSources = stream["sources"] as? [[String: Any]] ?? []
+        var seen = Set<URL>()
+        let sources = rawSources.enumerated().compactMap { index, source -> VideoSource? in
+            guard let raw = source["url"] as? String, let url = URL(string: raw, relativeTo: origin)?.absoluteURL,
+                  url.scheme == "https", seen.insert(url).inserted else { return nil }
+            let kind = source["kind"] as? String ?? stream["kind"] as? String ?? "hls"
+            guard kind == "hls" || kind == "mp4" else { return nil }
+            let label = source["quality"] as? String ?? "Auto"
+            return VideoSource(id: "source-\(index)", label: label, url: url, height: source["height"] as? Int, kind: kind)
+        }
+        guard !sources.isEmpty else { throw WatchedError.unavailable }
+        let tracks = Self.subtitles(stream, origin: origin)
+        return PlaybackDescriptor(id: "\(title.id):\(season ?? 0):\(episode ?? 0)", title: title, sources: sources, subtitles: tracks,
+                                  resumeAt: resumeAt, season: season, episode: episode, sessionID: stream["sessionId"] as? String)
+    }
+
+    static func subtitles(_ value: [String: Any], origin: URL) -> [ExternalSubtitle] {
+        let raw = value["subtitles"] as? [[String: Any]] ?? []
+        var seen = Set<URL>()
+        return raw.enumerated().compactMap { index, track in
+            guard let rawURL = track["url"] as? String, let url = URL(string: rawURL, relativeTo: origin)?.absoluteURL,
+                  url.scheme == "https", seen.insert(url).inserted else { return nil }
+            let language = track["language"] as? String ?? track["lang"] as? String ?? track["srclang"] as? String ?? "und"
+            let label = track["label"] as? String ?? track["name"] as? String ?? language
+            return ExternalSubtitle(id: "remote-\(index)-\(language)", label: label, language: language, url: url)
+        }
+    }
+}
+
+struct HLSRendition: Equatable, Sendable {
+    let width: Int
+    let height: Int
+    let bandwidth: Double
+}
+
+enum HLSMasterParser {
+    static func renditions(_ text: String) -> [HLSRendition] {
+        guard text.hasPrefix("#EXTM3U") else { return [] }
+        var heights = Set<Int>()
+        let resolution = try? NSRegularExpression(pattern: #"(?:^|,)RESOLUTION=(\d+)x(\d+)(?:,|$)"#)
+        let bandwidth = try? NSRegularExpression(pattern: #"(?:^|,)BANDWIDTH=(\d+)(?:,|$)"#)
+        return text.components(separatedBy: .newlines).compactMap { line -> HLSRendition? in
+            guard line.hasPrefix("#EXT-X-STREAM-INF:"), let resolution, let bandwidth else { return nil }
+            let attributes = String(line.dropFirst("#EXT-X-STREAM-INF:".count)) as NSString
+            let range = NSRange(location: 0, length: attributes.length)
+            guard let dimensions = resolution.firstMatch(in: attributes as String, range: range),
+                  let rate = bandwidth.firstMatch(in: attributes as String, range: range),
+                  let width = Int(attributes.substring(with: dimensions.range(at: 1))),
+                  let height = Int(attributes.substring(with: dimensions.range(at: 2))),
+                  let bits = Double(attributes.substring(with: rate.range(at: 1))), height > 0, width > 0,
+                  heights.insert(height).inserted else { return nil }
+            return HLSRendition(width: width, height: height, bandwidth: bits)
+        }.sorted { $0.height > $1.height }
+    }
 }

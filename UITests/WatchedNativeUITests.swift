@@ -19,8 +19,8 @@ final class WatchedNativeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["play-title"].exists)
         app.buttons["play-title"].tap()
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 3))
-        // A browsing preview must clearly report that playback is pending, rather than open a website.
-        XCTAssertTrue(app.alerts.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "النسخة التجريبية")).firstMatch.exists)
+        // UI snapshots never make external playback requests or substitute sample video.
+        XCTAssertTrue(app.alerts.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "معاينة الواجهة")).firstMatch.exists)
     }
 
     @MainActor
